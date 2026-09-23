@@ -1,0 +1,27 @@
+# Security & Environment
+.env
+.env.*
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+venv/
+.venv/
+
+# Local databases
+celerybeat-schedule.db
+*.sqlite3
+
+# Local storage
+downloads/
+temp/
+/bin/
+
+# Binaries & Runtimes
+.runtime/
+*.exe
+*.dll
+
+cookies.txt
