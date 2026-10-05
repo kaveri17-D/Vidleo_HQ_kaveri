@@ -15,11 +15,13 @@ yarn-debug.log*
 pnpm-debug.log*
 
 # =========================
-# Next.js
+# Next.js & Vercel
 # =========================
 .next/
 out/
 *.tsbuildinfo
+.vercel/
+.vercel_home/
 
 # =========================
 # Python
