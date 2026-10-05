@@ -528,19 +528,19 @@ def _get_youtube_po_token_bundle(url: str) -> dict[str, str] | None:
         return None
 
 
-def _youtube_probe_extractor_args(po_token_bundle: dict[str, str] | None) -> dict[str, list[str]]:
+def _youtube_probe_extractor_args(po_token_bundle: dict[str, str] | None) -> dict[str, dict[str, list[str]]]:
     if po_token_bundle:
         return {
-            "youtube": [
-                "player_client=default,ios",
-                f"po_token=ios+{po_token_bundle['poToken']}",
-                f"visitor_data={po_token_bundle['visitorData']}",
-            ]
+            "youtube": {
+                "player_client": ["default", "ios"],
+                "po_token": [f"ios+{po_token_bundle['poToken']}"],
+                "visitor_data": [po_token_bundle["visitorData"]],
+            }
         }
     return {
-        "youtube": [
-            "player_client=android,tv,web",
-        ]
+        "youtube": {
+            "player_client": ["android", "tv", "web"],
+        }
     }
 
 
@@ -610,7 +610,7 @@ def _extract_probe_info_with_yt_dlp(
     proxy_url: str | None = None,
     cookies_file: str | None = None,
     use_browser_identity: bool = False,
-    youtube_extractor_args: dict[str, list[str]] | None = None,
+    youtube_extractor_args: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if yt_dlp is None:
         raise RuntimeError("yt_dlp Python API unavailable")
