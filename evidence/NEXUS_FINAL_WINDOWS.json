@@ -1,0 +1,8 @@
+{
+  "platform": "Windows 10 / Windows 11",
+  "status": "NOT_AVAILABLE_IN_LAB",
+  "reason": "No physical Windows hardware or remote Windows CI runner provisioned in local lab",
+  "prerequisite": "Physical Windows PC with D3D11/DXVA GPU acceleration",
+  "tested": false,
+  "hardware_decode_proven": false
+}

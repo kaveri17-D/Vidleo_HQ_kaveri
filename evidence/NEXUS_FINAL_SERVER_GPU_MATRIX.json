@@ -1,0 +1,21 @@
+{
+  "title": "NEXUS Final Server GPU Capabilities & Telemetry Matrix",
+  "timestamp": "2026-10-04T11:26:02.156402+00:00",
+  "hardware": {
+    "vendor": "NVIDIA",
+    "model": "Quadro P3200 Mobile",
+    "driver": "580.178.04",
+    "cuda": "13.0",
+    "vram_mb": 6144
+  },
+  "benchmarks": {
+    "nvdec_decode": "PROVEN (h264_cuvid exit code 0, 0 decode errors, 90 frames decoded)",
+    "nvenc_encode": "PROVEN (h264_nvenc exit code 0, 90 frames encoded, 15.3x speed)",
+    "nvdec_plus_nvenc_pipeline": "PROVEN (End-to-end transcode completed in 0.522s)"
+  },
+  "accounting_invariants": {
+    "client_success_utilization": 0.0,
+    "client_success_processes": 0,
+    "server_fallback_only": true
+  }
+}

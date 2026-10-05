@@ -1,0 +1,9 @@
+{
+  "driver_found": "Mesa Intel(R) UHD Graphics 630 (CFL GT2)",
+  "driver_version": "Mesa 25.2.8-0ubuntu0.24.04.2",
+  "libva_version": "libva.so.2 (installed at /usr/lib/x86_64-linux-gnu/libva.so.2)",
+  "dri_node": "/dev/dri/renderD128",
+  "dri_permissions": "total 0\ndrwxr-xr-x  3 root root        140 Sep 23 10:24 .\ndrwxr-xr-x 22 root root       5780 Oct  3 13:20 ..\ndrwxr-xr-x  2 root root        140 Sep 23 10:24 by-path\ncrw-rw----+ 1 root video  226,   1 Oct  4 12:45 card1\ncrw-rw----+ 1 root video  226,   2 Oct  4 12:45 card2\ncrw-rw----+ 1 root render 226, 128 Oct  4 12:45 renderD128\ncrw-rw----+ 1 root render 226, 129 Oct  4 12:45 renderD129",
+  "wayland_compositor_binding": "Intel UHD Graphics 630 (card1, renderD128)",
+  "snap_confinement_notes": "Chromium Snap confines filesystem namespaces; VA-API hardware decode operates directly via /dev/dri/renderD128 device cgroup"
+}

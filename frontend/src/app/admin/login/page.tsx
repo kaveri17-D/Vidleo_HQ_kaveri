@@ -3,7 +3,6 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { createClient } from '@/lib/supabase/client';
 import { 
   ShieldAlert, 
   Lock, 
@@ -11,12 +10,12 @@ import {
   ArrowLeft, 
   Loader2, 
   KeyRound, 
-  CheckCircle2,
-  ShieldCheck
+  ShieldCheck,
 } from 'lucide-react';
+import { Suspense } from 'react';
 import { VidleoLogo } from '@/components/brand/VidleoLogo';
 
-export default function AdminLoginPage() {
+function AdminLoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [email, setEmail] = useState('');
@@ -24,12 +23,10 @@ export default function AdminLoginPage() {
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const supabase = createClient();
-
   useEffect(() => {
     const errorParam = searchParams.get('error');
     if (errorParam === 'access_denied') {
-      setErrorMessage('Access Denied. Your account does not have administrator privileges.');
+      setErrorMessage('Invalid admin credentials');
     }
   }, [searchParams]);
 
@@ -41,58 +38,26 @@ export default function AdminLoginPage() {
     setErrorMessage(null);
 
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
+      const res = await fetch('/api/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim(), password }),
       });
 
-      if (error) {
-        setErrorMessage(error.message || 'Invalid administrator email or password.');
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok || !data?.success) {
+        setErrorMessage(data?.error || 'Invalid admin credentials');
         setLoading(false);
         return;
       }
 
-      if (data?.user) {
-        // Verify admin status
-        const appRole = data.user.app_metadata?.role;
-        const userRole = data.user.user_metadata?.role;
-
-        let isAdmin = appRole === 'admin' || userRole === 'admin';
-
-        if (!isAdmin) {
-          const { data: roleData } = await supabase
-            .from('user_roles')
-            .select('role')
-            .eq('user_id', data.user.id)
-            .maybeSingle();
-
-          if (roleData?.role === 'admin') isAdmin = true;
-        }
-
-        if (!isAdmin) {
-          const { data: profileData } = await supabase
-            .from('profiles')
-            .select('role')
-            .eq('id', data.user.id)
-            .maybeSingle();
-
-          if (profileData?.role === 'admin') isAdmin = true;
-        }
-
-        if (!isAdmin) {
-          // Sign out unprivileged user trying to use admin login
-          await supabase.auth.signOut();
-          setErrorMessage('Access Denied. Authenticated account lacks administrator privileges.');
-          setLoading(false);
-          return;
-        }
-
-        // Redirect to admin dashboard
-        const next = searchParams.get('next') || '/admin/dashboard';
-        router.replace(next);
-      }
+      // Successful admin authentication -> redirect to /admin/dashboard
+      const next = searchParams.get('next') || '/admin/dashboard';
+      router.replace(next);
+      router.refresh();
     } catch (err: any) {
-      setErrorMessage(err.message || 'An unexpected authentication error occurred.');
+      setErrorMessage('Invalid admin credentials');
       setLoading(false);
     }
   };
@@ -135,10 +100,10 @@ export default function AdminLoginPage() {
               <ShieldCheck className="w-6 h-6" />
             </div>
             <h1 className="text-2xl font-extrabold tracking-tight font-display text-white">
-              Administrator Portal
+              Administrator Login
             </h1>
             <p className="text-xs text-white/60 font-sans leading-relaxed">
-              Enter your privileged credentials to access Vidleo control center.
+              Enter your privileged credentials to access the Vidleo Admin Dashboard.
             </p>
           </div>
 
@@ -177,7 +142,7 @@ export default function AdminLoginPage() {
 
             <div>
               <label className="block text-[11px] font-mono font-semibold text-white/70 uppercase tracking-wider mb-2">
-                Password
+                Admin Password
               </label>
               <div className="relative">
                 <Lock className="w-4 h-4 text-white/40 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -195,35 +160,48 @@ export default function AdminLoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full h-11 mt-2 rounded-xl bg-[#5B4BFF] hover:bg-[#4B3BFF] text-white font-semibold text-xs tracking-tight transition-all duration-150 flex items-center justify-center gap-2 shadow-lg shadow-[#5B4BFF]/30 active:scale-[0.99] disabled:opacity-75 cursor-pointer"
+              className="w-full h-12 mt-2 rounded-xl bg-[#5B4BFF] hover:bg-[#4d3df7] active:scale-[0.99] text-white text-xs font-bold font-mono uppercase tracking-wider transition-all shadow-lg shadow-[#5B4BFF]/30 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
             >
               {loading ? (
                 <>
-                  <Loader2 className="w-4 h-4 animate-spin text-white" />
-                  <span>Verifying Admin Authorization...</span>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Verifying Privileges...</span>
                 </>
               ) : (
                 <>
                   <KeyRound className="w-4 h-4" />
-                  <span>Authenticate Admin Session</span>
+                  <span>Login</span>
                 </>
               )}
             </button>
           </form>
 
-          {/* Security note */}
-          <div className="mt-6 pt-5 border-t border-white/[0.08] text-center">
-            <p className="text-[11px] text-white/40 font-mono">
-              Protected by Server-Side Role Authorization & RLS
+          {/* Secure Environment Notice */}
+          <div className="mt-8 pt-6 border-t border-white/[0.08] text-center">
+            <p className="text-[11px] text-white/40 font-mono flex items-center justify-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              <span>Zero-Trust Server Enforcement Active</span>
             </p>
           </div>
         </motion.div>
       </main>
 
       {/* Footer */}
-      <footer className="py-6 text-center text-xs text-white/40 border-t border-white/[0.06]">
-        Vidleo Internal Control Center · Restricted Access
+      <footer className="px-6 py-4 text-center border-t border-white/[0.06] text-[11px] text-white/40 font-mono">
+        Vidleo Platform &copy; {new Date().getFullYear()} &bull; Strictly for Authorized Administrators
       </footer>
     </div>
+  );
+}
+
+export default function AdminLoginPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-[#0A0A0E] flex items-center justify-center">
+        <Loader2 className="w-6 h-6 text-[#5B4BFF] animate-spin" />
+      </div>
+    }>
+      <AdminLoginForm />
+    </Suspense>
   );
 }

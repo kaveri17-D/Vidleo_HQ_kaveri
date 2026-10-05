@@ -1,0 +1,37 @@
+{
+  "title": "NEXUS Final Execution Governor Master Matrix",
+  "timestamp": "2026-10-04T11:07:47.764167+00:00",
+  "execution_modes": [
+    {
+      "mode": "NORMAL_CLIENT_FIRST",
+      "hierarchy": "1. Client HW -> 2. Client SW -> 3. Server GPU -> 4. Server CPU -> 5. Unsupported",
+      "default": true,
+      "status": "PROVEN"
+    },
+    {
+      "mode": "GPU_PREFERRED",
+      "hierarchy": "1. Client HW -> 2. Client SW (if permitted) -> 3. Server GPU -> 4. Server CPU",
+      "status": "PROVEN"
+    },
+    {
+      "mode": "GPU_REQUIRED",
+      "hierarchy": "1. Client HW -> 2. Server GPU -> 3. GPU_EXECUTION_UNAVAILABLE (Never CPU)",
+      "status": "PROVEN"
+    },
+    {
+      "mode": "SERVER_ONLY",
+      "hierarchy": "1. Server GPU -> 2. Server CPU -> 3. Unsupported",
+      "status": "PROVEN"
+    }
+  ],
+  "state_machine_locations": [
+    "CLIENT_HARDWARE",
+    "CLIENT_SOFTWARE",
+    "CLIENT_PLUS_WORKER",
+    "SERVER_GPU",
+    "SERVER_CPU",
+    "GPU_EXECUTION_UNAVAILABLE",
+    "UNSUPPORTED"
+  ],
+  "guarantee_verdict": "Deterministic Execution Governor fully operational across all modes and invariants."
+}

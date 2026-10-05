@@ -50,6 +50,24 @@ services:
 
   redis:
     image: redis:alpine
+    command: >
+      redis-server
+      --appendonly yes
+      --appendfsync everysec
+      --auto-aof-rewrite-percentage 100
+      --auto-aof-rewrite-min-size 64mb
+      --save 900 1
+      --save 300 10
+      --save 60 10000
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep PONG || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
     networks:
       - nexus_internal
 
@@ -219,3 +237,7 @@ services:
 networks:
   nexus_internal:
     driver: bridge
+
+volumes:
+  redis_data:
+    driver: local

@@ -133,14 +133,36 @@ async def _get_async_redis_client():
 def _get_sync_redis_client():
     global _SYNC_REDIS_URL_CACHE, _SYNC_REDIS_CLIENT
     redis_url = os.environ.get("REDIS_URL")
-    if redis_url != _SYNC_REDIS_URL_CACHE:
-        _SYNC_REDIS_URL_CACHE = redis_url
+    redis_password = os.environ.get("REDIS_PASSWORD")
+    cache_key = f"{redis_url}::pass={bool(redis_password)}"
+    if cache_key != _SYNC_REDIS_URL_CACHE:
+        _SYNC_REDIS_URL_CACHE = cache_key
         _SYNC_REDIS_CLIENT = None
         if redis_url and redis_sync is not None:
             try:
-                _SYNC_REDIS_CLIENT = redis_sync.from_url(redis_url, decode_responses=True)
+                target_url = redis_url
+                if redis_password and "@" not in redis_url and "://" in redis_url:
+                    from urllib.parse import quote
+                    proto, rest = redis_url.split("://", 1)
+                    target_url = f"{proto}://:{quote(redis_password)}@{rest}"
+
+                connect_timeout = float(os.environ.get("NEXUS_REDIS_CONNECT_TIMEOUT", "2.0"))
+                socket_timeout = float(os.environ.get("NEXUS_REDIS_SOCKET_TIMEOUT", "3.0"))
+                health_interval = int(os.environ.get("NEXUS_REDIS_HEALTH_CHECK_INTERVAL", "15"))
+
+                _SYNC_REDIS_CLIENT = redis_sync.from_url(
+                    target_url,
+                    decode_responses=True,
+                    socket_connect_timeout=connect_timeout,
+                    socket_timeout=socket_timeout,
+                    health_check_interval=health_interval,
+                    retry_on_timeout=True,
+                )
             except Exception as exc:
-                log.debug("Skipping sync Redis job client init for %s: %s", redis_url, exc)
+                err_msg = str(exc)
+                if redis_password:
+                    err_msg = err_msg.replace(redis_password, "***")
+                log.debug("Skipping sync Redis job client init: %s", err_msg)
                 _SYNC_REDIS_CLIENT = None
     return _SYNC_REDIS_CLIENT
 
@@ -445,6 +467,9 @@ async def _sync_job_row(job_id: str) -> None:
         "updated_at": current.get("updated_at"),
         "created_at": current.get("created_at") or current.get("updated_at"),
     }
+    for opt_key in ("outbox_status", "outbox_dispatched_at", "idempotency_key", "celery_task_id", "expires_at"):
+        if current.get(opt_key) is not None:
+            payload[opt_key] = current.get(opt_key)
 
     def _write() -> None:
         try:
@@ -471,3 +496,41 @@ async def _sync_job_event(entry: dict[str, Any]) -> None:
             log.debug("Skipping job_events sync for %s: %s", entry.get("job_id"), exc)
 
     await asyncio.to_thread(_write)
+
+
+async def prune_in_memory_jobs(cutoff: datetime) -> int:
+    """
+    Prune in-memory and Redis cached terminal job records older than cutoff.
+    Used by outbox retention pruning to prevent memory growth in long-running processes.
+    """
+    terminal_statuses = {"completed", "failed", "cancelled"}
+    to_delete: list[str] = []
+    async with JOB_LOCK:
+        for jid, state in list(JOB_RUNTIME_STATE.items()):
+            status = str(state.get("status") or "").lower()
+            if status in terminal_statuses:
+                created_raw = state.get("created_at") or state.get("updated_at")
+                dt = _parse_iso(created_raw)
+                if dt and dt <= cutoff:
+                    to_delete.append(jid)
+        for jid in to_delete:
+            JOB_RUNTIME_STATE.pop(jid, None)
+            JOB_RUNTIME_EVENTS.pop(jid, None)
+
+    # Also clean up Redis cache if available
+    if to_delete:
+        try:
+            from backend.api_v1.middleware import _get_redis_client
+            redis_client = await _get_redis_client()
+            if redis_client:
+                for jid in to_delete:
+                    try:
+                        await redis_client.delete(_job_state_key(jid), _job_events_key(jid))
+                        await redis_client.srem(_job_index_key(), jid)
+                    except Exception:
+                        pass
+        except Exception as exc:
+            log.debug("Redis prune cleanup skipped: %s", exc)
+
+    return len(to_delete)
+

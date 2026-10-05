@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timezone
+import hashlib
 import ipaddress
 import logging
 import os
@@ -12,7 +13,7 @@ import socket
 import urllib.request
 from pathlib import Path
 from typing import Literal, Optional
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
@@ -62,6 +63,16 @@ from backend.format_parser import (
 )
 from backend.job_runner import run_download_job_async
 from backend.job_store import add_job_event, claim_or_find_active_download, get_job, register_job, summarize_jobs, update_job
+from backend.manifest_builder import build_media_manifest
+from backend.manifest_schema import MediaManifest
+from backend.strategy_engine import evaluate_strategy, ClientCapabilities
+from backend.execution_governor import (
+    get_execution_governor,
+    ExecutionMode,
+    PlatformCapabilities,
+    detect_server_gpu_capabilities,
+)
+from backend.ticket_service import issue_signed_ticket, verify_signed_ticket
 from backend.media_url import normalize_media_url
 from backend.owner_router import (
     get_runtime_ops_state,
@@ -167,6 +178,56 @@ try:
 except Exception as exc:
     log.warning("Prometheus instrumentation initialization skipped: %s", exc)
 
+# ─── Phase 13A Backend Media Byte Accounting ───────────────────────
+backend_accounting_state = {
+    "control_plane_bytes_received": 0,
+    "control_plane_bytes_sent": 0,
+    "backend_media_bytes_received": 0,
+    "backend_media_bytes_sent": 0,
+}
+
+@app.middleware("http")
+async def media_byte_accounting_middleware(request: Request, call_next):
+    content_length = int(request.headers.get("content-length") or 0)
+    path = request.url.path
+    is_media = any(path.startswith(p) for p in ["/api/download/file", "/api/media", "/api/stream", "/api/video"])
+    if is_media:
+        backend_accounting_state["backend_media_bytes_received"] += content_length
+    else:
+        backend_accounting_state["control_plane_bytes_received"] += content_length
+    
+    response = await call_next(request)
+    
+    resp_length = int(response.headers.get("content-length") or 0)
+    if is_media:
+        backend_accounting_state["backend_media_bytes_sent"] += resp_length
+    else:
+        backend_accounting_state["control_plane_bytes_sent"] += resp_length
+    return response
+
+@app.get("/api/accounting/media")
+async def get_media_byte_accounting():
+    ffmpeg_procs = 0
+    try:
+        import psutil
+        for proc in psutil.process_iter(['name', 'cmdline']):
+            name = proc.info.get('name') or ''
+            cmdline = ' '.join(proc.info.get('cmdline') or [])
+            if 'ffmpeg' in name.lower() or 'ffmpeg' in cmdline.lower():
+                if 'grep' not in cmdline:
+                    ffmpeg_procs += 1
+    except Exception:
+        pass
+    return {
+        "control_plane_bytes_received": backend_accounting_state["control_plane_bytes_received"],
+        "control_plane_bytes_sent": backend_accounting_state["control_plane_bytes_sent"],
+        "backend_control_bytes": backend_accounting_state["control_plane_bytes_received"] + backend_accounting_state["control_plane_bytes_sent"],
+        "backend_media_bytes_received": backend_accounting_state["backend_media_bytes_received"],
+        "backend_media_bytes_sent": backend_accounting_state["backend_media_bytes_sent"],
+        "backend_media_bytes": backend_accounting_state["backend_media_bytes_received"] + backend_accounting_state["backend_media_bytes_sent"],
+        "server_ffmpeg_processes": ffmpeg_procs
+    }
+
 
 class ExtractRequest(BaseModel):
     url: str = Field(min_length=10, max_length=2048)
@@ -238,6 +299,35 @@ class DownloadRequest(BaseModel):
         if isinstance(value, str):
             return value.strip().lower()
         return value
+
+
+class TicketRequest(BaseModel):
+    format_id: str
+    host: str | None = None
+    target_url: str | None = None
+    ticket_type: str | None = None
+
+
+class StrategyRequest(BaseModel):
+    format_id: str
+    format_type: str = "video"
+    capabilities: dict | None = None
+
+
+class GovernorRequest(BaseModel):
+    format_id: str
+    format_type: str = "video"
+    execution_mode: str = "NORMAL_CLIENT_FIRST"
+    capabilities: dict | None = None
+    platform_capabilities: dict | None = None
+    allow_client_sw_in_gpu_preferred: bool = False
+
+
+class DownloadCompleteRequest(BaseModel):
+    format_id: str
+    delivery_mode: str
+    bytes_downloaded: int = 0
+    duration_ms: int | None = None
 
 
 class CampaignLimitPayload(BaseModel):
@@ -320,6 +410,8 @@ PROXY_AUTO_RECOVERY_POLL_INTERVAL_SECONDS = max(300, int(os.environ.get("PROXY_A
 PROXY_AUTO_RECOVERY_TASK: asyncio.Task | None = None
 PROXY_CIRCUIT_BREAKER_WATCHDOG_SECONDS = 60
 PROXY_CIRCUIT_BREAKER_TASK: asyncio.Task | None = None
+OUTBOX_SWEEPER_TASK: asyncio.Task | None = None
+OUTBOX_RETENTION_TASK: asyncio.Task | None = None
 
 _BLOCKED_SCHEMES = frozenset(["file", "ftp", "sftp", "gopher", "data", "ldap", "dict", "jar"])
 _PRIVATE_RANGES = [
@@ -715,6 +807,10 @@ async def _fallback_cleanup_loop() -> None:
             cleaned = cleanup_expired_local_artifacts()
             if cleaned:
                 log.info("Fallback cleanup removed %s expired artifact(s).", cleaned)
+            from backend.reconciliation import cleanup_orphaned_download_dirs
+            orphans = cleanup_orphaned_download_dirs()
+            if orphans:
+                log.info("Disk reaper removed %s orphaned download dir(s).", orphans)
         except Exception as exc:
             log.warning("Fallback cleanup loop failed: %s", exc)
         await asyncio.sleep(FALLBACK_CLEANUP_INTERVAL_SECONDS)
@@ -791,6 +887,10 @@ async def _billing_reconciliation_loop() -> None:
                     result.get("reconciled_rows"),
                     result.get("skipped_rows"),
                 )
+            from backend.reservation_reaper import run_reservation_reaper
+            reaper_res = await run_reservation_reaper()
+            if reaper_res.get("released"):
+                log.info("Reservation reaper released %d stale reservation(s).", reaper_res["released"])
         except Exception as exc:
             log.warning("Billing reconciliation loop failed: %s", exc)
         await asyncio.sleep(BILLING_RECONCILIATION_INTERVAL_SECONDS)
@@ -907,7 +1007,26 @@ async def _extract_payload_for_user(url: str, user: dict) -> dict:
     catalog = build_format_catalog(info, include_owner_formats=include_owner_formats)
     video_formats = [item for item in catalog if item.get("type") == "video"]
     audio_formats = [item for item in catalog if item.get("type") == "audio"]
+
+    job_id = f"job_{secrets.token_urlsafe(12)}"
+    provider = get_provider_name(url)
+    manifest = build_media_manifest(info, job_id=job_id, normalized_url=url, provider=provider)
+    await register_job(
+        job_id,
+        {
+            "user_id": user.get("id"),
+            "source_channel": "web_extract",
+            "provider": provider,
+            "normalized_url": url,
+            "status": "manifest_ready",
+            "manifest": manifest.model_dump(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        },
+    )
+
     return {
+        "job_id": job_id,
+        "manifest": manifest.model_dump(),
         "title": info.get("title", "Unknown Title"),
         "duration": info.get("duration"),
         "thumbnail": info.get("thumbnail"),
@@ -937,7 +1056,26 @@ async def _run_extract_probe(url: str, user: dict) -> dict:
         catalog = build_format_catalog(cached, include_owner_formats=include_owner_formats)
         video_formats = [item for item in catalog if item.get("type") == "video"]
         audio_formats = [item for item in catalog if item.get("type") == "audio"]
+
+        job_id = f"job_{secrets.token_urlsafe(12)}"
+        provider = get_provider_name(url)
+        manifest = build_media_manifest(cached, job_id=job_id, normalized_url=url, provider=provider)
+        await register_job(
+            job_id,
+            {
+                "user_id": user.get("id"),
+                "source_channel": "web_extract",
+                "provider": provider,
+                "normalized_url": url,
+                "status": "manifest_ready",
+                "manifest": manifest.model_dump(),
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            },
+        )
+
         return {
+            "job_id": job_id,
+            "manifest": manifest.model_dump(),
             "title": cached.get("title", "Unknown Title"),
             "duration": cached.get("duration"),
             "thumbnail": cached.get("thumbnail"),
@@ -1142,10 +1280,42 @@ async def _enforce_runtime_dispatch_controls(user: dict, route_label: str) -> No
 
 @app.on_event("startup")
 async def startup_event():
-    global FALLBACK_CLEANUP_TASK, VAULT_HISTORY_ROLLUP_TASK, REVENUE_ROLLUP_TASK, AUDIT_ROLLUP_TASK, SUBSCRIPTION_ROLLUP_TASK, BILLING_RECONCILIATION_TASK, ABUSE_ROLLUP_TASK, PROXY_ROLLUP_TASK, PROXY_ALERT_ROLLUP_TASK, PROXY_BREAKER_POSTURE_ROLLUP_TASK, PROXY_ALERT_SNAPSHOT_TASK, PROXY_AUTO_RECOVERY_TASK, PROXY_CIRCUIT_BREAKER_TASK
+    global FALLBACK_CLEANUP_TASK, VAULT_HISTORY_ROLLUP_TASK, REVENUE_ROLLUP_TASK, AUDIT_ROLLUP_TASK, SUBSCRIPTION_ROLLUP_TASK, BILLING_RECONCILIATION_TASK, ABUSE_ROLLUP_TASK, PROXY_ROLLUP_TASK, PROXY_ALERT_ROLLUP_TASK, PROXY_BREAKER_POSTURE_ROLLUP_TASK, PROXY_ALERT_SNAPSHOT_TASK, PROXY_AUTO_RECOVERY_TASK, PROXY_CIRCUIT_BREAKER_TASK, OUTBOX_SWEEPER_TASK, OUTBOX_RETENTION_TASK
     await load_redis_ledger_functions()
     ensure_media_binaries()
     cleanup_expired_local_artifacts()
+
+    # ── Phase 5: Startup reconciliation & Disk cleanup ───────────────────────
+    try:
+        from backend.reconciliation import reconcile_orphaned_jobs, cleanup_orphaned_download_dirs
+        cleanup_orphaned_download_dirs()
+        await reconcile_orphaned_jobs()
+    except Exception as exc:
+        log.warning("Phase 5 startup reconciliation failed: %s", exc)
+
+    # ── Phase 5: Transactional Outbox Background Sweeper ─────────────────────
+    from backend.job_outbox import outbox_sweeper_loop, OUTBOX_ENABLED
+    if OUTBOX_ENABLED and (OUTBOX_SWEEPER_TASK is None or OUTBOX_SWEEPER_TASK.done()):
+        OUTBOX_SWEEPER_TASK = asyncio.create_task(outbox_sweeper_loop())
+        log.info("Phase 5 Transactional Outbox sweeper task launched.")
+
+    # ── Phase 6 P0-1: Outbox Retention Background Pruner ─────────────────────
+    from backend.job_outbox import outbox_retention_loop, is_outbox_retention_enabled
+    if is_outbox_retention_enabled() and (OUTBOX_RETENTION_TASK is None or OUTBOX_RETENTION_TASK.done()):
+        OUTBOX_RETENTION_TASK = asyncio.create_task(outbox_retention_loop())
+        log.info("Phase 6 Outbox retention pruning task launched.")
+
+    # ── Phase 6 P2.2: Mandatory Object Storage Gate ─────────────────────────
+    from backend.storage_handler import is_enforce_object_storage, probe_r2_connectivity
+    if is_enforce_object_storage():
+        probe_res = probe_r2_connectivity(timeout_seconds=2.0)
+        if not probe_res.get("ready"):
+            log.error(
+                "OBJECT_STORAGE_STARTUP_GATE_FAILED: Mandatory object storage probe failed (%s)",
+                probe_res.get("detail"),
+            )
+        else:
+            log.info("Phase 6 P2.2: Mandatory object storage (Cloudflare R2) verified operational.")
     if not USE_CELERY_BEAT_SCHEDULER and (FALLBACK_CLEANUP_TASK is None or FALLBACK_CLEANUP_TASK.done()):
         FALLBACK_CLEANUP_TASK = asyncio.create_task(_fallback_cleanup_loop())
     try:
@@ -1227,7 +1397,21 @@ async def startup_event():
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    global FALLBACK_CLEANUP_TASK, VAULT_HISTORY_ROLLUP_TASK, REVENUE_ROLLUP_TASK, AUDIT_ROLLUP_TASK, SUBSCRIPTION_ROLLUP_TASK, BILLING_RECONCILIATION_TASK, ABUSE_ROLLUP_TASK, PROXY_ROLLUP_TASK, PROXY_ALERT_ROLLUP_TASK, PROXY_BREAKER_POSTURE_ROLLUP_TASK, PROXY_ALERT_SNAPSHOT_TASK, PROXY_AUTO_RECOVERY_TASK, PROXY_CIRCUIT_BREAKER_TASK
+    global FALLBACK_CLEANUP_TASK, VAULT_HISTORY_ROLLUP_TASK, REVENUE_ROLLUP_TASK, AUDIT_ROLLUP_TASK, SUBSCRIPTION_ROLLUP_TASK, BILLING_RECONCILIATION_TASK, ABUSE_ROLLUP_TASK, PROXY_ROLLUP_TASK, PROXY_ALERT_ROLLUP_TASK, PROXY_BREAKER_POSTURE_ROLLUP_TASK, PROXY_ALERT_SNAPSHOT_TASK, PROXY_AUTO_RECOVERY_TASK, PROXY_CIRCUIT_BREAKER_TASK, OUTBOX_SWEEPER_TASK, OUTBOX_RETENTION_TASK
+    if OUTBOX_SWEEPER_TASK:
+        OUTBOX_SWEEPER_TASK.cancel()
+        try:
+            await OUTBOX_SWEEPER_TASK
+        except asyncio.CancelledError:
+            pass
+        OUTBOX_SWEEPER_TASK = None
+    if OUTBOX_RETENTION_TASK:
+        OUTBOX_RETENTION_TASK.cancel()
+        try:
+            await OUTBOX_RETENTION_TASK
+        except asyncio.CancelledError:
+            pass
+        OUTBOX_RETENTION_TASK = None
     if FALLBACK_CLEANUP_TASK:
         FALLBACK_CLEANUP_TASK.cancel()
         try:
@@ -1324,6 +1508,8 @@ async def shutdown_event():
 
 @app.post("/extract")
 @app.post("/api/extract")
+@app.post("/resolve")
+@app.post("/api/resolve")
 async def extract_route(
     payload: ExtractRequest,
     request: Request,
@@ -1393,6 +1579,10 @@ async def start_download(
     queue_name = str(entitlement.get("queue_priority") or "free_consumer")
     provider = get_provider_capability(payload.url).get("provider")
 
+    # ── Phase 5: Idempotency Key ─────────────────────────────────────────────
+    user_id_val = str(user.get("id") or "anon")
+    idempotency_key = hashlib.sha256(f"{user_id_val}:{payload.url}:{payload.format_id}".encode()).hexdigest()
+
     # Concurrency guard: if an identical download for this user is already in
     # flight, return that job instead of queuing a redundant one. Refund the
     # credit this duplicate request reserved in the gate middleware, since we
@@ -1413,6 +1603,38 @@ async def start_download(
             "deduplicated": True,
         }
 
+    # ── Phase 6 P1-1: Distributed Circuit Breaker Check ───────────────────────
+    from backend.circuit_breaker import check_circuit, is_circuit_breaker_enabled
+    if is_circuit_breaker_enabled():
+        circuit_res = await check_circuit(str(provider or "generic"))
+        if not circuit_res.allowed:
+            mw_job_id = getattr(request.state, "job_id", None)
+            if mw_job_id and user.get("id") and not user.get("anonymous"):
+                from backend.middleware.credit_gate import refund_credits
+                await refund_credits(user.get("id"), mw_job_id, cost=1)
+            headers = {"Retry-After": str(circuit_res.retry_after)} if circuit_res.retry_after else {}
+            raise HTTPException(
+                status_code=503,
+                detail=circuit_res.reason or f"Upstream provider '{provider}' circuit is OPEN. Service temporarily unavailable.",
+                headers=headers,
+            )
+
+    # ── Phase 6 P0-2: Dynamic Admission Control & Backpressure ────────────────
+    from backend.admission_control import evaluate_admission, is_admission_control_enabled
+    if is_admission_control_enabled():
+        admission = await evaluate_admission(user.get("id"), queue_name=queue_name)
+        if not admission.allowed:
+            mw_job_id = getattr(request.state, "job_id", None)
+            if mw_job_id and user.get("id") and not user.get("anonymous"):
+                from backend.middleware.credit_gate import refund_credits
+                await refund_credits(user.get("id"), mw_job_id, cost=1)
+            headers = {"Retry-After": str(admission.retry_after)} if admission.retry_after else {}
+            raise HTTPException(
+                status_code=admission.status_code,
+                detail=admission.reason,
+                headers=headers,
+            )
+
     await register_job(
         job_id,
         {
@@ -1426,20 +1648,44 @@ async def start_download(
             "priority": queue_name,
             "status": "queued",
             "progress": 0,
+            "idempotency_key": idempotency_key,
             "created_at": datetime.now(timezone.utc).isoformat(),
         },
     )
-    await _store_job(job_id, status="queued", progress=0, error=None)
-    await add_job_event(job_id, "queued", {"queue_name": queue_name})
+    from backend.admission_control import register_active_job_admission
+    await register_active_job_admission(job_id, user.get("id"))
+
+    # ── Phase 6 P0-3: Record Job Created Metric ───────────────────────────────
+    try:
+        from backend.metrics import record_job_created
+        record_job_created(strategy="server_fallback", provider=str(provider or "generic"))
+    except Exception:
+        pass
 
     payload_dict = payload.model_dump()
     payload_dict["download_selector"] = choice["download_selector"]
     payload_dict["resolved_title"] = info.get("title")
     payload_dict["provider"] = provider
+
+    await _store_job(
+        job_id,
+        status="queued",
+        progress=0,
+        error=None,
+        dispatch_payload=payload_dict,
+        dispatch_user=user,
+    )
+    await add_job_event(job_id, "queued", {"queue_name": queue_name})
+
+    # ── Phase 5: Transactional Outbox write BEFORE queue dispatch ────────────
+    from backend.job_outbox import mark_outbox_dispatched, mark_outbox_error, register_outbox_pending
+    await register_outbox_pending(job_id, idempotency_key=idempotency_key)
+
     if USE_CELERY_DOWNLOADS:
         try:
             result = download_delivery_task.delay(job_id, payload_dict, user)
             await _store_job(job_id, celery_task_id=result.id)
+            await mark_outbox_dispatched(job_id, celery_task_id=result.id)
             return {"job_id": job_id, "status": "queued", "queue_name": queue_name, "runner": "celery", "celery_task_id": result.id}
         except Exception as exc:
             await record_queue_incident(
@@ -1452,10 +1698,13 @@ async def start_download(
             )
             await add_job_event(job_id, "dispatch_fallback_local", {"error": str(exc), "queue_name": queue_name})
             await _store_job(job_id, runner="local_async", error="Celery dispatch fallback activated", code="dispatch_fallback")
+            await mark_outbox_error(job_id, str(exc), 0)
             asyncio.create_task(run_download_job_async(job_id, payload_dict, user))
+            await mark_outbox_dispatched(job_id, celery_task_id=None)
             return {"job_id": job_id, "status": "queued", "queue_name": queue_name, "runner": "local_async"}
 
     asyncio.create_task(run_download_job_async(job_id, payload_dict, user))
+    await mark_outbox_dispatched(job_id, celery_task_id=None)
     return {"job_id": job_id, "status": "queued", "queue_name": queue_name, "runner": "local_async"}
 
 
@@ -1484,16 +1733,297 @@ async def download_progress(job_id: str) -> dict:
     }
 
 
+@app.get("/downloads/{job_id}/manifest")
+@app.get("/api/downloads/{job_id}/manifest")
+async def get_download_manifest(job_id: str) -> dict:
+    job = await get_job(job_id)
+    if not job or not job.get("manifest"):
+        raise HTTPException(status_code=404, detail="Manifest not found for job")
+    return job["manifest"]
+
+
+@app.post("/downloads/{job_id}/ticket")
+@app.post("/api/downloads/{job_id}/ticket")
+async def issue_download_ticket(
+    job_id: str,
+    payload: TicketRequest,
+    user: dict = Depends(get_current_user),
+) -> dict:
+    job = await get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    manifest_data = job.get("manifest") or {}
+    all_streams = (
+        manifest_data.get("media", {}).get("progressive", [])
+        + manifest_data.get("media", {}).get("video", [])
+        + manifest_data.get("media", {}).get("audio", [])
+        + manifest_data.get("media", {}).get("hls", [])
+    )
+    matching_stream = next(
+        (s for s in all_streams if str(s.get("format_id")) == str(payload.format_id) or str(s.get("id")) == str(payload.format_id)),
+        None
+    )
+    target_url = payload.target_url or (matching_stream.get("url") if matching_stream else None)
+    host = payload.host or (matching_stream.get("host") if matching_stream else "cdn")
+
+    res_type = (payload.ticket_type or "range").lower()
+    if res_type not in ("range", "playlist", "segment", "key"):
+        res_type = "range"
+
+    max_b = 52428800  # 50MB default for segment/range
+    if res_type == "playlist":
+        max_b = 2097152  # 2MB
+    elif res_type == "key":
+        max_b = 4096  # 4KB
+
+    ticket = issue_signed_ticket(
+        job_id=job_id,
+        user_id=str(user.get("id") or "anon"),
+        resource_id=payload.format_id,
+        allowed_host=host,
+        target_url=target_url,
+        resource_type=res_type,
+        max_bytes=max_b,
+    )
+    worker_base = (os.environ.get("SIGNED_WORKER_BASE_URL") or os.environ.get("NEXUS_WORKER_URL", "http://127.0.0.1:8787")).rstrip("/")
+    endpoint = f"{worker_base}/relay" if not worker_base.endswith("/relay") else worker_base
+    relay_url = f"{endpoint}?ticket={ticket}&url={quote(target_url, safe='')}&typ={res_type}" if target_url else None
+
+    return {
+        "ticket": ticket,
+        "job_id": job_id,
+        "format_id": payload.format_id,
+        "resource_type": res_type,
+        "target_url": target_url,
+        "relay_url": relay_url,
+        "worker_url": worker_base,
+        "expires_in": 900,
+    }
+
+
+@app.post("/downloads/{job_id}/strategy")
+@app.post("/api/downloads/{job_id}/strategy")
+async def get_download_strategy(
+    job_id: str,
+    payload: StrategyRequest,
+) -> dict:
+    job = await get_job(job_id)
+    if not job or not job.get("manifest"):
+        raise HTTPException(status_code=404, detail="Manifest not found for job")
+    manifest = MediaManifest(**job["manifest"])
+    caps = ClientCapabilities(**(payload.capabilities or {}))
+    decision = evaluate_strategy(manifest, payload.format_id, payload.format_type, caps)
+    return decision.model_dump()
+
+
+@app.post("/downloads/{job_id}/governor")
+@app.post("/api/downloads/{job_id}/governor")
+async def get_download_governor_decision(
+    job_id: str,
+    payload: GovernorRequest,
+) -> dict:
+    job = await get_job(job_id)
+    if not job or not job.get("manifest"):
+        raise HTTPException(status_code=404, detail="Manifest not found for job")
+    manifest = MediaManifest(**job["manifest"])
+    caps = ClientCapabilities(**(payload.capabilities or {}))
+    plat = PlatformCapabilities(**(payload.platform_capabilities or {})) if payload.platform_capabilities else None
+    mode = ExecutionMode(payload.execution_mode) if payload.execution_mode in [e.value for e in ExecutionMode] else ExecutionMode.NORMAL_CLIENT_FIRST
+    governor = get_execution_governor()
+    decision = governor.govern_execution(
+        manifest=manifest,
+        target_format_id=payload.format_id,
+        target_format_type=payload.format_type,
+        client_caps=caps,
+        platform_caps=plat,
+        mode=mode,
+        allow_client_sw_in_gpu_preferred=payload.allow_client_sw_in_gpu_preferred,
+    )
+    return decision.model_dump()
+
+
+@app.get("/api/governor/server-gpu")
+async def get_governor_server_gpu_info() -> dict:
+    return detect_server_gpu_capabilities().model_dump()
+
+
+@app.post("/downloads/{job_id}/complete")
+@app.post("/api/downloads/{job_id}/complete")
+async def report_download_complete(
+    job_id: str,
+    payload: DownloadCompleteRequest,
+    user: dict = Depends(get_current_user),
+) -> dict:
+    job = await get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    await update_job(
+        job_id,
+        status="completed",
+        progress=100,
+        delivery_mode=payload.delivery_mode,
+        size_bytes=payload.bytes_downloaded,
+        finished_at=datetime.now(timezone.utc).isoformat(),
+    )
+    await add_job_event(
+        job_id,
+        "completed",
+        {
+            "delivery_mode": payload.delivery_mode,
+            "bytes_downloaded": payload.bytes_downloaded,
+            "client_side": True,
+        },
+    )
+
+    user_id = user.get("id")
+    if user_id and supabase:
+        try:
+            manifest_data = job.get("manifest") or {}
+            source_data = manifest_data.get("source") or {}
+            title = source_data.get("title") or job.get("title") or "download"
+            url = source_data.get("url") or job.get("normalized_url") or ""
+            thumbnail = source_data.get("thumbnail") or job.get("thumbnail")
+            provider = source_data.get("provider") or job.get("provider") or "generic"
+            duration = int(source_data.get("duration") or 0)
+
+            history_row = {
+                "user_id": user_id,
+                "title": title,
+                "url": url,
+                "thumbnail": thumbnail,
+                "platform": provider,
+                "filesize": payload.bytes_downloaded,
+                "duration": duration,
+                "format": payload.format_id,
+                "format_type": "video",
+                "job_id": job_id,
+                "delivery_mode": payload.delivery_mode,
+            }
+            await asyncio.to_thread(lambda: supabase.table("media_history").insert(history_row).execute())
+        except Exception as exc:
+            log.warning("Failed to record media_history row for user %s: %s", user_id, exc)
+
+    return {"status": "ok", "job_id": job_id}
+
+
+@app.post("/downloads/{job_id}/cancel")
+@app.post("/api/downloads/{job_id}/cancel")
+async def cancel_download_job(job_id: str, user: dict = Depends(get_current_user)) -> dict:
+    job = await get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    # ── Phase 5: Ownership check on cancel ───────────────────────────────────
+    requesting_user_id = user.get("id")
+    job_user_id = job.get("user_id")
+    is_privileged = user.get("is_owner") or str(user.get("role") or "").lower() == "admin"
+    if not is_privileged and job_user_id and requesting_user_id and str(job_user_id) != str(requesting_user_id):
+        raise HTTPException(status_code=403, detail="Access denied.")
+
+    await update_job(job_id, status="cancelled")
+    await add_job_event(job_id, "cancelled", {"reason": "Cancelled by user"})
+
+    # ── Phase 5: Real-time process kill ──────────────────────────────────────
+    try:
+        from backend.download_handler import kill_active_process
+        killed = kill_active_process(job_id)
+        if killed:
+            log.info("Cancel: killed active subprocess for job %s", job_id)
+    except Exception as exc:
+        log.warning("Cancel: process kill failed for job %s: %s", job_id, exc)
+
+    # ── Phase 5: Celery task revoke ──────────────────────────────────────────
+    celery_task_id = job.get("celery_task_id")
+    if celery_task_id and USE_CELERY_DOWNLOADS:
+        try:
+            from backend.celery_app import celery_app
+            if celery_app:
+                celery_app.control.revoke(celery_task_id, terminate=True, signal="SIGTERM")
+                log.info("Cancel: revoked Celery task %s for job %s", celery_task_id, job_id)
+        except Exception as exc:
+            log.warning("Cancel: Celery revoke failed for job %s: %s", job_id, exc)
+
+    return {"status": "cancelled", "job_id": job_id}
+
+
 @app.get("/download/file/{job_id}")
 @app.get("/api/download/file/{job_id}")
-async def download_file(job_id: str) -> FileResponse:
+async def download_file(job_id: str, user: dict = Depends(get_current_user)) -> Response:
     job = await get_job(job_id)
-    if not job or job.get("status") != "completed" or not job.get("path"):
+    if not job or job.get("status") != "completed":
         raise HTTPException(status_code=404, detail="Download not ready")
 
-    path = job["path"]
+    # ── Phase 5: IDOR hardening ──────────────────────────────────────────────
+    # Only the job owner or a privileged operator may fetch the file.
+    requesting_user_id = user.get("id")
+    job_user_id = job.get("user_id")
+    is_privileged = user.get("is_owner") or str(user.get("role") or "").lower() == "admin"
+    if not is_privileged:
+        if not requesting_user_id:
+            raise HTTPException(status_code=401, detail="Authentication required to download this file.")
+        if job_user_id and str(job_user_id) != str(requesting_user_id):
+            log.warning(
+                "IDOR blocked: user %s attempted to access job %s owned by %s",
+                requesting_user_id, job_id, job_user_id,
+            )
+            raise HTTPException(status_code=403, detail="Access denied.")
+
+    # ── Phase 5: Artifact TTL check ──────────────────────────────────────────
+    expires_at = job.get("expires_at")
+    if expires_at:
+        try:
+            from datetime import datetime, timezone
+            expiry = datetime.fromisoformat(str(expires_at).replace("Z", "+00:00"))
+            if expiry.tzinfo is None:
+                expiry = expiry.replace(tzinfo=timezone.utc)
+            if expiry <= datetime.now(timezone.utc):
+                raise HTTPException(status_code=410, detail="Download link has expired.")
+        except HTTPException:
+            raise
+        except Exception:
+            pass  # Malformed expires_at — allow access
+
+    # ── Phase 6 P2.2: Multi-Instance Shared Storage / R2 Resolution ──────────
+    bucket_key = job.get("bucket_key")
+    delivery_mode = str(job.get("delivery_mode") or "").lower()
+    filename = job.get("filename") or f"{job_id}.mp4"
+
+    from backend.storage_handler import (
+        get_presigned_download_url,
+        is_enforce_object_storage,
+        is_r2_configured,
+    )
+
+    if bucket_key or delivery_mode == "r2_signed":
+        presigned_url = None
+        if bucket_key:
+            presigned_url = get_presigned_download_url(bucket_key, filename=filename)
+        if not presigned_url:
+            download_url = job.get("download_url") or job.get("fallback_url")
+            if download_url and str(download_url).startswith(("http://", "https://")):
+                presigned_url = download_url
+
+        if presigned_url:
+            return RedirectResponse(url=presigned_url, status_code=307)
+
+    # If object storage is enforced, local delivery is strictly forbidden
+    if is_enforce_object_storage():
+        raise HTTPException(
+            status_code=410,
+            detail="Local file delivery is disabled under mandatory object storage policy.",
+        )
+
+    # Fallback to local file delivery (Single-Node Dev only)
+    path = job.get("path")
+    if not path or not Path(path).exists():
+        raise HTTPException(
+            status_code=404,
+            detail="Artifact file not found on this instance. Multi-instance deployments require shared object storage (R2).",
+        )
+
     temp_dir = job.get("temp_dir")
-    filename = job.get("filename") or Path(path).name
     media_type = "video/mp4" if filename.lower().endswith(".mp4") else "application/octet-stream"
     return FileResponse(
         path=path,
@@ -1505,6 +2035,13 @@ async def download_file(job_id: str) -> FileResponse:
 
 @app.get("/api/fallback/{token}")
 async def signed_fallback_download(token: str) -> FileResponse:
+    from backend.storage_handler import is_enforce_object_storage
+    if is_enforce_object_storage():
+        raise HTTPException(
+            status_code=410,
+            detail="Local fallback artifact retrieval is disabled under mandatory object storage policy.",
+        )
+
     artifact_stats = get_local_artifact_stats()
     if not artifact_stats.get("registry_available"):
         raise HTTPException(status_code=503, detail="Fallback registry is unavailable.")
@@ -1900,31 +2437,46 @@ async def health() -> dict:
     }
 
 
+@app.get("/api/health/deep")
+async def health_deep() -> Response:
+    from backend.deep_health import evaluate_deep_health, is_deep_health_enabled
+    if not is_deep_health_enabled():
+        return Response(
+            content="# NEXUS deep health probe is disabled (set NEXUS_DEEP_HEALTH_ENABLED=true)\n",
+            status_code=404,
+            media_type="text/plain; charset=utf-8",
+        )
+    try:
+        report = await evaluate_deep_health()
+        status_code = 200 if report.get("ready", False) else 503
+        import json
+        return Response(
+            content=json.dumps(report, indent=2),
+            status_code=status_code,
+            media_type="application/json; charset=utf-8",
+        )
+    except Exception as exc:
+        log.warning("Deep health evaluation error: %s", exc)
+        return Response(
+            content=f'{{"status": "unhealthy", "ready": false, "error": "{str(exc)}"}}\n',
+            status_code=503,
+            media_type="application/json; charset=utf-8",
+        )
+
+
 @app.get("/metrics")
 async def metrics() -> Response:
-    try:
-        from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
-        from backend.api_v1.middleware import ensure_redis_or_fail
-        
-        redis_client = await ensure_redis_or_fail()
-        if redis_client:
-            # 1. Update Celery Task Success Metrics from Redis
-            async for key in redis_client.scan_iter("metrics:tasks:success:*"):
-                task_name = key.decode("utf-8").replace("metrics:tasks:success:", "") if isinstance(key, bytes) else key.replace("metrics:tasks:success:", "")
-                val = await redis_client.get(key)
-                if val:
-                    NEXUS_CELERY_TASKS_SUCCESS_TOTAL.labels(task_name=task_name).set(float(val))
-
-            # 2. Update Celery Task Failure Metrics from Redis
-            async for key in redis_client.scan_iter("metrics:tasks:failure:*"):
-                task_name = key.decode("utf-8").replace("metrics:tasks:failure:", "") if isinstance(key, bytes) else key.replace("metrics:tasks:failure:", "")
-                val = await redis_client.get(key)
-                if val:
-                    NEXUS_CELERY_TASKS_FAILURE_TOTAL.labels(task_name=task_name).set(float(val))
-    except Exception as exc:
-        log.warning("Failed updating Prometheus gauges from Redis: %s", exc)
+    from backend.metrics import generate_metrics_payload, is_metrics_enabled
+    if not is_metrics_enabled():
+        return Response(
+            content="# NEXUS metrics exporter is disabled (set NEXUS_METRICS_ENABLED=true)\n",
+            status_code=404,
+            media_type="text/plain; charset=utf-8",
+        )
 
     try:
-        return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
+        content, ctype = await generate_metrics_payload()
+        return Response(content=content, media_type=ctype)
     except Exception as exc:
-        return Response(content=f"# Metrics error: {str(exc)}", media_type="text/plain")
+        log.warning("Metrics generation error: %s", exc)
+        return Response(content=f"# Metrics error: {str(exc)}\n", status_code=500, media_type="text/plain; charset=utf-8")

@@ -58,7 +58,8 @@ local function check_and_reserve(keys, args)
     
     -- 3. Atomic Double-Entry asset reservation shift
     redis.call("HINCRBY", balance_key, "available", -cost)
-    redis.call("HSET", reserved_key, job_id, cost)
+    local reserved_val = tostring(cost) .. ":" .. tostring(now[1])
+    redis.call("HSET", reserved_key, job_id, reserved_val)
     
     return {1, available - cost, cost} -- Success
 end
@@ -83,27 +84,27 @@ async def load_redis_ledger_functions() -> None:
 async def populate_hot_balance_if_needed(user_id: str) -> None:
     """Read-through cache to sync Supabase balance to Redis on demand."""
     redis_client = _get_redis_client()
-    if redis_client is None or not supabase:
+    if redis_client is None:
         return
 
     balance_key = f"tenant:{user_id}:credits"
     try:
         exists = await redis_client.hexists(balance_key, "available")
         if not exists:
-            # Query cold store (Supabase)
-            res = supabase.table("profiles").select("clip_credits").eq("id", user_id).maybe_single().execute()
-            clip_credits = 0
-            if res.data:
-                clip_credits = int(res.data.get("clip_credits") or 0)
-            else:
-                log.warning("No profile found for user %s on Supabase during read-through", user_id)
-                # If profile doesn't exist, bootstrap it with 10 credits (default)
+            clip_credits = 50
+            if supabase:
                 try:
-                    # Fetch user email if possible from token payload context (not available here, so generic/none)
-                    supabase.table("profiles").insert({"id": user_id, "clip_credits": 10}).execute()
-                    clip_credits = 10
-                except Exception:
-                    pass
+                    res = supabase.table("profiles").select("clip_credits").eq("id", user_id).maybe_single().execute()
+                    if res.data and res.data.get("clip_credits") is not None:
+                        clip_credits = int(res.data.get("clip_credits") or 0)
+                    else:
+                        try:
+                            supabase.table("profiles").insert({"id": user_id, "clip_credits": 10}).execute()
+                            clip_credits = 10
+                        except Exception:
+                            pass
+                except Exception as exc:
+                    log.warning("Supabase read-through failed for %s: %s", user_id, exc)
 
             await redis_client.hset(balance_key, "available", clip_credits)
             await redis_client.expire(balance_key, 86400)  # 24 hour TTL
@@ -227,8 +228,8 @@ class CreditGateMiddleware(BaseHTTPMiddleware):
         if not user:
             return JSONResponse(status_code=401, content={"detail": "Authentication required"})
 
-        # Bypass billing/credits for admins and owners
-        if user.get("limit_bypass") or user.get("is_owner"):
+        # Bypass billing/credits for admins, owners, and subscribers on quota plans
+        if user.get("limit_bypass") or user.get("is_owner") or user.get("plan") in {"pro", "premium", "enterprise", "api", "api_growth"}:
             return await call_next(request)
 
         user_id = user.get("id")

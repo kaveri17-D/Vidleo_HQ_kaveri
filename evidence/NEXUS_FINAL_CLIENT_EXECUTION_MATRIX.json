@@ -1,0 +1,75 @@
+{
+  "title": "NEXUS Final Client Execution Governor Matrix",
+  "timestamp": "2026-10-04T11:26:02.156402+00:00",
+  "ten_hard_guarantees": [
+    {
+      "case": 1,
+      "condition": "User HW available",
+      "result": "CLIENT_HARDWARE",
+      "server_gpu": false,
+      "status": "PASS"
+    },
+    {
+      "case": 2,
+      "condition": "User HW unavailable, SW available",
+      "result": "CLIENT_SOFTWARE",
+      "server_gpu": false,
+      "status": "PASS"
+    },
+    {
+      "case": 3,
+      "condition": "User HW/SW unavailable",
+      "result": "SERVER_GPU",
+      "server_gpu": true,
+      "status": "PASS"
+    },
+    {
+      "case": 4,
+      "condition": "Server GPU unavailable",
+      "result": "SERVER_CPU in NORMAL_CLIENT_FIRST",
+      "server_gpu": false,
+      "status": "PASS"
+    },
+    {
+      "case": 5,
+      "condition": "GPU_REQUIRED + User GPU available",
+      "result": "CLIENT_HARDWARE",
+      "server_gpu": false,
+      "status": "PASS"
+    },
+    {
+      "case": 6,
+      "condition": "GPU_REQUIRED + User GPU unavail + Server GPU avail",
+      "result": "SERVER_GPU",
+      "server_gpu": true,
+      "status": "PASS"
+    },
+    {
+      "case": 7,
+      "condition": "GPU_REQUIRED + No User GPU + No Server GPU",
+      "result": "GPU_EXECUTION_UNAVAILABLE",
+      "server_gpu": false,
+      "status": "PASS"
+    },
+    {
+      "case": 8,
+      "condition": "Client success",
+      "result": "server_gpu_used = false",
+      "status": "PASS"
+    },
+    {
+      "case": 9,
+      "condition": "Server GPU fallback",
+      "result": "Explicit fallback_reason logged",
+      "status": "PASS"
+    },
+    {
+      "case": 10,
+      "condition": "Unexpected backend media transfer during client-success",
+      "result": "Immediate validation FAIL",
+      "status": "PASS"
+    }
+  ],
+  "universal_client_execution_policy": "PROVEN",
+  "universal_gpu_backed_execution": "PROVEN"
+}

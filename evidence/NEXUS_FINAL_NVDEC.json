@@ -1,0 +1,24 @@
+{
+  "title": "NEXUS Authoritative NVDEC Hardware Video Decoding Evidence",
+  "timestamp": "2026-10-04T14:33:11.144217+00:00",
+  "hardware": {
+    "device": "NVIDIA Quadro P3200 Mobile",
+    "driver": "580.178.04",
+    "cuda_compute": "6.1",
+    "render_node": "/dev/dri/renderD129"
+  },
+  "nvdec_decoder": "h264_cuvid",
+  "cuvid_capabilities": {
+    "8_bit": true,
+    "max_resolution": "4096x4096",
+    "formats": "nv12"
+  },
+  "test_run": {
+    "command": "ffmpeg -v verbose -y -c:v h264_cuvid -i /tmp/nexus_test/video.mp4 -c:v h264_nvenc -c:a copy /tmp/benchmark_gpu_nvdec_out.mp4",
+    "frames_decoded": 90,
+    "errors": 0,
+    "duration_seconds": 0.4839,
+    "status": "PROVEN"
+  },
+  "distinction_note": "NVDEC is hardware decoding (cuvid); NVENC is hardware encoding. Both individually proven."
+}

@@ -1,0 +1,24 @@
+{
+  "title": "NEXUS Codec Matrix & Hardware/Software Support",
+  "timestamp": "2026-10-04T14:33:11.144217+00:00",
+  "codecs": [
+    {
+      "codec": "H.264 / AVC",
+      "client_hw": "PROVEN (VaapiVideoDecoder)",
+      "client_sw": "AVAILABLE",
+      "server_gpu": "PROVEN (h264_cuvid/h264_nvenc)"
+    },
+    {
+      "codec": "VP9",
+      "client_hw": "PROVEN (VaapiVideoDecoder)",
+      "client_sw": "AVAILABLE",
+      "server_gpu": "PROVEN (vp9_cuvid)"
+    },
+    {
+      "codec": "AV1",
+      "client_hw": "UNSUPPORTED_ON_COFFEE_LAKE",
+      "client_sw": "PROVEN (libdav1d / WebAssembly)",
+      "server_gpu": "AVAILABLE_CPU_FALLBACK"
+    }
+  ]
+}

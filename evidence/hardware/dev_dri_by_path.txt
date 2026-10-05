@@ -1,0 +1,8 @@
+total 0
+drwxr-xr-x 2 root root 140 Sep 23 10:24 .
+drwxr-xr-x 3 root root 140 Sep 23 10:24 ..
+lrwxrwxrwx+1 root root   8 Sep 23 10:24 pci-0000:00:02.0-card -> ../card1
+lrwxrwxrwx 1 root root   8 Sep 23 10:24 pci-0000:00:02.0-platform-simple-framebuffer.0-card -> ../card0
+lrwxrwxrwx+1 root root  13 Sep 23 10:24 pci-0000:00:02.0-render -> ../renderD128
+lrwxrwxrwx+1 root root   8 Sep 23 10:24 pci-0000:01:00.0-card -> ../card2
+lrwxrwxrwx+1 root root  13 Sep 23 10:24 pci-0000:01:00.0-render -> ../renderD129

@@ -1,0 +1,17 @@
+{
+  "h264_1080p": {
+    "supported": true,
+    "smooth": true,
+    "powerEfficient": true
+  },
+  "vp9_1080p": {
+    "supported": true,
+    "smooth": true,
+    "powerEfficient": true
+  },
+  "vp9_4k": {
+    "supported": true,
+    "smooth": true,
+    "powerEfficient": true
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "title": "NEXUS Authoritative NVENC Hardware Video Encoding Evidence",
+  "timestamp": "2026-10-04T14:33:11.144217+00:00",
+  "hardware": {
+    "device": "NVIDIA Quadro P3200 Mobile",
+    "driver": "580.178.04",
+    "nvenc_version": "13.0"
+  },
+  "nvenc_encoder": "h264_nvenc",
+  "test_run": {
+    "frames_encoded": 90,
+    "errors": 0,
+    "output_size_bytes": 142555,
+    "status": "PROVEN"
+  }
+}

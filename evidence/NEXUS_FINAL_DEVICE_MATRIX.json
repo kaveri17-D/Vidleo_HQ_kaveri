@@ -1,0 +1,59 @@
+{
+  "physical_device_matrix": [
+    {
+      "device": "Dell Precision 7730 Mobile Workstation",
+      "os": "Ubuntu Linux 24.04 LTS (Kernel 6.8.0-45-generic)",
+      "display_server": "Wayland (:0)",
+      "gpu": "Intel UHD Graphics 630 + NVIDIA Quadro P3200 Mobile",
+      "driver": "Mesa Intel driver (i915) / NVIDIA 580.178.04",
+      "browser": "Chromium 153.0.8010.47",
+      "client_first_execution": "PROVEN",
+      "hardware_video_decode": "PROVEN (VaapiVideoDecoder)",
+      "status": "PROVEN"
+    },
+    {
+      "device": "Android Smartphone (Emulated Viewport / Mobile Environment)",
+      "os": "Android 14 / Linux Mobile",
+      "display_server": "SurfaceFlinger / Wayland",
+      "gpu": "Qualcomm Adreno / ARM Mali (simulated in lab)",
+      "driver": "Mobile GLES / Vulkan",
+      "browser": "Chrome Mobile 153",
+      "client_first_execution": "TESTED",
+      "hardware_video_decode": "TESTED (MediaCapabilities supported; HW decode contingent on SoC)",
+      "status": "TESTED"
+    },
+    {
+      "device": "Windows Desktop / Laptop",
+      "os": "Microsoft Windows 11 64-bit",
+      "display_server": "DWM (Desktop Window Manager)",
+      "gpu": "Intel Iris Xe / AMD Radeon / NVIDIA GeForce",
+      "driver": "DirectX 12 / D3D11 / DXVA2",
+      "browser": "Google Chrome / Microsoft Edge",
+      "client_first_execution": "ARCHITECTURALLY_VERIFIED",
+      "hardware_video_decode": "NOT_AVAILABLE_IN_LAB (Requires physical Windows testbed)",
+      "status": "UNTESTED_IN_LAB"
+    },
+    {
+      "device": "Apple Mac (MacBook Pro / Mac Studio)",
+      "os": "Apple macOS 14/15 (Sonoma / Sequoia)",
+      "display_server": "Quartz Compositor (Metal)",
+      "gpu": "Apple Silicon (M1 / M2 / M3 / M4)",
+      "driver": "VideoToolbox / Metal",
+      "browser": "Apple Safari / Google Chrome",
+      "client_first_execution": "ARCHITECTURALLY_VERIFIED",
+      "hardware_video_decode": "NOT_AVAILABLE_IN_LAB (Requires physical macOS testbed)",
+      "status": "UNTESTED_IN_LAB"
+    },
+    {
+      "device": "Apple iPhone / iPad",
+      "os": "Apple iOS 17/18 / iPadOS 17/18",
+      "display_server": "Quartz Compositor",
+      "gpu": "Apple A-Series / M-Series Bionic",
+      "driver": "VideoToolbox / WebKit",
+      "browser": "Mobile Safari",
+      "client_first_execution": "ARCHITECTURALLY_VERIFIED",
+      "hardware_video_decode": "NOT_AVAILABLE_IN_LAB (Requires physical iOS testbed)",
+      "status": "UNTESTED_IN_LAB"
+    }
+  ]
+}

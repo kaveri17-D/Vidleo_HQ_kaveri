@@ -1,0 +1,7 @@
+{
+  "platform": "iOS / iPadOS",
+  "storage_type": "Files / App Download Destination",
+  "status": "NOT_AVAILABLE_IN_LAB",
+  "reason": "Physical iOS device absent in lab (usbmuxd inactive)",
+  "tested": false
+}

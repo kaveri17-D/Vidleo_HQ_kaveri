@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vidleo NEXUS</title>
+  <style>
+    :root {
+      --bg: #090d16;
+      --card: #131b2e;
+      --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --border: #1e293b;
+      --success: #10b981;
+      --error: #ef4444;
+    }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    body {
+      width: 360px;
+      background: var(--bg);
+      color: var(--text);
+      padding: 16px;
+      font-size: 14px;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border);
+    }
+    .title {
+      font-weight: 700;
+      font-size: 16px;
+      color: #60a5fa;
+      letter-spacing: -0.02em;
+    }
+    .badge {
+      font-size: 10px;
+      text-transform: uppercase;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: rgba(59, 130, 246, 0.2);
+      color: #93c5fd;
+      font-weight: 600;
+    }
+    .group {
+      margin-bottom: 12px;
+    }
+    label {
+      display: block;
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+    }
+    input, select {
+      width: 100%;
+      padding: 8px 10px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 13px;
+      outline: none;
+    }
+    input:focus, select:focus {
+      border-color: var(--primary);
+    }
+    .btn-row {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    button {
+      flex: 1;
+      padding: 8px 12px;
+      background: var(--primary);
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    button:hover:not(:disabled) {
+      background: var(--primary-hover);
+    }
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    button.secondary {
+      background: var(--border);
+      color: var(--text-muted);
+    }
+    button.secondary:hover:not(:disabled) {
+      background: #334155;
+      color: var(--text);
+    }
+    .progress-box {
+      margin-top: 14px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+      display: none;
+    }
+    .progress-header {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      margin-bottom: 6px;
+    }
+    .progress-bar-bg {
+      width: 100%;
+      height: 6px;
+      background: var(--border);
+      border-radius: 3px;
+      overflow: hidden;
+      margin-bottom: 6px;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      width: 0%;
+      background: var(--primary);
+      transition: width 0.2s;
+    }
+    .status-text {
+      font-size: 11px;
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .error-text {
+      color: var(--error);
+      font-size: 12px;
+      margin-top: 8px;
+      display: none;
+    }
+    .success-text {
+      color: var(--success);
+      font-size: 12px;
+      margin-top: 8px;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="title">VIDLEO NEXUS</div>
+    <div class="badge">MV3 EXTENSION</div>
+  </div>
+
+  <div class="group">
+    <label for="urlInput">Target Video URL</label>
+    <input type="text" id="urlInput" placeholder="https://www.youtube.com/watch?v=..." />
+  </div>
+
+  <div class="btn-row">
+    <button id="resolveBtn">Resolve Stream</button>
+  </div>
+
+  <div class="group" id="formatGroup" style="display: none; margin-top: 10px;">
+    <label for="formatSelect">Available Streams</label>
+    <select id="formatSelect"></select>
+    <div class="btn-row">
+      <button id="downloadBtn">Start Client Download</button>
+      <button id="cancelBtn" class="secondary" disabled>Cancel</button>
+    </div>
+  </div>
+
+  <div class="progress-box" id="progressBox">
+    <div class="progress-header">
+      <span id="stageLabel">Preparing</span>
+      <span id="percentLabel">0%</span>
+    </div>
+    <div class="progress-bar-bg">
+      <div class="progress-bar-fill" id="progressFill"></div>
+    </div>
+    <div class="status-text" id="statusMessage">Initializing MediaEngine...</div>
+  </div>
+
+  <div class="error-text" id="errorBox"></div>
+  <div class="success-text" id="successBox"></div>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

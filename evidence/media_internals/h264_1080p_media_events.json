@@ -1,0 +1,506 @@
+[
+  {
+    "method": "Media.playerCreated",
+    "params": {
+      "player": {
+        "playerId": "F0BB95B3527D94E41F517CAA7490CA0A"
+      }
+    }
+  },
+  {
+    "method": "Media.playerEventsAdded",
+    "params": {
+      "playerId": "F0BB95B3527D94E41F517CAA7490CA0A",
+      "events": [
+        {
+          "timestamp": 215918.198184,
+          "value": "{\"created\":\"2026-10-04 10:10:18.825050 UTC\",\"event\":\"kMediaLogCreated\"}"
+        },
+        {
+          "timestamp": 215918.198221,
+          "value": "{\"event\":\"kLoad\",\"url\":\"WebCodecs::VideoDecoder\"}"
+        },
+        {
+          "timestamp": 215918.302885,
+          "value": "{\"event\":\"kWebMediaPlayerDestroyed\"}"
+        }
+      ]
+    }
+  },
+  {
+    "method": "Media.playerPropertiesChanged",
+    "params": {
+      "playerId": "F0BB95B3527D94E41F517CAA7490CA0A",
+      "properties": [
+        {
+          "name": "kVideoDecoderName",
+          "value": "VaapiVideoDecoder"
+        },
+        {
+          "name": "kVideoTracks",
+          "value": "[{\"alpha mode\":\"is_opaque\",\"codec\":\"h264\",\"coded size\":\"1920x1080\",\"color space\":{\"matrix\":\"BT709\",\"primaries\":\"BT709\",\"range\":\"LIMITED\",\"transfer\":\"BT709\"},\"encryption scheme\":\"Unencrypted\",\"has extra data\":false,\"hdr metadata\":{},\"natural size\":\"1920x1080\",\"orientation\":\"0°\",\"profile\":\"h264 main\",\"visible rect\":\"0,0 1920x1080\"}]"
+        },
+        {
+          "name": "kIsPlatformVideoDecoder",
+          "value": "true"
+        },
+        {
+          "name": "kFrameUrl",
+          "value": "http://localhost:3000/"
+        },
+        {
+          "name": "kFrameTitle",
+          "value": "Vidleo — Video Downloader | Synapvo Tech"
+        }
+      ]
+    }
+  },
+  {
+    "method": "Media.playerMessagesLogged",
+    "params": {
+      "playerId": "F0BB95B3527D94E41F517CAA7490CA0A",
+      "messages": [
+        {
+          "level": "info",
+          "message": "VideoDecoderPipeline |decoder_| Initialize() successful"
+        },
+        {
+          "level": "info",
+          "message": "Initialized VideoDecoder: codec: h264, profile: h264 main, level: not available, alpha_mode: is_opaque, coded size: [1920,1080], visible rect: [0,0,1920,1080], natural size: [1920,1080], has extra data: false, encryption scheme: Unencrypted, rotation: 0°, flipped: 0, color space: {primaries:BT709, transfer:BT709, matrix:BT709, range:LIMITED}, spatial format: [projection_type: none, stereo_mode: mono]"
+        },
+        {
+          "level": "info",
+          "message": "VideoDecoderPipeline |decoder_| Initialize() successful"
+        }
+      ]
+    }
+  },
+  {
+    "method": "Media.playerCreated",
+    "params": {
+      "player": {
+        "playerId": "3610C73B3BCEB74F6A1EB8B01E40E976"
+      }
+    }
+  },
+  {
+    "method": "Media.playerEventsAdded",
+    "params": {
+      "playerId": "3610C73B3BCEB74F6A1EB8B01E40E976",
+      "events": [
+        {
+          "timestamp": 215919.411831,
+          "value": "{\"created\":\"2026-10-04 10:10:20.038697 UTC\",\"event\":\"kMediaLogCreated\"}"
+        },
+        {
+          "timestamp": 215919.41188,
+          "value": "{\"event\":\"kLoad\",\"url\":\"WebCodecs::VideoDecoder\"}"
+        },
+        {
+          "timestamp": 215919.510139,
+          "value": "{\"event\":\"kWebMediaPlayerDestroyed\"}"
+        }
+      ]
+    }
+  },
+  {
+    "method": "Media.playerPropertiesChanged",
+    "params": {
+      "playerId": "3610C73B3BCEB74F6A1EB8B01E40E976",
+      "properties": [
+        {
+          "name": "kVideoDecoderName",
+          "value": "FFmpegVideoDecoder"
+        },
+        {
+          "name": "kVideoTracks",
+          "value": "[{\"alpha mode\":\"is_opaque\",\"codec\":\"h264\",\"coded size\":\"1920x1080\",\"color space\":{\"matrix\":\"BT709\",\"primaries\":\"BT709\",\"range\":\"LIMITED\",\"transfer\":\"BT709\"},\"encryption scheme\":\"Unencrypted\",\"has extra data\":false,\"hdr metadata\":{},\"natural size\":\"1920x1080\",\"orientation\":\"0°\",\"profile\":\"h264 main\",\"visible rect\":\"0,0 1920x1080\"}]"
+        },
+        {
+          "name": "kIsPlatformVideoDecoder",
+          "value": "false"
+        },
+        {
+          "name": "kFrameUrl",
+          "value": "http://localhost:3000/"
+        },
+        {
+          "name": "kFrameTitle",
+          "value": "Vidleo — Video Downloader | Synapvo Tech"
+        }
+      ]
+    }
+  },
+  {
+    "method": "Media.playerMessagesLogged",
+    "params": {
+      "playerId": "3610C73B3BCEB74F6A1EB8B01E40E976",
+      "messages": [
+        {
+          "level": "info",
+          "message": "Cannot select DecryptingVideoDecoder for video decoding. status=DecoderStatus::Codes::kUnsupportedEncryptionMode"
+        },
+        {
+          "level": "info",
+          "message": "Cannot select VpxVideoDecoder for video decoding. status=DecoderStatus::Codes::kUnsupportedConfig"
+        },
+        {
+          "level": "info",
+          "message": "Cannot select Dav1dVideoDecoder for video decoding. status=DecoderStatus::Codes::kUnsupportedCodec"
+        },
+        {
+          "level": "info",
+          "message": "Initialized VideoDecoder: codec: h264, profile: h264 main, level: not available, alpha_mode: is_opaque, coded size: [1920,1080], visible rect: [0,0,1920,1080], natural size: [1920,1080], has extra data: false, encryption scheme: Unencrypted, rotation: 0°, flipped: 0, color space: {primaries:BT709, transfer:BT709, matrix:BT709, range:LIMITED}, spatial format: [projection_type: none, stereo_mode: mono]"
+        }
+      ]
+    }
+  },
+  {
+    "method": "Media.playerCreated",
+    "params": {
+      "player": {
+        "playerId": "86B6AC414C5238764BEB1B84B6D1A764"
+      }
+    }
+  },
+  {
+    "method": "Media.playerEventsAdded",
+    "params": {
+      "playerId": "86B6AC414C5238764BEB1B84B6D1A764",
+      "events": [
+        {
+          "timestamp": 215920.554242,
+          "value": "{\"created\":\"2026-10-04 10:10:21.181108 UTC\",\"event\":\"kMediaLogCreated\"}"
+        },
+        {
+          "timestamp": 215920.554267,
+          "value": "{\"event\":\"kLoad\",\"url\":\"WebCodecs::VideoDecoder\"}"
+        },
+        {
+          "timestamp": 215920.778869,
+          "value": "{\"event\":\"kWebMediaPlayerDestroyed\"}"
+        }
+      ]
+    }
+  },
+  {
+    "method": "Media.playerPropertiesChanged",
+    "params": {
+      "playerId": "86B6AC414C5238764BEB1B84B6D1A764",
+      "properties": [
+        {
+          "name": "kVideoDecoderName",
+          "value": "VaapiVideoDecoder"
+        },
+        {
+          "name": "kVideoTracks",
+          "value": "[{\"alpha mode\":\"is_opaque\",\"codec\":\"vp9\",\"coded size\":\"3840x2160\",\"color space\":{\"matrix\":\"BT709\",\"primaries\":\"BT709\",\"range\":\"LIMITED\",\"transfer\":\"BT709\"},\"encryption scheme\":\"Unencrypted\",\"has extra data\":false,\"hdr metadata\":{},\"natural size\":\"3840x2160\",\"orientation\":\"0°\",\"profile\":\"vp9 profile0\",\"visible rect\":\"0,0 3840x2160\"}]"
+        },
+        {
+          "name": "kIsPlatformVideoDecoder",
+          "value": "true"
+        },
+        {
+          "name": "kFrameUrl",
+          "value": "http://localhost:3000/"
+        },
+        {
+          "name": "kFrameTitle",
+          "value": "Vidleo — Video Downloader | Synapvo Tech"
+        }
+      ]
+    }
+  },
+  {
+    "method": "Media.playerMessagesLogged",
+    "params": {
+      "playerId": "86B6AC414C5238764BEB1B84B6D1A764",
+      "messages": [
+        {
+          "level": "info",
+          "message": "VideoDecoderPipeline |decoder_| Initialize() successful"
+        },
+        {
+          "level": "info",
+          "message": "Initialized VideoDecoder: codec: vp9, profile: vp9 profile0, level: not available, alpha_mode: is_opaque, coded size: [3840,2160], visible rect: [0,0,3840,2160], natural size: [3840,2160], has extra data: false, encryption scheme: Unencrypted, rotation: 0°, flipped: 0, color space: {primaries:BT709, transfer:BT709, matrix:BT709, range:LIMITED}, spatial format: [projection_type: none, stereo_mode: mono]"
+        },
+        {
+          "level": "info",
+          "message": "VideoDecoderPipeline |decoder_| Initialize() successful"
+        }
+      ]
+    }
+  },
+  {
+    "method": "Media.playerCreated",
+    "params": {
+      "player": {
+        "playerId": "5D7C212D582050D919F92559E022C6D7"
+      }
+    }
+  },
+  {
+    "method": "Media.playerEventsAdded",
+    "params": {
+      "playerId": "5D7C212D582050D919F92559E022C6D7",
+      "events": [
+        {
+          "timestamp": 215921.929963,
+          "value": "{\"created\":\"2026-10-04 10:10:22.556828 UTC\",\"event\":\"kMediaLogCreated\"}"
+        },
+        {
+          "timestamp": 215921.930028,
+          "value": "{\"event\":\"kLoad\",\"url\":\"WebCodecs::VideoDecoder\"}"
+        },
+        {
+          "timestamp": 215922.279285,
+          "value": "{\"event\":\"kWebMediaPlayerDestroyed\"}"
+        }
+      ]
+    }
+  },
+  {
+    "method": "Media.playerPropertiesChanged",
+    "params": {
+      "playerId": "5D7C212D582050D919F92559E022C6D7",
+      "properties": [
+        {
+          "name": "kVideoDecoderName",
+          "value": "VpxVideoDecoder"
+        },
+        {
+          "name": "kVideoTracks",
+          "value": "[{\"alpha mode\":\"is_opaque\",\"codec\":\"vp9\",\"coded size\":\"3840x2160\",\"color space\":{\"matrix\":\"BT709\",\"primaries\":\"BT709\",\"range\":\"LIMITED\",\"transfer\":\"BT709\"},\"encryption scheme\":\"Unencrypted\",\"has extra data\":false,\"hdr metadata\":{},\"natural size\":\"3840x2160\",\"orientation\":\"0°\",\"profile\":\"vp9 profile0\",\"visible rect\":\"0,0 3840x2160\"}]"
+        },
+        {
+          "name": "kIsPlatformVideoDecoder",
+          "value": "false"
+        },
+        {
+          "name": "kFrameUrl",
+          "value": "http://localhost:3000/"
+        },
+        {
+          "name": "kFrameTitle",
+          "value": "Vidleo — Video Downloader | Synapvo Tech"
+        }
+      ]
+    }
+  },
+  {
+    "method": "Media.playerMessagesLogged",
+    "params": {
+      "playerId": "5D7C212D582050D919F92559E022C6D7",
+      "messages": [
+        {
+          "level": "info",
+          "message": "Cannot select DecryptingVideoDecoder for video decoding. status=DecoderStatus::Codes::kUnsupportedEncryptionMode"
+        },
+        {
+          "level": "info",
+          "message": "Initialized VideoDecoder: codec: vp9, profile: vp9 profile0, level: not available, alpha_mode: is_opaque, coded size: [3840,2160], visible rect: [0,0,3840,2160], natural size: [3840,2160], has extra data: false, encryption scheme: Unencrypted, rotation: 0°, flipped: 0, color space: {primaries:BT709, transfer:BT709, matrix:BT709, range:LIMITED}, spatial format: [projection_type: none, stereo_mode: mono]"
+        }
+      ]
+    }
+  },
+  {
+    "method": "Media.playerCreated",
+    "params": {
+      "player": {
+        "playerId": "33A204D20D5A17327DD5C0BEC2F1DD8B"
+      }
+    }
+  },
+  {
+    "method": "Media.playerEventsAdded",
+    "params": {
+      "playerId": "33A204D20D5A17327DD5C0BEC2F1DD8B",
+      "events": [
+        {
+          "timestamp": 215922.367629,
+          "value": "{\"created\":\"2026-10-04 10:10:22.994495 UTC\",\"event\":\"kMediaLogCreated\"}"
+        },
+        {
+          "timestamp": 215922.367744,
+          "value": "{\"event\":\"kWebMediaPlayerCreated\",\"origin_url\":\"http://localhost:3000/\"}"
+        },
+        {
+          "timestamp": 215922.367814,
+          "value": "{\"event\":\"kLoad\",\"url\":\"http://localhost:3000/test-media/remux_1080p.mp4\"}"
+        },
+        {
+          "timestamp": 215922.405293,
+          "value": "{\"event\":\"kPipelineStateChange\",\"pipeline_state\":\"kStarting\"}"
+        },
+        {
+          "timestamp": 215922.462058,
+          "value": "{\"event\":\"kPipelineStateChange\",\"pipeline_state\":\"kPlaying\"}"
+        },
+        {
+          "timestamp": 215922.467303,
+          "value": "{\"dimensions\":\"1920x1080\",\"event\":\"kVideoSizeChanged\"}"
+        },
+        {
+          "timestamp": 215922.40717,
+          "value": "{\"duration\":5.2,\"event\":\"kDurationChanged\"}"
+        },
+        {
+          "timestamp": 215922.471484,
+          "value": "{\"event\":\"kBufferingStateChanged\",\"video_buffering_state\":{\"state\":\"BUFFERING_HAVE_ENOUGH\"}}"
+        },
+        {
+          "timestamp": 215922.463256,
+          "value": "{\"audio_buffering_state\":{\"state\":\"BUFFERING_HAVE_ENOUGH\"},\"event\":\"kBufferingStateChanged\"}"
+        },
+        {
+          "timestamp": 215922.471518,
+          "value": "{\"event\":\"kBufferingStateChanged\",\"pipeline_buffering_state\":{\"for_suspended_start\":false,\"state\":\"BUFFERING_HAVE_ENOUGH\"}}"
+        },
+        {
+          "timestamp": 215922.504103,
+          "value": "{\"event\":\"kPlay\"}"
+        }
+      ]
+    }
+  },
+  {
+    "method": "Media.playerPropertiesChanged",
+    "params": {
+      "playerId": "33A204D20D5A17327DD5C0BEC2F1DD8B",
+      "properties": [
+        {
+          "name": "kVideoDecoderName",
+          "value": "VaapiVideoDecoder"
+        },
+        {
+          "name": "kIsStreaming",
+          "value": "false"
+        },
+        {
+          "name": "kFrameUrl",
+          "value": "http://localhost:3000/test-render.html?src=/test-media/remux_1080p.mp4"
+        },
+        {
+          "name": "kAudioTracks",
+          "value": "[{\"bytes per channel\":4,\"bytes per frame\":4,\"channel layout\":\"MONO\",\"channels\":1,\"codec\":\"aac\",\"codec delay\":0,\"discard decoder delay\":true,\"encryption scheme\":\"Unencrypted\",\"has extra data\":true,\"profile\":\"unknown\",\"sample format\":\"Float 32-bit planar\",\"samples per second\":44100,\"seek preroll\":\"0us\"}]"
+        },
+        {
+          "name": "kResolution",
+          "value": "1920x1080"
+        },
+        {
+          "name": "kRendererName",
+          "value": "RendererImpl"
+        },
+        {
+          "name": "kTotalBytes",
+          "value": "0x31f82"
+        },
+        {
+          "name": "kMaxDuration",
+          "value": "5.2"
+        },
+        {
+          "name": "kFrameTitle",
+          "value": "NEXUS Real Client-Side Rendering & GPU Telemetry"
+        },
+        {
+          "name": "kIsPlatformAudioDecoder",
+          "value": "false"
+        },
+        {
+          "name": "kAudioDecoderName",
+          "value": "FFmpegAudioDecoder"
+        },
+        {
+          "name": "kVideoTracks",
+          "value": "[{\"alpha mode\":\"is_opaque\",\"codec\":\"h264\",\"coded size\":\"1920x1080\",\"color space\":{\"matrix\":\"BT709\",\"primaries\":\"BT709\",\"range\":\"LIMITED\",\"transfer\":\"BT709\"},\"encryption scheme\":\"Unencrypted\",\"has extra data\":true,\"hdr metadata\":{},\"natural size\":\"1920x1080\",\"orientation\":\"0°\",\"profile\":\"h264 high\",\"visible rect\":\"0,0 1920x1080\"}]"
+        },
+        {
+          "name": "kIsRangeHeaderSupported",
+          "value": "true"
+        },
+        {
+          "name": "kIsVideoDecryptingDemuxerStream",
+          "value": "false"
+        },
+        {
+          "name": "kStartTime",
+          "value": "0.0"
+        },
+        {
+          "name": "kBitrate",
+          "value": "314883"
+        },
+        {
+          "name": "kIsPlatformVideoDecoder",
+          "value": "true"
+        },
+        {
+          "name": "kIsSingleOrigin",
+          "value": "true"
+        },
+        {
+          "name": "kIsAudioDecryptingDemuxerStream",
+          "value": "false"
+        }
+      ]
+    }
+  },
+  {
+    "method": "Media.playerMessagesLogged",
+    "params": {
+      "playerId": "33A204D20D5A17327DD5C0BEC2F1DD8B",
+      "messages": [
+        {
+          "level": "info",
+          "message": "FFmpegDemuxer: created video stream, config codec: h264, profile: h264 high, level: not available, alpha_mode: is_opaque, coded size: [1920,1080], visible rect: [0,0,1920,1080], natural size: [1920,1080], has extra data: true, encryption scheme: Unencrypted, rotation: 0°, flipped: 0, color space: {primaries:BT709, transfer:BT709, matrix:BT709, range:LIMITED}, spatial format: [projection_type: none, stereo_mode: mono]"
+        },
+        {
+          "level": "info",
+          "message": "FFmpegDemuxer: created audio stream, config codec: aac, profile: unknown, bytes_per_channel: 4, channel_layout: MONO, channels: 1, samples_per_second: 44100, sample_format: Float 32-bit planar, bytes_per_frame: 4, seek_preroll: 0us, codec_delay: 0, has extra data: true, encryption scheme: Unencrypted, discard decoder delay: true, target_output_channel_layout: NONE, target_output_sample_format: Unknown sample format"
+        },
+        {
+          "level": "info",
+          "message": "Cannot select SymphoniaAudioDecoder for audio decoding. status=DecoderStatus::Codes::kUnsupportedCodec"
+        },
+        {
+          "level": "info",
+          "message": "Cannot select IamfAudioDecoder for audio decoding. status=DecoderStatus::Codes::kUnsupportedCodec"
+        },
+        {
+          "level": "info",
+          "message": "Cannot select OpusAudioDecoder for audio decoding. status=DecoderStatus::Codes::kUnsupportedConfig"
+        },
+        {
+          "level": "info",
+          "message": "Selected FFmpegAudioDecoder for audio decoding, config: codec: aac, profile: unknown, bytes_per_channel: 4, channel_layout: MONO, channels: 1, samples_per_second: 44100, sample_format: Float 32-bit planar, bytes_per_frame: 4, seek_preroll: 0us, codec_delay: 0, has extra data: true, encryption scheme: Unencrypted, discard decoder delay: true, target_output_channel_layout: STEREO, target_output_sample_format: Unknown sample format"
+        },
+        {
+          "level": "info",
+          "message": "VideoDecoderPipeline |decoder_| Initialize() successful"
+        },
+        {
+          "level": "info",
+          "message": "Selected VaapiVideoDecoder for video decoding, config: codec: h264, profile: h264 high, level: not available, alpha_mode: is_opaque, coded size: [1920,1080], visible rect: [0,0,1920,1080], natural size: [1920,1080], has extra data: true, encryption scheme: Unencrypted, rotation: 0°, flipped: 0, color space: {primaries:BT709, transfer:BT709, matrix:BT709, range:LIMITED}, spatial format: [projection_type: none, stereo_mode: mono]"
+        },
+        {
+          "level": "info",
+          "message": "Effective playback rate changed from 0 to 1"
+        }
+      ]
+    }
+  },
+  {
+    "method": "Media.playerMessagesLogged",
+    "params": {
+      "playerId": "33A204D20D5A17327DD5C0BEC2F1DD8B",
+      "messages": [
+        {
+          "level": "debug",
+          "message": "FFmpegDemuxer: av_read_frame(): End of file"
+        }
+      ]
+    }
+  }
+]

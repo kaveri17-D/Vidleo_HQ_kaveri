@@ -1,0 +1,5 @@
+crw-rw-rw- 1 root root 195, 254 Sep 23 10:24 /dev/nvidia-modeset
+crw-rw-rw- 1 root root 506,   0 Sep 23 10:24 /dev/nvidia-uvm
+crw-rw-rw- 1 root root 506,   1 Sep 23 10:24 /dev/nvidia-uvm-tools
+crw-rw-rw- 1 root root 195,   0 Sep 23 10:24 /dev/nvidia0
+crw-rw-rw- 1 root root 195, 255 Sep 23 10:24 /dev/nvidiactl

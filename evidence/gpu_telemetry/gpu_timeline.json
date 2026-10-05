@@ -1,0 +1,24 @@
+{
+  "t0_idle": {
+    "timestamp": "2026-10-04T10:10:15.666Z",
+    "stage": "T0_IDLE",
+    "nvidia_smi": "0, 0, 5, 49, 7.95"
+  },
+  "t1_remux": {
+    "timestamp": "2026-10-04T10:10:22.940Z",
+    "stage": "T1_BROWSER_REMUX",
+    "client_cpu_bound_demux_mux": true,
+    "server_ffmpeg_pid_count": "0\n0"
+  },
+  "t2_playback": {
+    "timestamp": "2026-10-04T10:10:26.981Z",
+    "stage": "T2_PLAYBACK_DECODE",
+    "nvidia_smi": "0, 0, 5, 50, 7.58",
+    "active_vaapi_processes": "489838 /snap/chromium/3537/usr/lib/chromium-browser/chrome --type=gpu-process --enable-gpu-rasterization --ozone-platform=wayland --render-node-override=/dev/dri/renderD128 --crashpad-handler-pid=489762 --enable-crash-reporter=,snap --user-data-dir=/tmp/nexus_final_master_profile --disable-breakpad --change-stack-guard-on-fork=enable --gpu-preferences=YAAAAAAAAAAgAQAMAAAAAAAAAAAAAGAASAAAAAAAAAABAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAMAAAAAAAAAAwAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAMAAAAAQAAAAAAAAAAAAAACAAAAAAAAAAIAAAAAAAAAA== --shared-files --metrics-shmem-handle=4,i,1158084758628292815,10792538224366121165,262144 --field-trial-handle=3,i,3824971344414094729,15733071084888115960,262144 --enable-features=VaapiVideoDecodeLinuxGL,VaapiVideoDecoder --disable-features=TFLiteLanguageDetectionEnabled --variations-seed-version --pseudonymization-salt-handle=7,i,4922556093885627571,11597726032662915974,4 --trace-process-track-uuid=3190708988185955192\n490273 /bin/sh -c pgrep -af \"chromium.*gpu-process\" || echo \"none\"\n3809198 /snap/chromium/3537/usr/lib/chromium-browser/chrome --type=gpu-process --ozone-platform=wayland --render-node-override=/dev/dri/renderD128 --crashpad-handler-pid=3809116 --enable-crash-reporter=,snap --change-stack-guard-on-fork=enable --gpu-preferences=YAAAAAAAAAAgAQAEAAAAAAAAAAAAAGAASAAAAAAAAAABAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAMAAAAAAAAAAwAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAMAAAAAQAAAAAAAAAAAAAACAAAAAAAAAAIAAAAAAAAAA== --shared-files --metrics-shmem-handle=4,i,11849800634610935884,5204226038584194437,262144 --field-trial-handle=3,i,1069603485177855613,8444558644926360791,262144 --disable-features=TFLiteLanguageDetectionEnabled --variations-seed-version --pseudonymization-salt-handle=7,i,17476473154686695850,1284522541887812978,4 --trace-process-track-uuid=3190708988185955192"
+  },
+  "t3_cooldown": {
+    "timestamp": "2026-10-04T10:10:36.763Z",
+    "stage": "T3_COOLDOWN",
+    "nvidia_smi": "0, 0, 5, 50, 7.72"
+  }
+}

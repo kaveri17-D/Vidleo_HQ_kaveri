@@ -1,0 +1,21 @@
+{
+  "title": "NEXUS Client-First Execution Data Path & Zero Backend Rendering",
+  "timestamp": "2026-10-04T14:33:11.144217+00:00",
+  "client_success_invariants": {
+    "backend_media_bytes": 0,
+    "server_media_render_bytes": 0,
+    "server_ffmpeg_media_process": 0,
+    "server_gpu_media_process": 0,
+    "server_video_decode_frames": 0,
+    "server_transcode_count": 0,
+    "server_gpu_used": false,
+    "server_execution": false
+  },
+  "control_plane_traffic": {
+    "manifest_request": true,
+    "governor_decision": true,
+    "ticket_request": true,
+    "telemetry_complete": true
+  },
+  "classification": "PROVEN"
+}

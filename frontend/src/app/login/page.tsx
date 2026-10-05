@@ -1,13 +1,13 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { ArrowLeft, AlertCircle, Loader2, ShieldCheck, Zap } from 'lucide-react';
 import { VidleoLogo } from '@/components/brand/VidleoLogo';
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, loading: authLoading, signInWithGoogle } = useAuth();
@@ -153,13 +153,21 @@ export default function LoginPage() {
               )}
             </button>
 
-            <div className="pt-2 text-center">
+            <div className="pt-2 text-center space-y-2">
               <p className="text-[11px] text-[#8E8E98] leading-relaxed">
                 By signing in, you agree to Vidleo's{' '}
                 <a href="/terms" className="underline hover:text-black">Terms of Service</a>{' '}
                 and{' '}
                 <a href="/privacy" className="underline hover:text-black">Privacy Policy</a>.
               </p>
+              <div>
+                <a
+                  href="/admin/login"
+                  className="text-[11px] text-[#8E8E98] hover:text-[#5B4BFF] transition-colors"
+                >
+                  Administrator? Sign in
+                </a>
+              </div>
             </div>
           </div>
 
@@ -176,5 +184,19 @@ export default function LoginPage() {
         © {new Date().getFullYear()} Vidleo. Powered by Synapvo Tech.
       </footer>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-[#F6F6F8] text-[#0A0A0C] flex items-center justify-center font-sans text-xs text-[#5A5A62]">
+          Loading sign in...
+        </div>
+      }
+    >
+      <LoginForm />
+    </Suspense>
   );
 }

@@ -1,0 +1,23 @@
+{
+  "name": "nexus-worker-relay",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "NEXUS Controlled Edge Range Relay Cloudflare Worker",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "test": "node --test"
+  },
+  "keywords": [
+    "nexus",
+    "cloudflare-worker",
+    "media-relay"
+  ],
+  "author": "Vidleo / NEXUS Team",
+  "license": "ISC",
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260925.2",
+    "typescript": "^7.0.2",
+    "wrangler": "^4.140.0"
+  }
+}

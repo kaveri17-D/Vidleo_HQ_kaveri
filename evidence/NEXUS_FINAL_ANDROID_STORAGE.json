@@ -1,0 +1,7 @@
+{
+  "platform": "Android",
+  "storage_type": "User-Accessible Mobile Storage",
+  "status": "NOT_AVAILABLE_IN_LAB",
+  "reason": "Physical Android device absent in lab (adb devices empty)",
+  "tested": false
+}

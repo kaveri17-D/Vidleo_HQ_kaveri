@@ -1,0 +1,11 @@
+{
+  "title": "NEXUS Security Regression & Hardening Validation",
+  "timestamp": "2026-10-04T14:33:11.144217+00:00",
+  "tests_run": 19,
+  "tests_passed": 19,
+  "ssrf_protection": "PROVEN (Loopback, link-local, private IPs blocked by outbound policy)",
+  "idor_protection": "PROVEN (Cross-user job access rejected with 403 Forbidden)",
+  "ticket_security": "PROVEN (Signed tickets with HMAC-SHA256, expiry, replay protection)",
+  "error_scrubbing": "PROVEN (Passwords, tokens, credentials redacted from logs)",
+  "status": "PASS"
+}

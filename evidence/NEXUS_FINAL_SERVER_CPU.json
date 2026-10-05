@@ -1,0 +1,15 @@
+{
+  "title": "NEXUS Server-CPU Final Fallback Evidence",
+  "timestamp": "2026-10-04T14:33:11.144217+00:00",
+  "policy": "Final fallback level when both client execution and server GPU are unavailable",
+  "runner": "FFmpeg libx264 / CPU software transcode",
+  "client_success_isolation": {
+    "server_cpu_transcode_count": 0,
+    "server_cpu_bytes": 0
+  },
+  "gpu_required_isolation": {
+    "cpu_allowed_in_gpu_required": false,
+    "enforcement": "Deterministically fails with GPU_EXECUTION_UNAVAILABLE instead of using CPU"
+  },
+  "status": "PROVEN"
+}

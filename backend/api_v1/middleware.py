@@ -566,14 +566,44 @@ async def summarize_api_key_usage(key_id: str, *, days: int = 30, limit: int = 2
 def _get_redis_client() -> redis.Redis | None:
     global _redis_url_cache, r
     redis_url = os.environ.get("REDIS_URL")
-    if redis_url != _redis_url_cache:
-        _redis_url_cache = redis_url
+    redis_password = os.environ.get("REDIS_PASSWORD")
+    try:
+        curr_loop = asyncio.get_running_loop()
+        loop_id = id(curr_loop)
+    except RuntimeError:
+        loop_id = 0
+
+    cache_key = f"{redis_url}::pass={bool(redis_password)}::loop={loop_id}"
+    if cache_key != _redis_url_cache:
+        _redis_url_cache = cache_key
         r = None
         if redis_url:
             try:
-                r = redis.from_url(redis_url, decode_responses=True)
+                # Merge REDIS_PASSWORD if provided and not already in URL
+                target_url = redis_url
+                if redis_password and "@" not in redis_url and "://" in redis_url:
+                    from urllib.parse import quote
+                    proto, rest = redis_url.split("://", 1)
+                    target_url = f"{proto}://:{quote(redis_password)}@{rest}"
+
+                connect_timeout = float(os.environ.get("NEXUS_REDIS_CONNECT_TIMEOUT", "2.0"))
+                socket_timeout = float(os.environ.get("NEXUS_REDIS_SOCKET_TIMEOUT", "3.0"))
+                health_interval = int(os.environ.get("NEXUS_REDIS_HEALTH_CHECK_INTERVAL", "15"))
+
+                r = redis.from_url(
+                    target_url,
+                    decode_responses=True,
+                    socket_connect_timeout=connect_timeout,
+                    socket_timeout=socket_timeout,
+                    health_check_interval=health_interval,
+                    retry_on_timeout=True,
+                )
             except Exception as exc:
-                log.warning("Failed to initialize Redis client for %s: %s", redis_url, exc)
+                # Safely redact potential secrets from error message
+                err_msg = str(exc)
+                if redis_password:
+                    err_msg = err_msg.replace(redis_password, "***")
+                log.warning("Failed to initialize Redis client: %s", err_msg)
                 r = None
     return r
 

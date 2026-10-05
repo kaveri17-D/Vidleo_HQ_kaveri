@@ -1,0 +1,22 @@
+{
+  "title": "NEXUS Final Network Byte & Traffic Separation Matrix",
+  "timestamp": "2026-10-04T11:26:02.156402+00:00",
+  "control_plane": {
+    "traffic_type": "JSON API (Manifests, Tickets, Governor decisions, Progress)",
+    "bytes_recorded": 2209,
+    "routes": [
+      "/api/manifest",
+      "/api/ticket",
+      "/api/downloads/{id}/governor",
+      "/api/accounting/media"
+    ]
+  },
+  "user_media_plane": {
+    "traffic_type": "Binary audio/video streams",
+    "client_success_bytes_to_browser": 4373440,
+    "backend_media_bytes": 0,
+    "server_ffmpeg_processes": 0,
+    "server_gpu_processes": 0
+  },
+  "data_path_proof": "Absolute logical and physical isolation between control plane and media stream."
+}

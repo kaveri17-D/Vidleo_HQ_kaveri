@@ -1,0 +1,81 @@
+{
+  "title": "NEXUS NVDEC Runtime Proof and CPU vs GPU Benchmark",
+  "timestamp": "2026-10-04T14:33:26.558773+00:00",
+  "input_media": {
+    "path": "/tmp/nexus_test/video.mp4",
+    "format": "MP4 (H.264 / AAC)",
+    "size_bytes": 81891,
+    "sha256": "f50ef37e01d4b28361399225f3d63d2b7aba126af057a163dd62b000ec22387b"
+  },
+  "hardware_environment": {
+    "workstation": "Dell Precision 7730",
+    "discrete_gpu": "NVIDIA Quadro P3200 Mobile (GP104GLM, 6GB GDDR5)",
+    "nvidia_driver": "580.178.04",
+    "cuda_version": "13.0",
+    "device_node": "/dev/dri/renderD129"
+  },
+  "cpu_control_run": {
+    "command": "ffmpeg -v verbose -y -c:v h264 -i /tmp/nexus_test/video.mp4 -c:v libx264 -preset fast -c:a copy /tmp/benchmark_cpu_out.mp4",
+    "decoder": "h264 (Software CPU)",
+    "encoder": "libx264 (Software CPU)",
+    "duration_seconds": 0.3019,
+    "output_size_bytes": 76520,
+    "output_sha256": "d4aeab49f27c37c86216e812e6fb8b5b810bba2614281cc1e04d13fe74f4edc7",
+    "clean_decode": true,
+    "returncode": 0
+  },
+  "gpu_hardware_run": {
+    "command": "ffmpeg -v verbose -y -c:v h264_cuvid -i /tmp/nexus_test/video.mp4 -c:v h264_nvenc -c:a copy /tmp/benchmark_gpu_nvdec_out.mp4",
+    "decoder": "h264_cuvid (NVIDIA NVDEC Hardware Decode)",
+    "encoder": "h264_nvenc (NVIDIA NVENC Hardware Encode)",
+    "duration_seconds": 0.5235,
+    "output_size_bytes": 142555,
+    "output_sha256": "a039bddac69c6908028fd58537bd61031776c8d43afb6152d4032d44a13bffbc",
+    "speedup_ratio": 0.58,
+    "clean_decode": true,
+    "returncode": 0,
+    "gpu_initial_telemetry": {
+      "gpu_utilization_pct": 0,
+      "memory_utilization_pct": 0,
+      "memory_used_mb": 5,
+      "memory_total_mb": 6144,
+      "temperature_c": 49
+    },
+    "gpu_final_telemetry": {
+      "gpu_utilization_pct": 16,
+      "memory_utilization_pct": 13,
+      "memory_used_mb": 5,
+      "memory_total_mb": 6144,
+      "temperature_c": 50
+    },
+    "nvdec_log_snippet": [
+      "[h264_cuvid @ 0x5ad98da7af40] CUVID capabilities for h264_cuvid:",
+      "[h264_cuvid @ 0x5ad98da7af40] 8 bit: supported: 1, min_width: 48, max_width: 4096, min_height: 16, max_height: 4096",
+      "[h264_cuvid @ 0x5ad98da7af40] 10 bit: supported: 0, min_width: 0, max_width: 0, min_height: 0, max_height: 0",
+      "[h264_cuvid @ 0x5ad98da7af40] 12 bit: supported: 0, min_width: 0, max_width: 0, min_height: 0, max_height: 0",
+      "Stream mapping:",
+      "  Stream #0:0 -> #0:0 (h264 (h264_cuvid) -> h264 (h264_nvenc))",
+      "[vist#0:0/h264 @ 0x5ad98dad01c0] [dec:h264_cuvid @ 0x5ad98db14d00] Starting thread...",
+      "[h264_cuvid @ 0x5ad98da7af40] Formats: Original: nv12 | HW: nv12 | SW: nv12",
+      "[vist#0:0/h264 @ 0x5ad98dad01c0] [dec:h264_cuvid @ 0x5ad98db14d00] Decoder thread received EOF packet",
+      "[vist#0:0/h264 @ 0x5ad98dad01c0] [dec:h264_cuvid @ 0x5ad98db14d00] Decoder returned EOF, finishing"
+    ],
+    "nvenc_log_snippet": [
+      "[vost#0:0/h264_nvenc @ 0x5ad98dadaac0] Created video stream from input stream 0:0",
+      "  Stream #0:0 -> #0:0 (h264 (h264_cuvid) -> h264 (h264_nvenc))",
+      "[vost#0:0/h264_nvenc @ 0x5ad98dadaac0] Starting thread...",
+      "[h264_nvenc @ 0x5ad98dadad40] Loaded Nvenc version 13.0",
+      "[h264_nvenc @ 0x5ad98dadad40] Nvenc initialized successfully",
+      "[h264_nvenc @ 0x5ad98dadad40] 1 CUDA capable devices found",
+      "[h264_nvenc @ 0x5ad98dadad40] [ GPU #0 - < Quadro P3200 > has Compute SM 6.1 ]",
+      "[h264_nvenc @ 0x5ad98dadad40] supports NVENC",
+      "      encoder         : Lavc62.11.100 h264_nvenc",
+      "[vost#0:0/h264_nvenc @ 0x5ad98dadaac0] [enc:h264_nvenc @ 0x5ad98da79040] Encoder thread received EOF"
+    ]
+  },
+  "authoritative_verdict": {
+    "NVDEC": "PROVEN",
+    "NVENC": "PROVEN",
+    "SERVER_GPU_SECONDARY_POLICY": "ENFORCED (Server GPU unused during client-success execution)"
+  }
+}

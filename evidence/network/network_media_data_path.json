@@ -1,0 +1,31 @@
+{
+  "clientMediaResourcesReceived": [
+    {
+      "url": "http://localhost:3000/test-media/remux_4k_prof0.webm",
+      "transferSize": 300,
+      "decodedBodySize": 0,
+      "durationMs": 457.90000000596046
+    },
+    {
+      "url": "http://localhost:3000/test-media/remux_4k_prof0.webm",
+      "transferSize": 13826,
+      "decodedBodySize": 13526,
+      "durationMs": 7.699999988079071
+    }
+  ],
+  "totalMediaBytesTransferredToBrowser": 14126,
+  "serverMediaTranscodeRequestsCount": 0,
+  "serverMediaBytesTransferredForRendering": 0,
+  "backendAccounting": {
+    "control_plane_bytes_received": 0,
+    "control_plane_bytes_sent": 3036,
+    "backend_control_bytes": 3036,
+    "backend_media_bytes_received": 0,
+    "backend_media_bytes_sent": 0,
+    "backend_media_bytes": 0,
+    "server_ffmpeg_processes": 0
+  },
+  "serverSideRenderingDetected": false,
+  "serverFfmpegRenderProcessesCount": 0,
+  "proofSummary": "100% of media bytes transferred directly to client browser; 0 bytes sent to backend for rendering; 0 server FFmpeg render processes active."
+}

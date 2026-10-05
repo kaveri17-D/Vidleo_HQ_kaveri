@@ -1,0 +1,30 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["DOM", "DOM.Iterable", "ESNext", "WebWorker"],
+    "strict": false,
+    "noImplicitAny": false,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "typeRoots": [
+      "./src/types",
+      "../frontend/node_modules/@types"
+    ],
+    "paths": {
+      "@media-engine/*": ["../frontend/src/packages/media-engine/*"]
+    }
+  },
+  "include": [
+    "src/**/*",
+    "../frontend/src/packages/media-engine/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist"
+  ]
+}

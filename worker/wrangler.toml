@@ -1,0 +1,10 @@
+name = "nexus-media-relay"
+main = "src/index.ts"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = true
+
+[vars]
+ALLOWED_ORIGIN = "http://localhost:3000,https://vidleo.app"
+MAX_RANGE_BYTES = 52428800 # 50 MB
+

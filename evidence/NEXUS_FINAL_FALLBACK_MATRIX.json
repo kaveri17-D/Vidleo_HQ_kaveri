@@ -1,0 +1,27 @@
+{
+  "title": "NEXUS Final Fallback & Fault-Tolerance Matrix",
+  "timestamp": "2026-10-04T11:26:02.156402+00:00",
+  "fallback_scenarios": [
+    {
+      "trigger": "User client remuxing unsupported (remux_supported=False)",
+      "strategy_resolved": "SERVER_FALLBACK",
+      "execution_location": "SERVER_GPU (if available) / SERVER_CPU",
+      "fallback_reason": "Client remuxing unsupported; fallback to governed server runner",
+      "result": "FALLBACK_PASS"
+    },
+    {
+      "trigger": "Client browser lacks HLS/MSE capabilities",
+      "strategy_resolved": "SERVER_FALLBACK",
+      "execution_location": "SERVER_GPU / SERVER_CPU",
+      "fallback_reason": "Client browser lacks HLS/remux capabilities; routing to server fallback",
+      "result": "FALLBACK_PASS"
+    },
+    {
+      "trigger": "GPU_REQUIRED mode with no GPUs available",
+      "strategy_resolved": "UNSUPPORTED",
+      "execution_location": "GPU_EXECUTION_UNAVAILABLE",
+      "fallback_reason": "GPU_REQUIRED mode active but neither client hardware nor server GPU is available",
+      "result": "DETERMINISTIC_FAIL_PASS (Never silently CPU)"
+    }
+  ]
+}

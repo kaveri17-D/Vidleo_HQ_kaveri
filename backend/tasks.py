@@ -361,6 +361,14 @@ async def run_billing_reconciliation() -> dict[str, Any]:
         logger.error(f"Base billing reconciliation failed: {e}")
         recon_result = {"status": "error", "reason": str(e)}
 
+    # 1b. Phase 5: Run the stranded credit reservation reaper
+    try:
+        from backend.reservation_reaper import run_reservation_reaper
+        reaper_res = await run_reservation_reaper()
+        recon_result["reservation_reaper"] = reaper_res
+    except Exception as e:
+        logger.error(f"Reservation reaper failed in billing reconciliation task: {e}")
+
     # 2. Check B2B Metered Billing Overage
     supabase_url = os.environ.get("SUPABASE_URL")
     supabase_key = os.environ.get("SUPABASE_SERVICE_KEY")

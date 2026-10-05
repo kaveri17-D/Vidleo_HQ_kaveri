@@ -1,0 +1,37 @@
+{
+  "title": "NEXUS Production Deployment & Public Network Reachability",
+  "timestamp": "2026-10-04T14:33:11.144217+00:00",
+  "frontend": {
+    "framework": "Next.js 14.2.15 (Production Standalone Build)",
+    "routes_compiled": 34,
+    "listener": "http://0.0.0.0:3000",
+    "lan_url": "http://192.168.0.109:3000",
+    "wan_overlay_url": "http://100.101.151.107:3000",
+    "health_status": "HTTP 200 OK"
+  },
+  "backend": {
+    "framework": "FastAPI / Uvicorn",
+    "listener": "http://0.0.0.0:8000",
+    "lan_url": "http://192.168.0.109:8000",
+    "wan_overlay_url": "http://100.101.151.107:8000",
+    "health_status": "HTTP 200 OK"
+  },
+  "worker": {
+    "runtime": "Cloudflare Local Worker Runner / Miniflare",
+    "listener": "http://127.0.0.1:8787",
+    "ticket_auth_enforced": true
+  },
+  "public_staging": {
+    "status": "PROVEN",
+    "verified_interfaces": [
+      "127.0.0.1:3000",
+      "192.168.0.109:3000",
+      "100.101.151.107:3000"
+    ]
+  },
+  "commercial_domain": "NOT_CONFIGURED",
+  "commercial_public_deployment": "BLOCKED_BY_EXTERNAL_INFRASTRUCTURE",
+  "commercial_public_e2e": "NOT_PROVEN",
+  "intentionally_deferred": true,
+  "deferral_reason": "Commercial domain purchase is intentionally deferred; not a code defect"
+}

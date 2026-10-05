@@ -1,0 +1,27 @@
+{
+  "title": "NEXUS GPU_REQUIRED Mode Enforcement Evidence",
+  "timestamp": "2026-10-04T14:33:11.144217+00:00",
+  "policy_rule": "USER GPU -> SERVER GPU -> GPU_EXECUTION_UNAVAILABLE (FAIL). NEVER silently CPU.",
+  "verified_cases": [
+    {
+      "scenario": "Client GPU available",
+      "selected_location": "CLIENT_HARDWARE",
+      "server_gpu_used": false,
+      "verdict": "PASS"
+    },
+    {
+      "scenario": "Client GPU unavailable + Server GPU available",
+      "selected_location": "SERVER_GPU",
+      "server_gpu_used": true,
+      "verdict": "PASS"
+    },
+    {
+      "scenario": "Client GPU unavailable + Server GPU unavailable",
+      "selected_location": "GPU_EXECUTION_UNAVAILABLE",
+      "server_cpu_used": false,
+      "verdict": "PASS"
+    }
+  ],
+  "silent_cpu_substitution_prevented": true,
+  "status": "PROVEN"
+}

@@ -1,0 +1,26 @@
+{
+  "h264_1080p": {
+    "status": "PASS",
+    "frames_decoded": 60,
+    "errors": 0,
+    "elapsed_ms_hw": 104.2000000178814,
+    "elapsed_ms_sw": 98,
+    "dimensions": {
+      "width": 1920,
+      "height": 1080
+    },
+    "hardware_backend_proof": "WebCodecs execution successful on real demuxed frames; underlying platform decoder not directly exposed via DOM API"
+  },
+  "vp9_4k": {
+    "status": "PASS",
+    "frames_decoded": 60,
+    "errors": 0,
+    "elapsed_ms_hw": 224.40000000596046,
+    "elapsed_ms_sw": 349,
+    "dimensions": {
+      "width": 3840,
+      "height": 2160
+    },
+    "hardware_backend_proof": "Chromium Tracing differential confirmed: prefer-hardware engages 2065 GPU trace events vs 1026 in software (2.01x GPU activation ratio)"
+  }
+}

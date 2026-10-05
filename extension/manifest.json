@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "Vidleo NEXUS Companion",
+  "version": "1.0.0",
+  "description": "Vidleo NEXUS Client-First Media Download Companion",
+  "permissions": [
+    "downloads",
+    "storage",
+    "offscreen"
+  ],
+  "host_permissions": [
+    "*://*.vidleo.app/*",
+    "http://127.0.0.1:8000/*",
+    "http://localhost:8000/*",
+    "http://127.0.0.1:8089/*",
+    "https://nexus-media-relay.vidleo-relay.workers.dev/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Vidleo NEXUS"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  }
+}

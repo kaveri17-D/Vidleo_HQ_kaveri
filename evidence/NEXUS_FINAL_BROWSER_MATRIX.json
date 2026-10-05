@@ -1,0 +1,65 @@
+{
+  "title": "NEXUS Final Cross-Browser Support Matrix",
+  "timestamp": "2026-10-04T14:33:11.144217+00:00",
+  "browsers": [
+    {
+      "name": "Chromium / Chrome (Linux)",
+      "version": "153.0.8010.47",
+      "os": "Linux x86_64",
+      "tested_physically": true,
+      "webcodecs_supported": true,
+      "webcodecs_hw_decode": true,
+      "html5_video_hw_decode": true,
+      "hw_decoder": "VaapiVideoDecoder",
+      "codecs": [
+        "h264",
+        "vp9"
+      ],
+      "status": "PROVEN"
+    },
+    {
+      "name": "Chrome (Windows)",
+      "version": "Untested",
+      "os": "Windows",
+      "tested_physically": false,
+      "status": "NOT_AVAILABLE_IN_LAB"
+    },
+    {
+      "name": "Edge (Windows)",
+      "version": "Untested",
+      "os": "Windows",
+      "tested_physically": false,
+      "status": "NOT_AVAILABLE_IN_LAB"
+    },
+    {
+      "name": "Safari (macOS / iOS)",
+      "version": "Untested",
+      "os": "macOS / iOS",
+      "tested_physically": false,
+      "status": "NOT_AVAILABLE_IN_LAB"
+    },
+    {
+      "name": "Mozilla Firefox (Linux)",
+      "version": "156.0",
+      "os": "Linux x86_64",
+      "tested_physically": true,
+      "webcodecs_supported": false,
+      "webcodecs_note": "Requires experimental flag media.webcodecs.enabled",
+      "html5_video_hw_decode": false,
+      "compositor": "SWGL (Software WebGL)",
+      "remote_protocol": "WebDriver BiDi (ws://127.0.0.1:9223)",
+      "codecs": [
+        "h264",
+        "vp9"
+      ],
+      "status": "PROVEN"
+    }
+  ],
+  "webgpu_evaluation": {
+    "webgpu_runtime_supported": true,
+    "runtime_adapter": "Google SwiftShader / Dawn in Chromium",
+    "webgpu_runtime_status": "PROVEN",
+    "webgpu_hardware_status": "SOFTWARE_ONLY",
+    "note": "WebGPU runtime executed via SwiftShader CPU rasterizer; hardware WebGPU not observed"
+  }
+}

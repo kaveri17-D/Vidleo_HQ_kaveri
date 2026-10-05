@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>NEXUS Real Client-Side Rendering & GPU Telemetry</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #0b0f19; color: #f3f4f6; margin: 24px; }
+    h1 { color: #60a5fa; font-size: 20px; }
+    #video-container { margin: 16px 0; border: 1px solid #1f2937; border-radius: 8px; padding: 16px; background: #111827; }
+    video { max-width: 100%; border-radius: 6px; background: black; }
+    pre { background: #030712; padding: 12px; border-radius: 6px; overflow-x: auto; color: #10b981; font-size: 13px; }
+    .badge { display: inline-block; padding: 4px 8px; border-radius: 4px; font-weight: bold; margin-right: 8px; }
+    .pass { background: #065f46; color: #34d399; }
+  </style>
+</head>
+<body>
+  <h1>NEXUS Real Desktop Client-Side Rendering & GPU Verification</h1>
+  <div id="video-container">
+    <video id="nexus-video" autoplay controls playsinline muted width="720"></video>
+  </div>
+  <div id="status-panel">
+    <p>Frames Presented: <span id="frame-counter">0</span> | Playback Time: <span id="time-counter">0.00s</span></p>
+    <pre id="telemetry-log">Initializing...</pre>
+  </div>
+
+  <script>
+    const urlParams = new URLSearchParams(window.location.search);
+    const mediaSource = urlParams.get('src') || '/test-media/remux_1080p.mp4';
+    const video = document.getElementById('nexus-video');
+    video.src = mediaSource;
+
+    window.__NEXUS_RENDER_TELEMETRY__ = {
+      mediaSource,
+      clientRendering: {
+        attachedToDom: true,
+        requestVideoFrameCallbackSupported: 'requestVideoFrameCallback' in HTMLVideoElement.prototype,
+        frameCallbacksCount: 0,
+        firstFrameTime: null,
+        lastFrameTime: null,
+        presentedWidth: 0,
+        presentedHeight: 0,
+        totalPresentedFrames: 0,
+        droppedFrames: 0,
+        ended: false,
+      },
+      mediaCapabilities: {},
+      webCodecs: {},
+      networkMediaBytes: 0,
+      networkEntries: [],
+    };
+
+    // 1. requestVideoFrameCallback observer
+    let frameCount = 0;
+    function onVideoFrame(now, metadata) {
+      frameCount++;
+      const cr = window.__NEXUS_RENDER_TELEMETRY__.clientRendering;
+      cr.frameCallbacksCount = frameCount;
+      if (cr.firstFrameTime === null) cr.firstFrameTime = metadata.presentationTime;
+      cr.lastFrameTime = metadata.presentationTime;
+      cr.presentedWidth = metadata.width;
+      cr.presentedHeight = metadata.height;
+      cr.totalPresentedFrames = metadata.presentedFrames;
+      if (metadata.droppedFrames !== undefined) cr.droppedFrames = metadata.droppedFrames;
+
+      document.getElementById('frame-counter').innerText = frameCount;
+      document.getElementById('time-counter').innerText = metadata.mediaTime.toFixed(2) + 's';
+
+      if (!video.ended && !video.paused) {
+        video.requestVideoFrameCallback(onVideoFrame);
+      }
+    }
+
+    if ('requestVideoFrameCallback' in HTMLVideoElement.prototype) {
+      video.requestVideoFrameCallback(onVideoFrame);
+    }
+
+    video.addEventListener('ended', () => {
+      window.__NEXUS_RENDER_TELEMETRY__.clientRendering.ended = true;
+      collectNetwork();
+      updateLog();
+    });
+
+    video.addEventListener('playing', () => {
+      if ('requestVideoFrameCallback' in HTMLVideoElement.prototype) {
+        video.requestVideoFrameCallback(onVideoFrame);
+      }
+    });
+
+    function collectNetwork() {
+      const resources = performance.getEntriesByType('resource');
+      const mediaReqs = resources.filter(r => r.name.includes('/test-media/') || r.initiatorType === 'video');
+      window.__NEXUS_RENDER_TELEMETRY__.networkEntries = mediaReqs.map(r => ({
+        url: r.name,
+        transferSize: r.transferSize,
+        decodedBodySize: r.decodedBodySize,
+        duration: r.duration,
+      }));
+      window.__NEXUS_RENDER_TELEMETRY__.networkMediaBytes = mediaReqs.reduce((acc, r) => acc + (r.transferSize || r.decodedBodySize || 0), 0);
+    }
+
+    // 2. Query Media Capabilities API
+    async function auditMediaCapabilities() {
+      if (!navigator.mediaCapabilities) return;
+      const tests = [
+        { id: 'h264_1080p', type: 'media-source', video: { contentType: 'video/mp4; codecs="avc1.4d401f"', width: 1920, height: 1080, bitrate: 4000000, framerate: 30 } },
+        { id: 'vp9_1080p', type: 'media-source', video: { contentType: 'video/webm; codecs="vp09.00.10.08"', width: 1920, height: 1080, bitrate: 3000000, framerate: 30 } },
+        { id: 'vp9_4k', type: 'media-source', video: { contentType: 'video/webm; codecs="vp09.00.10.08"', width: 3840, height: 2160, bitrate: 12000000, framerate: 30 } },
+      ];
+      for (const t of tests) {
+        try {
+          const res = await navigator.mediaCapabilities.decodingInfo(t);
+          window.__NEXUS_RENDER_TELEMETRY__.mediaCapabilities[t.id] = {
+            supported: res.supported,
+            smooth: res.smooth,
+            powerEfficient: res.powerEfficient,
+          };
+        } catch (e) {
+          window.__NEXUS_RENDER_TELEMETRY__.mediaCapabilities[t.id] = { error: e.message };
+        }
+      }
+    }
+
+    // 3. Query WebCodecs VideoDecoder
+    async function auditWebCodecs() {
+      if (typeof VideoDecoder === 'undefined') return;
+      const configs = [
+        { id: 'h264_hw', codec: 'avc1.4d401f', codedWidth: 1920, codedHeight: 1080, hardwareAcceleration: 'prefer-hardware' },
+        { id: 'h264_sw', codec: 'avc1.4d401f', codedWidth: 1920, codedHeight: 1080, hardwareAcceleration: 'prefer-software' },
+        { id: 'vp9_4k_hw', codec: 'vp09.00.10.08', codedWidth: 3840, codedHeight: 2160, hardwareAcceleration: 'prefer-hardware' },
+        { id: 'vp9_4k_sw', codec: 'vp09.00.10.08', codedWidth: 3840, codedHeight: 2160, hardwareAcceleration: 'prefer-software' },
+      ];
+      for (const c of configs) {
+        try {
+          const res = await VideoDecoder.isConfigSupported(c);
+          window.__NEXUS_RENDER_TELEMETRY__.webCodecs[c.id] = res.supported;
+        } catch (e) {
+          window.__NEXUS_RENDER_TELEMETRY__.webCodecs[c.id] = false;
+        }
+      }
+    }
+
+    function updateLog() {
+      document.getElementById('telemetry-log').innerText = JSON.stringify(window.__NEXUS_RENDER_TELEMETRY__, null, 2);
+    }
+
+    Promise.all([auditMediaCapabilities(), auditWebCodecs()]).then(() => {
+      updateLog();
+    });
+  </script>
+</body>
+</html>

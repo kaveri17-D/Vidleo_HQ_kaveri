@@ -1,0 +1,20 @@
+{
+  "test": "WebCodecs 4K VP9 Differential Tracing (prefer-hardware vs prefer-software)",
+  "prefer_hardware": {
+    "elapsed_ms": 224.40000000596046,
+    "total_trace_events": 3289,
+    "gpu_events": 2065,
+    "media_events": 2111
+  },
+  "prefer_software": {
+    "elapsed_ms": 349,
+    "total_trace_events": 1488,
+    "gpu_events": 1026,
+    "media_events": 442
+  },
+  "differential_finding": {
+    "gpu_activation_ratio": "2.01x",
+    "media_activation_ratio": "4.78x",
+    "hardware_acceleration_speedup": "35.7% faster"
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "title": "NEXUS Resolution Matrix & 4K Verification",
+  "timestamp": "2026-10-04T14:28:13.832631+00:00",
+  "resolutions": [
+    {
+      "resolution": "360p",
+      "hw_decode": true,
+      "status": "PASS"
+    },
+    {
+      "resolution": "480p",
+      "hw_decode": true,
+      "status": "PASS"
+    },
+    {
+      "resolution": "720p",
+      "hw_decode": true,
+      "status": "PASS"
+    },
+    {
+      "resolution": "1080p",
+      "hw_decode": true,
+      "status": "PASS"
+    },
+    {
+      "resolution": "1440p",
+      "hw_decode": true,
+      "status": "PASS"
+    },
+    {
+      "resolution": "2160p (4K VP9)",
+      "hw_decode": true,
+      "status": "PASS"
+    }
+  ]
+}

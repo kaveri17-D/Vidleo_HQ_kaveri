@@ -1,0 +1,9 @@
+{
+  "control_plane_bytes_received": 0,
+  "control_plane_bytes_sent": 3036,
+  "backend_control_bytes": 3036,
+  "backend_media_bytes_received": 0,
+  "backend_media_bytes_sent": 0,
+  "backend_media_bytes": 0,
+  "server_ffmpeg_processes": 0
+}

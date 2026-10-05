@@ -1,0 +1,97 @@
+{
+  "totalEvents": 1488,
+  "gpuEventsCount": 1026,
+  "mediaEventsCount": 442,
+  "sampleEvents": [
+    {
+      "cat": "__metadata",
+      "name": "thread_name",
+      "pid": 0,
+      "tid": 0
+    },
+    {
+      "cat": "__metadata",
+      "name": "thread_name",
+      "pid": 490056,
+      "tid": 2
+    },
+    {
+      "cat": "__metadata",
+      "name": "thread_name",
+      "pid": 489642,
+      "tid": 489642
+    },
+    {
+      "cat": "__metadata",
+      "name": "thread_name",
+      "pid": 489838,
+      "tid": 489838
+    },
+    {
+      "cat": "__metadata",
+      "name": "thread_name",
+      "pid": 489893,
+      "tid": 1
+    },
+    {
+      "cat": "__metadata",
+      "name": "thread_name",
+      "pid": 489838,
+      "tid": 489930
+    },
+    {
+      "cat": "__metadata",
+      "name": "thread_name",
+      "pid": 489642,
+      "tid": 489836
+    },
+    {
+      "cat": "__metadata",
+      "name": "thread_name",
+      "pid": 489838,
+      "tid": 489931
+    },
+    {
+      "cat": "__metadata",
+      "name": "thread_name",
+      "pid": 489893,
+      "tid": 10
+    },
+    {
+      "cat": "__metadata",
+      "name": "thread_name",
+      "pid": 489893,
+      "tid": 4
+    },
+    {
+      "cat": "__metadata",
+      "name": "process_name",
+      "pid": 490056,
+      "tid": 0
+    },
+    {
+      "cat": "__metadata",
+      "name": "process_name",
+      "pid": 489642,
+      "tid": 0
+    },
+    {
+      "cat": "__metadata",
+      "name": "process_name",
+      "pid": 489838,
+      "tid": 0
+    },
+    {
+      "cat": "__metadata",
+      "name": "process_name",
+      "pid": 489893,
+      "tid": 0
+    },
+    {
+      "cat": "__metadata",
+      "name": "process_uptime_seconds",
+      "pid": 490056,
+      "tid": 0
+    }
+  ]
+}

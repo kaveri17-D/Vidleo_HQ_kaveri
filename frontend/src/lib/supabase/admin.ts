@@ -7,8 +7,17 @@ export interface AdminVerificationResult {
 }
 
 /**
+ * Normalizes a role string to lowercase trimmed format.
+ */
+export function normalizeRole(role: unknown): string {
+  if (typeof role !== 'string') return '';
+  return role.trim().toLowerCase();
+}
+
+/**
  * Server-side function to verify if the current user is an authenticated Admin.
- * Checks app_metadata, user_metadata, user_roles table, and profiles table.
+ * Primary source of truth: public.user_roles (user_id, role)
+ * Secondary source of truth: secure Supabase auth metadata.
  */
 export async function verifyAdminUser(supabase: SupabaseClient): Promise<AdminVerificationResult> {
   try {
@@ -18,43 +27,36 @@ export async function verifyAdminUser(supabase: SupabaseClient): Promise<AdminVe
       return { isAdmin: false, user: null, role: 'unauthenticated' };
     }
 
-    // 1. Check Auth Metadata (app_metadata or user_metadata)
-    const appRole = user.app_metadata?.role;
-    const userRole = user.user_metadata?.role;
-
-    if (appRole === 'admin' || userRole === 'admin') {
-      return { isAdmin: true, user, role: 'admin' };
-    }
-
-    // 2. Check user_roles table
-    const { data: roleData } = await supabase
+    // 1. Primary Source of Truth: public.user_roles (user_id -> role)
+    const { data: roleData, error: roleError } = await supabase
       .from('user_roles')
       .select('role')
       .eq('user_id', user.id)
       .maybeSingle();
 
-    if (roleData?.role === 'admin') {
+    if (!roleError && roleData?.role) {
+      const normalizedRole = normalizeRole(roleData.role);
+      if (normalizedRole === 'admin') {
+        return { isAdmin: true, user, role: 'admin' };
+      }
+    }
+
+    // 2. Secondary check: Auth metadata (app_metadata or user_metadata)
+    const appRole = normalizeRole(user.app_metadata?.role);
+    const userRole = normalizeRole(user.user_metadata?.role);
+
+    if (appRole === 'admin' || userRole === 'admin') {
       return { isAdmin: true, user, role: 'admin' };
     }
 
-    // 3. Check profiles table role column
-    const { data: profileData } = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', user.id)
-      .maybeSingle();
-
-    if (profileData?.role === 'admin') {
+    // 3. Fallback: Check if user email matches developer initial admin email
+    const devAdminEmail = process.env.INITIAL_ADMIN_EMAIL?.trim().toLowerCase();
+    if (devAdminEmail && user.email?.trim().toLowerCase() === devAdminEmail) {
       return { isAdmin: true, user, role: 'admin' };
     }
 
-    // Fallback: Check if user email matches developer fallback when initial environment is set
-    const devAdminEmail = process.env.INITIAL_ADMIN_EMAIL;
-    if (devAdminEmail && user.email?.toLowerCase() === devAdminEmail.toLowerCase()) {
-      return { isAdmin: true, user, role: 'admin' };
-    }
-
-    return { isAdmin: false, user, role: 'user' };
+    const determinedRole = normalizeRole(roleData?.role) || appRole || userRole || 'user';
+    return { isAdmin: false, user, role: determinedRole };
   } catch (err) {
     console.error('Admin verification error:', err);
     return { isAdmin: false, user: null, role: 'error' };

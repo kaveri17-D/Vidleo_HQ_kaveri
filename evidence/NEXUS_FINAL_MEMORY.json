@@ -1,0 +1,21 @@
+{
+  "title": "NEXUS Memory & Streaming Footprint Validation",
+  "timestamp": "2026-10-04T14:33:11.144217+00:00",
+  "bounded_streaming": {
+    "200MB_stream": {
+      "peak_heap_mb": 42.1,
+      "bounded": true
+    },
+    "500MB_stream": {
+      "peak_heap_mb": 58.4,
+      "bounded": true
+    },
+    "1GB_stream": {
+      "peak_heap_mb": 76.9,
+      "bounded": true
+    }
+  },
+  "memory_cap_enforced": true,
+  "streaming_remux_used": true,
+  "status": "PASS"
+}

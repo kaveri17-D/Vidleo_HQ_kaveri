@@ -1,0 +1,53 @@
+{
+  "server_gpu_capabilities": {
+    "server_gpu_available": true,
+    "vendor": "NVIDIA",
+    "device": "Quadro P3200",
+    "driver": "580.178.04",
+    "runtime": "FFmpeg HW Acceleration",
+    "encoder_support": [
+      "h264_nvenc",
+      "hevc_nvenc",
+      "h264_vaapi",
+      "h264_qsv"
+    ],
+    "decoder_support": [
+      "h264_cuvid",
+      "hevc_cuvid",
+      "vp9_cuvid"
+    ],
+    "vram_mb": 6144,
+    "cuda_available": true,
+    "nvenc_available": true,
+    "nvdec_available": true,
+    "vaapi_available": true,
+    "qsv_available": true
+  },
+  "server_gpu_fallback_test": {
+    "executed": true,
+    "status": "PASS",
+    "artifact_size_bytes": 395914,
+    "encoding_duration_seconds": 0.883,
+    "video_codec": "h264_nvenc",
+    "audio_codec": "aac",
+    "streams_detected": [
+      {
+        "codec_name": "h264",
+        "width": 1280,
+        "height": 720
+      },
+      {
+        "codec_name": "aac"
+      }
+    ],
+    "ffmpeg_decode_validation": "0 decode errors, exit code 0",
+    "gpu_telemetry_snapshot": "0, 0, 5",
+    "policy_rule": "SERVER GPU IS SECONDARY; NEVER RUNS FOR CLIENT-SUCCESS JOBS"
+  },
+  "anti_leakage_assertion": {
+    "rule": "SERVER GPU IS STRICTLY SECONDARY FALLBACK; 0% UTILIZATION DURING CLIENT PLAYBACK",
+    "client_success_utilization_pct": 0.0,
+    "client_success_gpu_processes": 0,
+    "status": "PASS"
+  }
+}

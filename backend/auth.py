@@ -46,6 +46,8 @@ def _split_env_set(value: Optional[str]) -> set[str]:
 
 OWNER_EMAILS = _split_env_set(os.environ.get("OWNER_EMAILS") or os.environ.get("OWNER_EMAIL"))
 OWNER_USER_IDS = _split_env_set(os.environ.get("OWNER_USER_IDS"))
+PREMIUM_EMAILS = _split_env_set(os.environ.get("PREMIUM_EMAILS") or os.environ.get("PREMIUM_EMAIL"))
+PREMIUM_USER_IDS = _split_env_set(os.environ.get("PREMIUM_USER_IDS"))
 
 
 def _load_active_subscription(user_id: str) -> Optional[dict]:
@@ -244,7 +246,22 @@ def enrich_user_record(profile: Optional[dict] = None, payload: Optional[dict] =
     user_id = str(profile.get("id") or payload.get("sub") or "").strip()
     active_subscription = _load_active_subscription(user_id) if user_id else None
     credit_grants = _load_credit_grants(user_id) if user_id else _default_credit_grants()
-    effective_plan = active_subscription.get("plan_code") if active_subscription else profile.get("plan")
+    email = str(profile.get("email") or payload.get("email") or "").strip().lower()
+    jwt_plan = (payload.get("app_metadata") or {}).get("plan") or (payload.get("user_metadata") or {}).get("plan")
+
+    if (email and email in PREMIUM_EMAILS) or (user_id and user_id.lower() in PREMIUM_USER_IDS):
+        effective_plan = "premium"
+    elif active_subscription:
+        effective_plan = active_subscription.get("plan_code")
+    elif profile.get("plan") and profile.get("plan") != "free":
+        effective_plan = profile.get("plan")
+    elif jwt_plan:
+        effective_plan = jwt_plan
+    elif profile.get("plan"):
+        effective_plan = profile.get("plan")
+    else:
+        effective_plan = "free"
+
     role = resolve_user_role(profile, payload)
     is_owner = role in OWNER_ROLES
     is_owner = role in OWNER_ROLES

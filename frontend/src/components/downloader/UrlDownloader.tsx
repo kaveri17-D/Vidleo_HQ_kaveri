@@ -121,6 +121,9 @@ export function UrlDownloader({
         abortControllerRef.current.signal
       );
 
+      if (session) {
+        setDownloadSession(session);
+      }
       setStage('ready');
       if (onDownloadComplete) onDownloadComplete();
     } catch (err: any) {

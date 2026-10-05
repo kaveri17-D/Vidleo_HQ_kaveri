@@ -1,0 +1,20 @@
+{
+  "title": "NEXUS External E2E Data Path & Client-Success Isolation",
+  "timestamp": "2026-10-04T14:33:11.144217+00:00",
+  "user_interaction": {
+    "frontend_origin": "http://192.168.0.109:3000",
+    "api_origin": "http://192.168.0.109:8000",
+    "route": "/",
+    "job_registration": "job_e2e_prod_ext_01",
+    "target_format": "137 (1080p H.264)",
+    "execution_location": "CLIENT_HARDWARE",
+    "client_media_bytes": 1045536,
+    "backend_media_bytes": 0,
+    "server_gpu_used": false,
+    "server_video_decode_frames": 0,
+    "server_transcode_count": 0,
+    "remux_location": "CLIENT_BROWSER",
+    "artifact_saved": true
+  },
+  "classification": "PROVEN_ON_LAN_AND_OVERLAY"
+}

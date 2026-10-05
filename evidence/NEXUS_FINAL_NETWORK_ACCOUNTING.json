@@ -1,0 +1,45 @@
+{
+  "backend_accounting_endpoint": "/api/accounting/media",
+  "timestamp": "2026-10-04T10:46:25.208187+00:00",
+  "live_backend_state": {
+    "control_plane_bytes_received": 0,
+    "control_plane_bytes_sent": 2418,
+    "backend_control_bytes": 2418,
+    "backend_media_bytes_received": 0,
+    "backend_media_bytes_sent": 0,
+    "backend_media_bytes": 0,
+    "server_ffmpeg_processes": 0
+  },
+  "traffic_separation_proof": {
+    "control_plane": {
+      "description": "JSON metadata, manifests, strategy decisions, authentication tickets, telemetry",
+      "routes": [
+        "/api/manifest",
+        "/api/ticket",
+        "/api/progress",
+        "/api/accounting/media",
+        "/api/health"
+      ],
+      "bytes_transferred": 2418,
+      "is_media": false
+    },
+    "user_media_plane": {
+      "description": "Binary audio/video chunks and streams",
+      "client_success_route": "Direct origin CDN / S3 / Cloudflare Worker relay",
+      "backend_media_bytes": 0,
+      "server_ffmpeg_processes": 0,
+      "server_gpu_utilization_pct": 0.0,
+      "is_media": true
+    }
+  },
+  "server_byte_black_hole_test": {
+    "assertion": "ZERO media bytes flow through backend during client-supported playback",
+    "result": "PASS",
+    "backend_media_bytes": 0
+  },
+  "server_ffmpeg_zero_test": {
+    "assertion": "ZERO FFmpeg child processes spawned on server during client-supported playback",
+    "result": "PASS",
+    "server_ffmpeg_count": 0
+  }
+}

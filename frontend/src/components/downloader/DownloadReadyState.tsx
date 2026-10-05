@@ -26,7 +26,10 @@ export function DownloadReadyState({
   const isComplete = session.status === 'ready';
 
   const handleSaveToDisk = () => {
-    if (!session.downloadUrl) return;
+    if (!session.downloadUrl) {
+      alert('The file was saved directly to your chosen folder during extraction.');
+      return;
+    }
     const a = document.createElement('a');
     a.href = session.downloadUrl;
     const ext = session.selectedQuality.container;
@@ -135,10 +138,23 @@ export function DownloadReadyState({
             <button
               type="button"
               onClick={handleSaveToDisk}
-              className="w-full flex items-center justify-center gap-2 bg-[#0A0A0C] hover:bg-black text-white py-3.5 px-5 rounded-full font-sans font-semibold text-xs tracking-wider uppercase transition-all duration-200 transform hover:scale-[1.01] active:scale-[0.99] shadow-lg shadow-black/15 cursor-pointer"
+              className={`w-full flex items-center justify-center gap-2 ${
+                session.downloadUrl
+                  ? 'bg-[#0A0A0C] hover:bg-black text-white'
+                  : 'bg-emerald-700 hover:bg-emerald-800 text-white'
+              } py-3.5 px-5 rounded-full font-sans font-semibold text-xs tracking-wider uppercase transition-all duration-200 transform hover:scale-[1.01] active:scale-[0.99] shadow-lg shadow-black/15 cursor-pointer`}
             >
-              <Download className="w-4 h-4 text-white" />
-              <span>Save File to Disk</span>
+              {session.downloadUrl ? (
+                <>
+                  <Download className="w-4 h-4 text-white" />
+                  <span>Save File to Disk</span>
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 className="w-4 h-4 text-white" />
+                  <span>File Saved Directly to Disk</span>
+                </>
+              )}
             </button>
 
             <button

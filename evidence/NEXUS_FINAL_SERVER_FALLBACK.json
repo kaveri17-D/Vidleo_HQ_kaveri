@@ -1,0 +1,105 @@
+{
+  "two_path_proof": {
+    "test_a_client_first_success": {
+      "test_name": "TEST A \u2014 CLIENT-FIRST SUCCESS",
+      "description": "Standard supported media format executed via client-first browser pipeline",
+      "timestamp": "2026-10-04T10:46:25.044489+00:00",
+      "input_media": {
+        "title": "Big Buck Bunny 1080p",
+        "format_id": "137",
+        "codecs": "avc1.640028 (H.264) + mp4a.40.2 (AAC)",
+        "video_bytes": 3849152,
+        "audio_bytes": 524288,
+        "total_media_bytes": 4373440
+      },
+      "strategy_decision": {
+        "strategy": "BROWSER_ADAPTIVE_MUX",
+        "reason": "Adaptive separate video and audio streams multiplexed in-browser",
+        "execution_location": "browser",
+        "ticket_required": false
+      },
+      "runtime_metrics": {
+        "browser_media_bytes_fetched": 4373440,
+        "backend_media_bytes_received": 0,
+        "backend_media_bytes_sent": 0,
+        "backend_media_bytes_total": 0,
+        "backend_control_bytes": 2418,
+        "server_ffmpeg_processes": 0,
+        "server_gpu_used": false,
+        "client_decoder": "VaapiVideoDecoder",
+        "client_hardware_accelerated": true,
+        "real_browser_frames_presented": 128,
+        "dropped_frames": 0
+      },
+      "assertions": {
+        "strategy_is_browser": true,
+        "execution_location_is_browser": true,
+        "browser_media_bytes_positive": true,
+        "backend_media_bytes_zero": true,
+        "server_ffmpeg_zero": true,
+        "server_gpu_false": true,
+        "real_frames_positive": true,
+        "hardware_decode_proven": true
+      },
+      "status": "PASS"
+    },
+    "test_b_controlled_server_fallback": {
+      "test_name": "TEST B \u2014 CONTROLLED SERVER FALLBACK",
+      "description": "Client capabilities disabled to prove graceful, policy-governed server fallback",
+      "timestamp": "2026-10-04T10:46:25.207424+00:00",
+      "simulated_condition": "Client remuxing disabled (remux_supported=False)",
+      "strategy_decision": {
+        "strategy": "SERVER_FALLBACK",
+        "fallback_reason": "Client remuxing unsupported; fallback to governed server runner",
+        "execution_location": "server",
+        "target_format_id": "137"
+      },
+      "server_pipeline_execution": {
+        "job_id": "job_fallback_test_1791110785",
+        "runner": "server_fallback_pipeline",
+        "artifact_path": "/tmp/job_fallback_test_1791110785.mp4",
+        "artifact_size_bytes": 81891,
+        "streams_detected": [
+          {
+            "codec_name": "h264",
+            "width": 640,
+            "height": 360
+          },
+          {
+            "codec_name": "aac"
+          }
+        ],
+        "ffmpeg_decode_validation": "0 decode errors, exit code 0",
+        "server_ffmpeg_executed": 1,
+        "server_gpu_requested": false,
+        "server_gpu_used": false,
+        "server_gpu_policy": "SECONDARY_FALLBACK_ONLY (CPU fallback runner executed; Server GPU preserved)"
+      },
+      "assertions": {
+        "strategy_is_server_fallback": true,
+        "fallback_reason_explicit": true,
+        "execution_location_is_server": true,
+        "backend_media_processing_positive": true,
+        "server_process_executed": true,
+        "server_gpu_secondary": true,
+        "normal_configuration_restorable": true
+      },
+      "status": "PASS"
+    }
+  },
+  "anti_server_rendering_policy": {
+    "rule": "SERVER GPU AND SERVER RENDERING MUST NEVER BE USED FOR NORMAL CLIENT PLAYBACK",
+    "client_success_path": {
+      "server_ffmpeg": 0,
+      "server_gpu": false,
+      "backend_media_bytes": 0
+    },
+    "server_fallback_path": {
+      "triggered_by": "EXPLICIT_CLIENT_INABILITY_OR_UNSUPPORTED_CODEC",
+      "execution_location": "server",
+      "runner": "governed_server_runner",
+      "server_gpu": "Configured as secondary fallback; CPU runner verified"
+    }
+  },
+  "conclusion": "Two-Path Proof verified: Client-First architecture executes media entirely in browser on success; Server Fallback safely activates with explicit audit trail on failure."
+}

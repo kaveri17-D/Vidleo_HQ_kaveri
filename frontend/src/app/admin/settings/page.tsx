@@ -10,8 +10,22 @@ export default function AdminSettingsPage() {
   const [require2FA, setRequire2FA] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  const handleSaveSettings = (e: React.FormEvent) => {
+  const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
+    try {
+      await fetch('/api/admin/data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'RECORD_AUDIT_EVENT',
+          event: 'SETTINGS_CHANGED',
+          target: 'admin_security_preferences',
+          metadata: { sessionTimeout, require2FA },
+        }),
+      });
+    } catch {
+      //
+    }
     setSaved(true);
     setTimeout(() => setSaved(false), 3000);
   };

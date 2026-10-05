@@ -1,0 +1,40 @@
+{
+  "mediaSource": "/test-media/remux_4k_prof0.webm",
+  "clientRendering": {
+    "attachedToDom": true,
+    "requestVideoFrameCallbackSupported": true,
+    "frameCallbacksCount": 115,
+    "firstFrameTime": 50.1,
+    "lastFrameTime": 4006.2,
+    "presentedWidth": 3840,
+    "presentedHeight": 2160,
+    "totalPresentedFrames": 115,
+    "droppedFrames": 0,
+    "ended": false
+  },
+  "mediaCapabilities": {
+    "h264_1080p": {
+      "supported": true,
+      "smooth": true,
+      "powerEfficient": true
+    },
+    "vp9_1080p": {
+      "supported": true,
+      "smooth": true,
+      "powerEfficient": true
+    },
+    "vp9_4k": {
+      "supported": true,
+      "smooth": true,
+      "powerEfficient": true
+    }
+  },
+  "webCodecs": {
+    "h264_hw": true,
+    "h264_sw": true,
+    "vp9_4k_hw": true,
+    "vp9_4k_sw": true
+  },
+  "networkMediaBytes": 0,
+  "networkEntries": []
+}

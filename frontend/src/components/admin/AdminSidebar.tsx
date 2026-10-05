@@ -8,13 +8,17 @@ import {
   Users, 
   Film, 
   Download, 
+  KeyRound,
+  Globe,
+  Activity,
+  BarChart3,
   FileText, 
-  Activity, 
   Settings, 
+  ShieldCheck,
+  ClipboardList,
   LogOut, 
   ChevronLeft, 
   ChevronRight, 
-  ShieldCheck, 
   X,
   Menu,
   Sparkles
@@ -31,13 +35,15 @@ export interface AdminNavItem {
 }
 
 const ADMIN_NAV_ITEMS: AdminNavItem[] = [
-  { label: 'Dashboard', href: '/admin/dashboard', icon: LayoutDashboard },
-  { label: 'Users', href: '/admin/users', icon: Users },
-  { label: 'Media', href: '/admin/media', icon: Film },
-  { label: 'Downloads', href: '/admin/downloads', icon: Download },
-  { label: 'Content', href: '/admin/content', icon: FileText },
+  { label: 'Overview', href: '/admin/dashboard', icon: LayoutDashboard },
+  { label: 'Users', href: '/admin/dashboard/users', icon: Users },
+  { label: 'Downloads', href: '/admin/dashboard/downloads', icon: Download },
+  { label: 'Jobs', href: '/admin/dashboard/jobs', icon: Film },
+  { label: 'Platforms', href: '/admin/platforms', icon: Globe },
   { label: 'System', href: '/admin/system', icon: Activity },
+  { label: 'Security', href: '/admin/security', icon: ShieldCheck },
   { label: 'Settings', href: '/admin/settings', icon: Settings },
+  { label: 'Audit Logs', href: '/admin/audit-logs', icon: ClipboardList },
 ];
 
 interface AdminSidebarProps {
@@ -72,10 +78,15 @@ export function AdminSidebar({ isMobileOpen = false, onCloseMobile }: AdminSideb
             {isCollapsed ? (
               <VidleoSymbol size={28} />
             ) : (
-              <div className="flex items-center gap-2">
-                <VidleoLogo size="md" isLight={false} />
-                <span className="px-1.5 py-0.5 rounded bg-[#5B4BFF] text-white text-[9px] font-mono font-bold uppercase tracking-wider">
-                  Admin
+              <div className="flex flex-col">
+                <div className="flex items-center gap-2">
+                  <VidleoLogo size="sm" isLight={false} />
+                  <span className="px-1.5 py-0.2 rounded bg-[#5B4BFF]/20 text-[#5B4BFF] border border-[#5B4BFF]/40 text-[9px] font-mono font-bold uppercase tracking-wider">
+                    Admin
+                  </span>
+                </div>
+                <span className="text-[9.5px] font-mono tracking-wider text-white/50 uppercase mt-1 font-semibold">
+                  Admin Control Center
                 </span>
               </div>
             )}
@@ -177,7 +188,7 @@ export function AdminSidebar({ isMobileOpen = false, onCloseMobile }: AdminSideb
           <LogOut className="w-4 h-4 text-white/40 group-hover:text-red-400 transition-colors" />
           {!isCollapsed && (
             <span className="text-xs font-medium tracking-tight">
-              Admin Logout
+              Sign Out
             </span>
           )}
         </button>

@@ -1,0 +1,7 @@
+{
+  "browser": "Apple Safari / WebKit",
+  "platform": "macOS / iOS / iPadOS",
+  "status": "NOT_AVAILABLE_IN_LAB",
+  "reason": "No physical Apple Mac or iOS hardware provisioned in local lab",
+  "tested": false
+}

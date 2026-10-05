@@ -1,0 +1,7 @@
+{
+  "platform": "iOS / iPadOS",
+  "download_completion": "WebKit Download Sink",
+  "status": "NOT_AVAILABLE_IN_LAB",
+  "reason": "Physical iOS device absent in lab",
+  "tested": false
+}

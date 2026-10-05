@@ -61,7 +61,7 @@ const DEFAULT_DEMO_MEDIA: MediaItem[] = [
     duration: '06:24',
     durationSeconds: 384,
     thumbnailUrl: 'https://images.unsplash.com/photo-1492691527719-9d1e07e534b4?q=80&w=1200&auto=format&fit=crop',
-    videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
+    videoUrl: '/test-media/remux_4k_prof0.webm',
     isReal: false,
   },
   {
@@ -78,7 +78,7 @@ const DEFAULT_DEMO_MEDIA: MediaItem[] = [
     duration: '05:21',
     durationSeconds: 321,
     thumbnailUrl: 'https://images.unsplash.com/photo-1509198397868-475647b2a1e5?q=80&w=1200&auto=format&fit=crop',
-    videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
+    videoUrl: '/test-media/remux_1080p.mp4',
     isReal: false,
   },
   {

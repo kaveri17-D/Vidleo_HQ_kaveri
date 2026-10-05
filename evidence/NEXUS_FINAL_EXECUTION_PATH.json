@@ -1,0 +1,54 @@
+{
+  "execution_location_matrix": [
+    {
+      "state": "CLIENT",
+      "strategy": "DIRECT_PROGRESSIVE / DIRECT_RANGE / BROWSER_ADAPTIVE_MUX",
+      "selection_criteria": "Direct progressive/range media with client-supported codec and container",
+      "media_bytes": "Client directly fetches from origin CDN / storage; Backend = 0 bytes",
+      "decoder": "Browser native HTMLVideoElement (VaapiVideoDecoder / platform HW) or WebCodecs",
+      "gpu": "Client / User GPU (Intel UHD 630 on tested host; 0 server GPU)",
+      "server_processes": 0,
+      "result": "PASS"
+    },
+    {
+      "state": "CLIENT+WORKER",
+      "strategy": "SIGNED_WORKER_RANGE",
+      "selection_criteria": "Relay-required progressive/range media protected by cryptographic worker ticket",
+      "media_bytes": "Client fetches via Cloudflare Worker edge relay; Backend = 0 media bytes",
+      "decoder": "Browser native HTMLVideoElement or WebCodecs",
+      "gpu": "Client / User GPU (0 server GPU)",
+      "server_processes": 0,
+      "result": "PASS"
+    },
+    {
+      "state": "SERVER_CPU",
+      "strategy": "SERVER_FALLBACK",
+      "selection_criteria": "Client browser lacks WebCodecs/remux or encounters unsupported stream encryption/format",
+      "media_bytes": "Backend downloads and transmuxes via server CPU runner",
+      "decoder": "FFmpeg libx264 / libvpx / aac on server CPU",
+      "gpu": "None (Server CPU only)",
+      "server_processes": 1,
+      "result": "FALLBACK_PASS"
+    },
+    {
+      "state": "SERVER_GPU",
+      "strategy": "SERVER_FALLBACK (GPU Accelerated)",
+      "selection_criteria": "High-throughput server transcoding enabled when server GPU is configured",
+      "media_bytes": "Backend downloads and encodes via NVENC / NVDEC",
+      "decoder": "NVIDIA NVDEC (h264_cuvid / hevc_cuvid) on server GPU",
+      "gpu": "Server GPU (NVIDIA Quadro P3200 Mobile, driver 580.178.04)",
+      "server_processes": 1,
+      "result": "CONFIGURED_SECONDARY"
+    },
+    {
+      "state": "UNSUPPORTED",
+      "strategy": "UNSUPPORTED",
+      "selection_criteria": "DRM / FairPlay or prohibited content with server fallback disallowed by policy",
+      "media_bytes": "0 bytes transferred",
+      "decoder": "None",
+      "gpu": "None",
+      "server_processes": 0,
+      "result": "REJECTED_BY_POLICY"
+    }
+  ]
+}

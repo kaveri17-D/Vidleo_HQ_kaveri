@@ -1,0 +1,8 @@
+{
+  "platform": "macOS (Apple Silicon / Intel)",
+  "status": "NOT_AVAILABLE_IN_LAB",
+  "reason": "No physical Mac hardware or remote macOS runner provisioned in local lab",
+  "prerequisite": "Physical Apple Mac with VideoToolbox hardware acceleration",
+  "tested": false,
+  "hardware_decode_proven": false
+}

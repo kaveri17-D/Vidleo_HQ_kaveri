@@ -1,0 +1,118 @@
+{
+  "execution_governor_guarantee_test": {
+    "title": "NEXUS Final Execution Governor Guarantee Test (Section 50)",
+    "timestamp": "2026-10-04T11:07:47.762953+00:00",
+    "invariants_tested": [
+      "Invariant A: CLIENT_SUCCESS -> backend_media_bytes = 0",
+      "Invariant B: CLIENT_SUCCESS -> server_gpu_used = false",
+      "Invariant C: CLIENT_SUCCESS -> server_ffmpeg_media_processing = 0",
+      "Invariant D: SERVER_GPU -> explicit fallback_reason",
+      "Invariant E: GPU_REQUIRED + no GPU -> GPU_EXECUTION_UNAVAILABLE (NEVER silently CPU)",
+      "Invariant F: CLIENT_HARDWARE -> hardware evidence must exist",
+      "Invariant G: CLIENT_SOFTWARE -> hardware must NOT be claimed"
+    ],
+    "cases": [
+      {
+        "case": 1,
+        "name": "Client Hardware Available",
+        "mode": "NORMAL_CLIENT_FIRST",
+        "expected_location": "CLIENT_HARDWARE",
+        "actual_location": "CLIENT_HARDWARE",
+        "server_gpu_used": false,
+        "status": "PASS"
+      },
+      {
+        "case": 2,
+        "name": "Client HW Unavailable, Client SW Available",
+        "mode": "NORMAL_CLIENT_FIRST",
+        "expected_location": "CLIENT_SOFTWARE",
+        "actual_location": "CLIENT_SOFTWARE",
+        "server_gpu_used": false,
+        "status": "PASS"
+      },
+      {
+        "case": 3,
+        "name": "Client Execution Unavailable, Server GPU Available",
+        "mode": "NORMAL_CLIENT_FIRST",
+        "expected_location": "SERVER_GPU",
+        "actual_location": "SERVER_GPU",
+        "server_gpu_used": true,
+        "status": "PASS"
+      },
+      {
+        "case": 4,
+        "name": "Client & Server GPU Unavailable -> Server CPU Fallback",
+        "mode": "NORMAL_CLIENT_FIRST",
+        "expected_location": "SERVER_CPU",
+        "actual_location": "SERVER_CPU",
+        "server_gpu_used": false,
+        "status": "PASS"
+      },
+      {
+        "case": 5,
+        "name": "GPU_REQUIRED + Client GPU Available",
+        "mode": "GPU_REQUIRED",
+        "expected_location": "CLIENT_HARDWARE",
+        "actual_location": "CLIENT_HARDWARE",
+        "server_gpu_used": false,
+        "status": "PASS"
+      },
+      {
+        "case": 6,
+        "name": "GPU_REQUIRED + Client GPU Unavailable + Server GPU Available",
+        "mode": "GPU_REQUIRED",
+        "expected_location": "SERVER_GPU",
+        "actual_location": "SERVER_GPU",
+        "server_gpu_used": true,
+        "status": "PASS"
+      },
+      {
+        "case": 7,
+        "name": "GPU_REQUIRED + No GPU Anywhere -> GPU_EXECUTION_UNAVAILABLE",
+        "mode": "GPU_REQUIRED",
+        "expected_location": "GPU_EXECUTION_UNAVAILABLE",
+        "actual_location": "GPU_EXECUTION_UNAVAILABLE",
+        "server_gpu_used": false,
+        "status": "PASS"
+      }
+    ],
+    "sample_decision_32_fields": {
+      "execution_mode": "NORMAL_CLIENT_FIRST",
+      "execution_location": "CLIENT_HARDWARE",
+      "client_execution": true,
+      "client_hardware_requested": "prefer-hardware",
+      "client_hardware_capable": true,
+      "client_hardware_proven": true,
+      "client_software_available": true,
+      "server_gpu_allowed": false,
+      "server_gpu_available": true,
+      "server_gpu_selected": false,
+      "server_cpu_available": true,
+      "fallback_reason": null,
+      "fallback_level": 0,
+      "codec": "avc1.640028",
+      "profile": "High Profile (Main)",
+      "resolution": "1920x1080",
+      "framerate": 30,
+      "container": "mp4",
+      "memory_estimate": 6000000,
+      "storage_available": 10737418240,
+      "browser": "Chromium",
+      "browser_version": "153.0.8010.47",
+      "os": "Linux",
+      "gpu_vendor": "Intel",
+      "gpu_name": "Intel UHD Graphics 630",
+      "device_class": "desktop",
+      "webcodecs_supported": true,
+      "webgpu_supported": false,
+      "media_capabilities_supported": true,
+      "hardware_decoder": "VaapiVideoDecoder",
+      "confidence": "VERY_HIGH",
+      "evidence_sources": [
+        "CLIENT_HARDWARE_DECODE",
+        "VAAPI_TELEMETRY",
+        "NORMAL_CLIENT_FIRST"
+      ]
+    }
+  }
+}

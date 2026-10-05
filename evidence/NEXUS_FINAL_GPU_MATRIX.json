@@ -1,0 +1,52 @@
+{
+  "title": "NEXUS Final Cross-Platform GPU Hardware Matrix",
+  "timestamp": "2026-10-04T14:33:11.144217+00:00",
+  "gpus": [
+    {
+      "vendor": "Intel",
+      "model": "Intel UHD Graphics 630 (Coffee Lake)",
+      "role": "Client Primary Hardware Decoder",
+      "device_node": "/dev/dri/renderD128",
+      "driver": "i965 / Intel VA-API driver 2.4.1",
+      "supported_hw_codecs": [
+        "H.264",
+        "VP9"
+      ],
+      "status": "PROVEN"
+    },
+    {
+      "vendor": "NVIDIA",
+      "model": "NVIDIA Quadro P3200 Mobile (GP104GLM, 6GB)",
+      "role": "Server Secondary Fallback GPU",
+      "device_node": "/dev/dri/renderD129",
+      "driver": "580.178.04",
+      "nvdec_hardware_decode": "PROVEN (h264_cuvid, hevc_cuvid, vp9_cuvid)",
+      "nvenc_hardware_encode": "PROVEN (h264_nvenc, hevc_nvenc)",
+      "status": "PROVEN"
+    },
+    {
+      "vendor": "AMD",
+      "model": "Radeon Graphics",
+      "role": "Client Hardware",
+      "status": "NOT_AVAILABLE_IN_LAB"
+    },
+    {
+      "vendor": "Apple",
+      "model": "Apple Silicon (M1/M2/M3/M4)",
+      "role": "Client Hardware",
+      "status": "NOT_AVAILABLE_IN_LAB"
+    },
+    {
+      "vendor": "Qualcomm",
+      "model": "Adreno",
+      "role": "Client Mobile",
+      "status": "NOT_AVAILABLE_IN_LAB"
+    },
+    {
+      "vendor": "ARM",
+      "model": "Mali",
+      "role": "Client Mobile",
+      "status": "NOT_AVAILABLE_IN_LAB"
+    }
+  ]
+}

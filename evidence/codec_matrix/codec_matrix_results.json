@@ -1,0 +1,38 @@
+{
+  "environment": {
+    "platform": "Linux x86_64 Ubuntu 24.04 (Dell Precision 7730)",
+    "display_session": "Wayland (Intel UHD 630 on /dev/dri/renderD128)",
+    "browser": "Chrome/153.0.8010.47",
+    "gl_renderer": "ANGLE (Intel, Mesa Intel(R) UHD Graphics 630 (CFL GT2), OpenGL ES 3.2 Mesa 25.2.8-0ubuntu0.24.04.2)"
+  },
+  "matrix": [
+    {
+      "format_id": "H264_1080P_AAC",
+      "video_codec": "avc1.4d401f",
+      "audio_codec": "mp4a.40.2",
+      "resolution": "1920x1080",
+      "container": "MP4",
+      "client_remux": "PASS (Lossless CPU Demux/Mux via MP4Box.js)",
+      "client_decode": "PASS (VaapiVideoDecoder via Intel UHD 630)",
+      "hardware_accelerated": true,
+      "decoder_name": "VaapiVideoDecoder",
+      "webcodecs_execution_frames": 60,
+      "requestVideoFrameCallback": true,
+      "frames_presented": 111
+    },
+    {
+      "format_id": "VP9_4K_OPUS_PROF0",
+      "video_codec": "vp09.00.10.08 (VP9 Profile 0, 4:2:0)",
+      "audio_codec": "opus",
+      "resolution": "3840x2160",
+      "container": "WebM",
+      "client_remux": "PASS (Lossless CPU Demux/Mux via WebM Extractor)",
+      "client_decode": "PASS (VaapiVideoDecoder via Intel UHD 630)",
+      "hardware_accelerated": true,
+      "decoder_name": "VaapiVideoDecoder",
+      "webcodecs_execution_frames": 60,
+      "requestVideoFrameCallback": true,
+      "frames_presented": 115
+    }
+  ]
+}

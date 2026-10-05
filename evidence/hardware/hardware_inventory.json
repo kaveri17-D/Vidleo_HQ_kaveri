@@ -1,0 +1,27 @@
+{
+  "system": "Linux system-Precision-7730 7.0.0-34-generic #34-Ubuntu SMP PREEMPT_DYNAMIC Wed Sep  2 14:29:37 UTC 2026 x86_64 GNU/Linux",
+  "cpu": "Model name:                              Intel(R) Core(TM) i7-8850H CPU @ 2.60GHz",
+  "display_server": {
+    "display": ":0",
+    "wayland_display": "wayland-0",
+    "xdg_session_type": "wayland"
+  },
+  "gpus": [
+    {
+      "type": "Integrated",
+      "model": "Intel UHD Graphics 630",
+      "pci_id": "00:02.0",
+      "driver": "i915",
+      "dri_render_node": "/dev/dri/renderD128",
+      "dri_card_node": "/dev/dri/card1"
+    },
+    {
+      "type": "Discrete",
+      "model": "NVIDIA Quadro P3200 Mobile",
+      "pci_id": "01:00.0",
+      "driver": "nvidia 580.178.04",
+      "dri_render_node": "/dev/dri/renderD129",
+      "dri_card_node": "/dev/dri/card2"
+    }
+  ]
+}

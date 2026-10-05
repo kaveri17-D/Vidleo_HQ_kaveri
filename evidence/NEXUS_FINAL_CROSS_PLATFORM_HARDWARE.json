@@ -1,0 +1,11 @@
+{
+  "title": "NEXUS Cross-Platform Hardware Acceleration Status",
+  "timestamp": "2026-10-04T14:33:11.144217+00:00",
+  "intel_uhd_630_vaapi": "PROVEN",
+  "nvidia_quadro_p3200_nvdec": "PROVEN",
+  "nvidia_quadro_p3200_nvenc": "PROVEN",
+  "apple_silicon_videotoolbox": "NOT_AVAILABLE_IN_LAB",
+  "windows_d3d11_dxva": "NOT_AVAILABLE_IN_LAB",
+  "android_mediacodec": "NOT_AVAILABLE_IN_LAB",
+  "literal_user_gpu_guarantee": "NOT_GUARANTEED"
+}

@@ -1,0 +1,8 @@
+{
+  "platform": "Android (Qualcomm / MediaTek / Samsung)",
+  "status": "NOT_AVAILABLE_IN_LAB",
+  "reason": "No physical Android device connected via ADB and no cloud mobile device farm provisioned",
+  "adb_devices_output": "List of devices attached (empty)",
+  "prerequisite": "Physical Android device with MediaCodec hardware acceleration",
+  "tested": false
+}

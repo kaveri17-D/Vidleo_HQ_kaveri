@@ -1,0 +1,24 @@
+{
+  "source_input": "http://localhost:3000/test-media/remux_4k_prof0.webm",
+  "authenticated_user": "kaveridoye5@gmail.com (Role: user, Plan: premium)",
+  "resolved_metadata": {
+    "title": "NEXUS 4K VP9 Profile 0 Clean-Room Source",
+    "width": 3840,
+    "height": 2160,
+    "codec": "vp09.00.10.08",
+    "audio": "opus",
+    "duration": 5.028
+  },
+  "strategy_engine_choice": "DIRECT_RANGE (Client-first direct streaming)",
+  "ticket_type": "SIGNED_DIRECT_CLIENT",
+  "client_media_destination": "HTMLVideoElement in <DownloadedVideoExperience />",
+  "browser_decoder": "VaapiVideoDecoder (Platform Hardware Video Decoder = true)",
+  "frame_presentation": {
+    "width": 3840,
+    "height": 2160,
+    "currentTime": 1.928831,
+    "readyState": 4,
+    "paused": false
+  },
+  "result": "PASS"
+}

@@ -18,7 +18,21 @@ export default function AdminContentPage() {
     setFlags((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    try {
+      await fetch('/api/admin/data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'RECORD_AUDIT_EVENT',
+          event: 'SETTINGS_CHANGED',
+          target: 'content_feature_flags',
+          metadata: { flags, announcement },
+        }),
+      });
+    } catch {
+      // Best effort
+    }
     setSavedSuccess(true);
     setTimeout(() => setSavedSuccess(false), 3000);
   };

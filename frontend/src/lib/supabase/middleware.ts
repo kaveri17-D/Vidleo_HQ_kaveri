@@ -60,13 +60,6 @@ export async function updateSession(request: NextRequest) {
 
   const pathname = request.nextUrl.pathname;
 
-  // Handle /admin root redirect
-  if (pathname === '/admin' || pathname === '/admin/') {
-    const url = request.nextUrl.clone();
-    url.pathname = '/admin/dashboard';
-    return NextResponse.redirect(url);
-  }
-
   // Handle /admin/login
   if (pathname === '/admin/login') {
     if (user) {
@@ -80,12 +73,14 @@ export async function updateSession(request: NextRequest) {
     return response;
   }
 
-  // Protect /admin/* routes
-  if (pathname.startsWith('/admin/')) {
+  // Handle /admin root and /admin/* sub-routes
+  if (pathname === '/admin' || pathname.startsWith('/admin/')) {
     if (!user) {
       const url = request.nextUrl.clone();
       url.pathname = '/admin/login';
-      url.searchParams.set('next', pathname);
+      if (pathname !== '/admin') {
+        url.searchParams.set('next', pathname);
+      }
       return NextResponse.redirect(url);
     }
 
@@ -94,6 +89,12 @@ export async function updateSession(request: NextRequest) {
       const url = request.nextUrl.clone();
       url.pathname = '/admin/login';
       url.searchParams.set('error', 'access_denied');
+      return NextResponse.redirect(url);
+    }
+
+    if (pathname === '/admin' || pathname === '/admin/') {
+      const url = request.nextUrl.clone();
+      url.pathname = '/admin/dashboard';
       return NextResponse.redirect(url);
     }
   }

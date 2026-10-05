@@ -50,6 +50,7 @@ export interface VideoMetadata {
   aspectRatio?: '16:9' | '9:16' | '1:1' | '4:5';
   availableVideoQualities: QualityOption[];
   availableAudioQualities: QualityOption[];
+  manifest?: any;
 }
 
 export type AnalysisStep = 

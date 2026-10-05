@@ -1,0 +1,14 @@
+{
+  "title": "NEXUS Cross-Platform Fallback Ladder Verification",
+  "timestamp": "2026-10-04T14:33:11.144217+00:00",
+  "ladder": [
+    "USER GPU (Primary)",
+    "USER SOFTWARE (Secondary)",
+    "SERVER GPU (Tertiary)",
+    "SERVER CPU (Final)",
+    "UNSUPPORTED (Terminal)"
+  ],
+  "gpu_required_policy": "USER GPU -> SERVER GPU -> GPU_EXECUTION_UNAVAILABLE (Zero CPU substitution)",
+  "verification_status": "PROVEN",
+  "all_11_governor_guarantee_tests_passing": true
+}

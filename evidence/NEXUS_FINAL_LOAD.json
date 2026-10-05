@@ -1,0 +1,75 @@
+{
+  "title": "NEXUS Production Load & Canary Safety Gate Validation",
+  "timestamp": "2026-10-04T11:50:06.348Z",
+  "canary_progression": {
+    "stage_1": {
+      "sessions": 1,
+      "pass": true,
+      "backend_media_bytes": 0,
+      "server_gpu_used": false
+    },
+    "stage_2": {
+      "sessions": 5,
+      "pass": true,
+      "backend_media_bytes": 0,
+      "server_gpu_used": false
+    },
+    "stage_3": {
+      "sessions": 10,
+      "pass": true,
+      "backend_media_bytes": 0,
+      "server_gpu_used": false
+    }
+  },
+  "client_first_invariant_preserved_under_load": true,
+  "hidden_server_rendering_observed": false,
+  "real_browser_session_load": {
+    "total_sessions_executed": 16,
+    "successful_sessions": 16,
+    "failed_sessions": 0,
+    "average_session_duration_ms": "2007.1"
+  },
+  "http_api_load_concurrency_matrix": [
+    {
+      "concurrency": 1,
+      "successes": 1,
+      "failures": 0,
+      "elapsed_ms": 289,
+      "avg_latency_ms": 289,
+      "req_per_sec": "3.46"
+    },
+    {
+      "concurrency": 5,
+      "successes": 5,
+      "failures": 0,
+      "elapsed_ms": 539,
+      "avg_latency_ms": 107.8,
+      "req_per_sec": "9.28"
+    },
+    {
+      "concurrency": 10,
+      "successes": 10,
+      "failures": 0,
+      "elapsed_ms": 1125,
+      "avg_latency_ms": 112.5,
+      "req_per_sec": "8.89"
+    },
+    {
+      "concurrency": 25,
+      "successes": 25,
+      "failures": 0,
+      "elapsed_ms": 2728,
+      "avg_latency_ms": 109.12,
+      "req_per_sec": "9.16"
+    },
+    {
+      "concurrency": 50,
+      "successes": 50,
+      "failures": 0,
+      "elapsed_ms": 5465,
+      "avg_latency_ms": 109.3,
+      "req_per_sec": "9.15"
+    }
+  ],
+  "classification": "PASS"
+}

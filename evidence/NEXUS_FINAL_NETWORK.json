@@ -1,0 +1,46 @@
+{
+  "title": "NEXUS Network Path & Multi-Interface Reachability",
+  "timestamp": "2026-10-04T14:33:11.144217+00:00",
+  "endpoints": [
+    {
+      "interface": "Loopback",
+      "host": "127.0.0.1",
+      "port": 3000,
+      "status": "200 OK"
+    },
+    {
+      "interface": "Loopback",
+      "host": "127.0.0.1",
+      "port": 8000,
+      "status": "200 OK"
+    },
+    {
+      "interface": "LAN",
+      "host": "192.168.0.109",
+      "port": 3000,
+      "status": "200 OK"
+    },
+    {
+      "interface": "LAN",
+      "host": "192.168.0.109",
+      "port": 8000,
+      "status": "200 OK"
+    },
+    {
+      "interface": "Tailscale Overlay",
+      "host": "100.101.151.107",
+      "port": 3000,
+      "status": "200 OK"
+    },
+    {
+      "interface": "Tailscale Overlay",
+      "host": "100.101.151.107",
+      "port": 8000,
+      "status": "200 OK"
+    }
+  ],
+  "black_hole_test": {
+    "description": "Validation fails immediately if unexpected backend media bytes are transferred during client success",
+    "result": "PASS"
+  }
+}

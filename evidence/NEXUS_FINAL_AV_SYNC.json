@@ -1,0 +1,45 @@
+{
+  "title": "NEXUS Audio/Video Synchronization Validation",
+  "timestamp": "2026-10-04T14:33:11.144217+00:00",
+  "metrics": {
+    "video_duration_seconds": 145.267,
+    "audio_duration_seconds": 145.31,
+    "duration_delta_seconds": 0.044,
+    "duration_delta_ms": 43.8,
+    "max_checkpoint_drift_ms": 66.7,
+    "one_frame_boundary_ms": 66.7
+  },
+  "checkpoints": [
+    {
+      "position": "0%",
+      "video_pts": 0.067,
+      "audio_pts": 0.0,
+      "drift_ms": 66.7
+    },
+    {
+      "position": "25%",
+      "video_pts": 36.333,
+      "audio_pts": 36.316,
+      "drift_ms": 17.3
+    },
+    {
+      "position": "50%",
+      "video_pts": 72.633,
+      "audio_pts": 72.632,
+      "drift_ms": 1.3
+    },
+    {
+      "position": "75%",
+      "video_pts": 108.967,
+      "audio_pts": 108.948,
+      "drift_ms": 18.6
+    },
+    {
+      "position": "100%",
+      "video_pts": 145.267,
+      "audio_pts": 145.264,
+      "drift_ms": 2.6
+    }
+  ],
+  "status": "PASS"
+}

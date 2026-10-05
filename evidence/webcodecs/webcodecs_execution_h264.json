@@ -1,0 +1,34 @@
+{
+  "prefer_hardware": {
+    "codec": "avc1.4d401f",
+    "resolution": "1920x1080",
+    "requestedHardwareAcceleration": "prefer-hardware",
+    "framesSubmitted": 60,
+    "framesDecoded": 60,
+    "decodeErrors": [],
+    "firstTimestamp": 7680,
+    "lastTimestamp": 117120,
+    "elapsedDecodeTimeMs": 104.2000000178814,
+    "decodedDimensions": {
+      "width": 1920,
+      "height": 1080
+    },
+    "underlyingDecoderObservableInDom": false
+  },
+  "prefer_software": {
+    "codec": "avc1.4d401f",
+    "resolution": "1920x1080",
+    "requestedHardwareAcceleration": "prefer-software",
+    "framesSubmitted": 60,
+    "framesDecoded": 60,
+    "decodeErrors": [],
+    "firstTimestamp": 7680,
+    "lastTimestamp": 117120,
+    "elapsedDecodeTimeMs": 98,
+    "decodedDimensions": {
+      "width": 1920,
+      "height": 1080
+    },
+    "underlyingDecoderObservableInDom": false
+  }
+}

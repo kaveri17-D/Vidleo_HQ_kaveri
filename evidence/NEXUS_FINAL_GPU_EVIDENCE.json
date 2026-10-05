@@ -1,0 +1,65 @@
+{
+  "hardware_environment": {
+    "workstation_model": "Dell Precision 7730 Mobile Workstation",
+    "cpu": "Intel Core i7-8850H @ 2.60GHz (6 cores / 12 threads)",
+    "integrated_gpu": "Intel UHD Graphics 630 (Coffeelake 3x8 GT2, /dev/dri/renderD128)",
+    "discrete_gpu": "NVIDIA Quadro P3200 Mobile (6GB GDDR5, GP104GLM, driver 580.178.04, /dev/dri/renderD129)",
+    "display_server": "Wayland (:0, wayland-0, Ubuntu GNOME compositor bound to Intel UHD 630)",
+    "kernel": "Linux 6.8.0-45-generic x86_64"
+  },
+  "browser_gpu_context": {
+    "browser_executable": "Chromium Snap 153.0.8010.47",
+    "gpu_hardware_acceleration": "Enabled",
+    "video_decode_acceleration": "Hardware accelerated via VA-API",
+    "angle_renderer": "OpenGL (Mesa Intel UHD Graphics 630 CFL GT2)",
+    "vaapi_driver": "Intel i915 / Mesa VA-API driver"
+  },
+  "playback_hardware_decode": {
+    "h264_1080p": {
+      "decoder_implementation": "VaapiVideoDecoder",
+      "is_platform_decoder": true,
+      "hardware_accelerated": true,
+      "resolution": "1920x1080",
+      "dropped_frames": 0,
+      "status": "PROVEN"
+    },
+    "vp9_4k_profile0": {
+      "decoder_implementation": "VaapiVideoDecoder",
+      "is_platform_decoder": true,
+      "hardware_accelerated": true,
+      "resolution": "3840x2160",
+      "dropped_frames": 0,
+      "status": "PROVEN"
+    }
+  },
+  "webcodecs_hardware_decode": {
+    "h264_execution": {
+      "codec": "avc1.4d401f",
+      "frames_decoded": 60,
+      "decode_errors": 0,
+      "average_decode_time_ms": 1.25,
+      "status": "PROVEN"
+    },
+    "vp9_4k_execution": {
+      "codec": "vp09.00.10.08",
+      "frames_decoded": 60,
+      "decode_errors": 0,
+      "average_decode_time_ms": 3.42,
+      "status": "PROVEN"
+    }
+  },
+  "chromium_tracing_differential": {
+    "prefer_hardware_gpu_events": 11811,
+    "prefer_software_gpu_events": 5876,
+    "gpu_activation_ratio": 2.01,
+    "prefer_hardware_media_events": 5595,
+    "prefer_software_media_events": 1170,
+    "media_activation_ratio": 4.78,
+    "decode_speedup_percent": 35.7,
+    "status": "PROVEN"
+  },
+  "universality_verdict": {
+    "tested_environment": "PROVEN (Intel UHD 630 on Linux Wayland with Chromium)",
+    "universal_guarantee": "NOT UNIVERSAL (Hardware decode is opportunistic based on user client OS/driver/browser capabilities; graceful software fallback operates when unavailable)"
+  }
+}

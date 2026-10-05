@@ -1,0 +1,7 @@
+{
+  "browser": "Microsoft Edge",
+  "platform": "Windows 10 / 11",
+  "status": "NOT_AVAILABLE_IN_LAB",
+  "reason": "No physical Windows hardware or remote Edge testing runner provisioned in local lab",
+  "tested": false
+}

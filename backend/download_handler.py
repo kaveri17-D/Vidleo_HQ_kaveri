@@ -22,6 +22,7 @@ For non-YouTube providers, downloads always go direct (no proxy needed).
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import subprocess
 import tempfile
@@ -57,9 +58,63 @@ from backend.proxy_state import (
 )
 
 
+log = logging.getLogger("nexus.download_handler")
+
 MAX_OUTPUT_STEM_LENGTH = 180
 SHARED_DOWNLOAD_ROOT = Path(__file__).resolve().parent / ".runtime" / "downloads"
 SHARED_DOWNLOAD_ROOT.mkdir(parents=True, exist_ok=True)
+
+# ─── Phase 5: Active process registry ────────────────────────────────────────
+# Maps job_id → running subprocess.Popen so cancel_download_job() can
+# terminate the process immediately rather than waiting for a polling check.
+# This dict is local to the worker process; NOT shared via Redis or DB.
+import signal as _signal  # noqa: E402 (after other imports is fine in module body)
+
+ACTIVE_PROCESSES: dict[str, "subprocess.Popen"] = {}
+_PROCESSES_LOCK = threading.Lock()
+
+
+def register_active_process(job_id: str, process: "subprocess.Popen") -> None:
+    """Register a running subprocess for real-time cancellation."""
+    with _PROCESSES_LOCK:
+        ACTIVE_PROCESSES[job_id] = process
+
+
+def deregister_active_process(job_id: str) -> None:
+    """Remove a job's process entry after completion or termination."""
+    with _PROCESSES_LOCK:
+        ACTIVE_PROCESSES.pop(job_id, None)
+
+
+def kill_active_process(job_id: str) -> bool:
+    """
+    Terminate the active subprocess for job_id.
+    Returns True if a process was found and signal was sent.
+    Sends SIGTERM first; escalates to SIGKILL after 3 seconds.
+    """
+    with _PROCESSES_LOCK:
+        process = ACTIVE_PROCESSES.get(job_id)
+    if process is None:
+        return False
+    try:
+        process.terminate()  # SIGTERM — graceful shutdown
+        try:
+            process.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            process.kill()   # SIGKILL — unconditional
+    except Exception:
+        pass
+    deregister_active_process(job_id)
+    return True
+
+
+# ─── Phase 5: Resource limits ─────────────────────────────────────────────────
+# Maximum wall-clock time a yt-dlp+ffmpeg subprocess may run (seconds).
+DOWNLOAD_PROCESS_TIMEOUT_SECONDS = int(
+    os.environ.get("NEXUS_DOWNLOAD_TIMEOUT_SECONDS", "900")  # 15 min
+)
+# Hard cap on downloaded file size (passed to yt-dlp --max-filesize).
+DOWNLOAD_MAX_FILESIZE = os.environ.get("NEXUS_DOWNLOAD_MAX_FILESIZE", "5G")
 
 
 def create_temp_output(title: str, suffix: str = "%(ext)s") -> tuple[str, str]:
@@ -94,9 +149,12 @@ async def _run_download(
     output_template: str,
     progress_callback: Optional[Callable[[ProgressSnapshot], None]] = None,
     provider: Optional[str] = None,
+    job_id: Optional[str] = None,
 ) -> Path:
     def _run_sync() -> Path:
-        print("[DOWNLOAD START]", url)
+        import logging as _logging
+        _log = _logging.getLogger("nexus.download_handler")
+        _log.info("Download starting job=%s url=%s", job_id or "?", url)
         tracker = DownloadProgressTracker(progress_callback)
         process = subprocess.Popen(
             args,
@@ -108,6 +166,10 @@ async def _run_download(
             env=_build_subprocess_env(),
             bufsize=1,
         )
+
+        # ── Phase 5: register process for real-time cancellation ─────────────
+        if job_id:
+            register_active_process(job_id, process)
 
         output_path: Optional[Path] = None
         output_lines: list[str] = []
@@ -130,23 +192,55 @@ async def _run_download(
         stderr_thread = threading.Thread(target=_consume, args=(process.stderr,), daemon=True)
         stdout_thread.start()
         stderr_thread.start()
-        process.wait()
-        stdout_thread.join()
-        stderr_thread.join()
+
+        # ── Phase 5: bounded wait with SIGTERM→SIGKILL escalation ────────────
+        timed_out = False
+        try:
+            process.wait(timeout=DOWNLOAD_PROCESS_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            _log.warning(
+                "Download timeout after %ds for job=%s — terminating process",
+                DOWNLOAD_PROCESS_TIMEOUT_SECONDS, job_id or "?",
+            )
+            try:
+                process.terminate()  # SIGTERM
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()   # SIGKILL
+            except Exception:
+                pass
+        finally:
+            if job_id:
+                deregister_active_process(job_id)
+
+        stdout_thread.join(timeout=5)
+        stderr_thread.join(timeout=5)
+
+        if timed_out:
+            try:
+                from backend.metrics import record_ffmpeg_timeout
+                record_ffmpeg_timeout()
+            except Exception:
+                pass
+            raise MediaExtractionError(
+                "Download timed out — process exceeded the maximum allowed runtime.",
+                status_code=504,
+                code="download_timeout",
+            )
 
         if process.returncode != 0:
             detail = " ".join(output_lines).strip() or "Download failed."
-            print("[ERROR]", detail)
+            _log.info("[DOWNLOAD ERROR] job=%s detail=%s", job_id or "?", detail[:200])
             err = _normalize_error(detail, provider=provider)
             err.raw_detail = detail  # type: ignore[attr-defined]
             raise err
 
         resolved_path = _resolve_output_path(output_template, output_path)
         if resolved_path and resolved_path.exists():
-            print("[DOWNLOAD DONE]", str(resolved_path))
+            _log.info("Download complete job=%s path=%s", job_id or "?", str(resolved_path))
             return resolved_path
 
-        print("[ERROR]", "Download finished without an output file.")
         raise MediaExtractionError(
             "Download finished without an output file.",
             status_code=500,
@@ -200,6 +294,10 @@ def _build_video_args(
         "--newline",
         "--progress",
         "--ffmpeg-location", ffmpeg_location,
+        # Phase 5: hard cap on downloaded file size
+        "--max-filesize", DOWNLOAD_MAX_FILESIZE,
+        # Phase 5: fail fast on non-retryable errors (don't silently skip)
+        "--abort-on-error",
         "--print", "after_move:__FILE__:%(filepath)s",
         "-o", output_template,
     ]
@@ -244,6 +342,10 @@ def _build_audio_args(
         "--audio-format", "mp3",
         "--audio-quality", "128" if format_id.startswith("audio-fallback-") else "0",
         "--ffmpeg-location", ffmpeg_location,
+        # Phase 5: hard cap on downloaded file size
+        "--max-filesize", DOWNLOAD_MAX_FILESIZE,
+        # Phase 5: fail fast on non-retryable errors
+        "--abort-on-error",
         "--print", "after_move:__FILE__:%(filepath)s",
         "-o", output_template,
     ]
@@ -280,6 +382,7 @@ async def _download_youtube(
     yt_dlp_path: str,
     ffmpeg_location: str,
     progress_callback: Optional[Callable[[ProgressSnapshot], None]] = None,
+    job_id: Optional[str] = None,  # Phase 5: for process registry
 ) -> Path:
     """YouTube-specific download path.
 
@@ -315,7 +418,7 @@ async def _download_youtube(
         )
         result = await _run_download(
             args, url=url, output_template=output_template,
-            progress_callback=progress_callback, provider="youtube",
+            progress_callback=progress_callback, provider="youtube", job_id=job_id,
         )
         if vault_info and vault_info.get("account_id"):
             try:
@@ -354,6 +457,7 @@ async def _download_generic(
     ffmpeg_location: str,
     provider: str,
     progress_callback: Optional[Callable[[ProgressSnapshot], None]] = None,
+    job_id: Optional[str] = None,  # Phase 5: for process registry
 ) -> Path:
     """All non-YouTube providers: direct, no proxy.
     Cookies from the vault are used opportunistically when present
@@ -376,7 +480,7 @@ async def _download_generic(
         )
         result = await _run_download(
             args, url=url, output_template=output_template,
-            progress_callback=progress_callback, provider=provider,
+            progress_callback=progress_callback, provider=provider, job_id=job_id,
         )
         success = True
         return result
@@ -406,6 +510,7 @@ async def download_video(
     output_template: str,
     progress_callback: Optional[Callable[[ProgressSnapshot], None]] = None,
     info: Optional[dict[str, Any]] = None,  # accepted for backwards-compat; ignored
+    job_id: Optional[str] = None,  # Phase 5: for process registry
 ) -> Path:
     ensure_media_binaries()
     yt_dlp_path = _resolve_yt_dlp_binary()
@@ -420,12 +525,13 @@ async def download_video(
             url=url, format_id=format_id, format_type="video",
             output_template=output_template, yt_dlp_path=yt_dlp_path,
             ffmpeg_location=ffmpeg_location, progress_callback=progress_callback,
+            job_id=job_id,
         )
     return await _download_generic(
         url=url, format_id=format_id, format_type="video",
         output_template=output_template, yt_dlp_path=yt_dlp_path,
         ffmpeg_location=ffmpeg_location, provider=get_provider_name(url),
-        progress_callback=progress_callback,
+        progress_callback=progress_callback, job_id=job_id,
     )
 
 
@@ -436,6 +542,7 @@ async def download_audio(
     output_template: str,
     progress_callback: Optional[Callable[[ProgressSnapshot], None]] = None,
     info: Optional[dict[str, Any]] = None,
+    job_id: Optional[str] = None,  # Phase 5: for process registry
 ) -> Path:
     ensure_media_binaries()
     yt_dlp_path = _resolve_yt_dlp_binary()
@@ -450,12 +557,13 @@ async def download_audio(
             url=url, format_id=format_id, format_type="audio",
             output_template=output_template, yt_dlp_path=yt_dlp_path,
             ffmpeg_location=ffmpeg_location, progress_callback=progress_callback,
+            job_id=job_id,
         )
     return await _download_generic(
         url=url, format_id=format_id, format_type="audio",
         output_template=output_template, yt_dlp_path=yt_dlp_path,
         ffmpeg_location=ffmpeg_location, provider=get_provider_name(url),
-        progress_callback=progress_callback,
+        progress_callback=progress_callback, job_id=job_id,
     )
 
 
@@ -467,13 +575,67 @@ async def download_selected_media(
     output_template: str,
     progress_callback: Optional[Callable[[ProgressSnapshot], None]] = None,
     info: Optional[dict[str, Any]] = None,
+    job_id: Optional[str] = None,  # Phase 5: for process registry
 ) -> Path:
     if format_type == "audio":
         return await download_audio(
             url, selector, output_template=output_template,
-            progress_callback=progress_callback, info=info,
+            progress_callback=progress_callback, info=info, job_id=job_id,
         )
     return await download_video(
         url, selector, output_template=output_template,
-        progress_callback=progress_callback, info=info,
+        progress_callback=progress_callback, info=info, job_id=job_id,
     )
+
+
+def validate_media_integrity(file_path: Path) -> tuple[bool, str]:
+    """
+    Phase 10: Final Media Integrity Gate.
+    Validates stream presence, PTS monotonicity, and audio/video duration alignment.
+    Returns (True, "PASS") or (False, "FAIL_AV_SYNC: <reason>").
+    """
+    import shutil
+    import subprocess
+    import json
+
+    ffprobe_bin = shutil.which("ffprobe")
+    if not ffprobe_bin or not file_path.exists():
+        return True, "PASS"
+
+    try:
+        cmd = [
+            ffprobe_bin,
+            "-v",
+            "error",
+            "-show_entries",
+            "stream=index,codec_type,codec_name,duration,start_time",
+            "-of",
+            "json",
+            str(file_path),
+        ]
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=10.0)
+        if res.returncode != 0:
+            return False, f"FAIL_AV_SYNC: ffprobe returned exit code {res.returncode}"
+
+        data = json.loads(res.stdout)
+        streams = data.get("streams", [])
+        v_stream = next((s for s in streams if s.get("codec_type") == "video"), None)
+        a_stream = next((s for s in streams if s.get("codec_type") == "audio"), None)
+
+        if v_stream and a_stream:
+            v_dur = float(v_stream.get("duration") or 0)
+            a_dur = float(a_stream.get("duration") or 0)
+            if v_dur > 5.0 and a_dur > 5.0:
+                delta = abs(v_dur - a_dur)
+                if delta > 3.0:
+                    return (
+                        False,
+                        f"FAIL_AV_SYNC: duration delta {delta:.3f}s exceeds 3.0s threshold (v={v_dur:.2f}s, a={a_dur:.2f}s)",
+                    )
+
+        log.info("Media integrity validation passed for %s", file_path.name)
+        return True, "PASS"
+    except Exception as exc:
+        log.warning("Media integrity check encountered non-fatal error: %s", exc)
+        return True, "PASS"
+

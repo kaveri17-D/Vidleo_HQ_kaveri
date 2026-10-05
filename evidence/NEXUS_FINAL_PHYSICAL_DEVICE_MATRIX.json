@@ -1,0 +1,59 @@
+{
+  "title": "NEXUS Final Physical Device Audit Matrix",
+  "timestamp": "2026-10-04T11:26:02.156402+00:00",
+  "devices": [
+    {
+      "device": "Dell Precision 7730 Mobile Workstation",
+      "real_physical_device": true,
+      "os": "Ubuntu 24.04 LTS (Linux 6.8.0-45-generic)",
+      "soc_cpu": "Intel Core i7-8850H (6 cores / 12 threads)",
+      "integrated_gpu": "Intel UHD Graphics 630 (Mesa i915 /dev/dri/renderD128)",
+      "discrete_gpu": "NVIDIA Quadro P3200 Mobile (Driver 580.178.04, 6GB GDDR5)",
+      "display_server": "Wayland (:0, wayland-0)",
+      "client_first_execution": "PROVEN",
+      "user_gpu_hardware_decode": "PROVEN (VaapiVideoDecoder)",
+      "server_gpu_fallback": "PROVEN (NVENC & NVDEC h264_cuvid)",
+      "result": "PROVEN"
+    },
+    {
+      "device": "Android Physical Smartphone (Pixel / Samsung)",
+      "real_physical_device": false,
+      "os": "Android 14",
+      "soc_cpu": "Qualcomm Snapdragon / ARM Cortex",
+      "gpu": "Qualcomm Adreno / ARM Mali",
+      "display_server": "SurfaceFlinger",
+      "lab_status": "NOT_AVAILABLE_IN_LAB (Physical Android handset not connected to test host)",
+      "result": "NOT_AVAILABLE_IN_LAB"
+    },
+    {
+      "device": "Windows Physical Desktop / Laptop",
+      "real_physical_device": false,
+      "os": "Microsoft Windows 11",
+      "soc_cpu": "Intel Core / AMD Ryzen",
+      "gpu": "Intel Iris Xe / NVIDIA RTX",
+      "display_server": "DWM",
+      "lab_status": "NOT_AVAILABLE_IN_LAB (Physical Windows testbed not provisioned in lab)",
+      "result": "NOT_AVAILABLE_IN_LAB"
+    },
+    {
+      "device": "Apple MacBook Pro / Mac Studio",
+      "real_physical_device": false,
+      "os": "Apple macOS 14 / 15",
+      "soc_cpu": "Apple Silicon (M1 / M2 / M3 / M4)",
+      "gpu": "Apple Silicon GPU",
+      "display_server": "Quartz Compositor",
+      "lab_status": "NOT_AVAILABLE_IN_LAB (Physical Mac hardware not present in lab)",
+      "result": "NOT_AVAILABLE_IN_LAB"
+    },
+    {
+      "device": "Apple iPhone / iPad",
+      "real_physical_device": false,
+      "os": "Apple iOS 17 / 18 / iPadOS",
+      "soc_cpu": "Apple A-Series / M-Series Bionic",
+      "gpu": "Apple Mobile GPU",
+      "display_server": "Quartz Compositor",
+      "lab_status": "NOT_AVAILABLE_IN_LAB (Physical iOS device not attached to lab host)",
+      "result": "NOT_AVAILABLE_IN_LAB"
+    }
+  ]
+}

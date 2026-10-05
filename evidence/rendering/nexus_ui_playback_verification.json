@@ -1,0 +1,10 @@
+{
+  "src": "http://localhost:3000/test-media/remux_4k_prof0.webm",
+  "videoWidth": 3840,
+  "videoHeight": 2160,
+  "currentTime": 1.928831,
+  "duration": 5.028,
+  "paused": false,
+  "readyState": 4,
+  "networkState": 1
+}

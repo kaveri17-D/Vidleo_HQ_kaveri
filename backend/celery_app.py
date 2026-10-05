@@ -11,6 +11,16 @@ except Exception:  # pragma: no cover - graceful fallback when Celery is not ins
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 celery_available = Celery is not None
 
+
+def _build_celery_redis_url(raw_url: str) -> str:
+    pwd = os.environ.get("REDIS_PASSWORD")
+    if pwd and "@" not in raw_url and "://" in raw_url:
+        from urllib.parse import quote
+        proto, rest = raw_url.split("://", 1)
+        return f"{proto}://:{quote(pwd)}@{rest}"
+    return raw_url
+
+
 if celery_available:
     def _interval_seconds(env_name: str, default: int, minimum: int = 60) -> int:
         raw = os.environ.get(env_name, str(default))
@@ -19,11 +29,13 @@ if celery_available:
         except (TypeError, ValueError):
             return max(minimum, default)
 
+    broker_url = _build_celery_redis_url(os.environ.get("CELERY_BROKER_URL", REDIS_URL))
+    result_backend = _build_celery_redis_url(os.environ.get("CELERY_RESULT_BACKEND", REDIS_URL))
 
     celery_app = Celery(
         "nexus_media_engine",
-        broker=REDIS_URL,
-        backend=REDIS_URL,
+        broker=broker_url,
+        backend=result_backend,
         include=["backend.tasks"],
     )
     celery_app.conf.update(
@@ -134,6 +146,18 @@ if celery_available:
         worker_prefetch_multiplier=1,
         task_acks_late=True,
         # ── Elite Concurrency Doctrine: Worker Hardening ──────────────────
+        broker_connection_retry_on_startup=True,
+        broker_transport_options={
+            "socket_timeout": 5.0,
+            "socket_connect_timeout": 5.0,
+            "retry_on_timeout": True,
+            "health_check_interval": 30,
+        },
+        result_backend_transport_options={
+            "socket_timeout": 5.0,
+            "socket_connect_timeout": 5.0,
+            "retry_on_timeout": True,
+        },
         worker_concurrency=int(os.environ.get("CELERY_WORKER_CONCURRENCY", "4")),
         worker_max_tasks_per_child=int(os.environ.get("CELERY_MAX_TASKS_PER_CHILD", "50")),
         worker_max_memory_per_child=int(os.environ.get("CELERY_MAX_MEMORY_PER_CHILD_KB", "512000")),

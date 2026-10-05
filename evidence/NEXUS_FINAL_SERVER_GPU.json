@@ -1,0 +1,28 @@
+{
+  "title": "NEXUS Server-GPU Secondary Fallback Evidence",
+  "timestamp": "2026-10-04T14:33:11.144217+00:00",
+  "policy": "Server GPU activates ONLY when client execution cannot complete or when policy dictates",
+  "activation_conditions": [
+    "Client remux unsupported",
+    "Browser media error",
+    "GPU_REQUIRED + client GPU unavailable",
+    "SERVER_ONLY mode"
+  ],
+  "client_success_isolation": {
+    "server_gpu_activated": false,
+    "server_gpu_bytes": 0
+  },
+  "fallback_execution": {
+    "device": "NVIDIA Quadro P3200 Mobile",
+    "hardware_decoders": [
+      "h264_cuvid",
+      "hevc_cuvid",
+      "vp9_cuvid"
+    ],
+    "hardware_encoders": [
+      "h264_nvenc",
+      "hevc_nvenc"
+    ],
+    "status": "PROVEN"
+  }
+}

@@ -1,0 +1,198 @@
+[
+  {
+    "method": "Media.playerCreated",
+    "params": {
+      "player": {
+        "playerId": "B5A6880B43360F9ABD67FC7DAD05906D"
+      }
+    }
+  },
+  {
+    "method": "Media.playerEventsAdded",
+    "params": {
+      "playerId": "B5A6880B43360F9ABD67FC7DAD05906D",
+      "events": [
+        {
+          "timestamp": 215926.465983,
+          "value": "{\"created\":\"2026-10-04 10:10:27.092848 UTC\",\"event\":\"kMediaLogCreated\"}"
+        },
+        {
+          "timestamp": 215926.466166,
+          "value": "{\"event\":\"kWebMediaPlayerCreated\",\"origin_url\":\"http://localhost:3000/\"}"
+        },
+        {
+          "timestamp": 215926.466324,
+          "value": "{\"event\":\"kLoad\",\"url\":\"http://localhost:3000/test-media/remux_4k_prof0.webm\"}"
+        },
+        {
+          "timestamp": 215926.479648,
+          "value": "{\"event\":\"kPipelineStateChange\",\"pipeline_state\":\"kStarting\"}"
+        },
+        {
+          "timestamp": 215926.485176,
+          "value": "{\"event\":\"kPipelineStateChange\",\"pipeline_state\":\"kPlaying\"}"
+        },
+        {
+          "timestamp": 215926.494816,
+          "value": "{\"dimensions\":\"3840x2160\",\"event\":\"kVideoSizeChanged\"}"
+        },
+        {
+          "timestamp": 215926.480179,
+          "value": "{\"duration\":5.028,\"event\":\"kDurationChanged\"}"
+        },
+        {
+          "timestamp": 215926.509454,
+          "value": "{\"event\":\"kBufferingStateChanged\",\"video_buffering_state\":{\"state\":\"BUFFERING_HAVE_ENOUGH\"}}"
+        },
+        {
+          "timestamp": 215926.486684,
+          "value": "{\"audio_buffering_state\":{\"state\":\"BUFFERING_HAVE_ENOUGH\"},\"event\":\"kBufferingStateChanged\"}"
+        },
+        {
+          "timestamp": 215926.509644,
+          "value": "{\"event\":\"kBufferingStateChanged\",\"pipeline_buffering_state\":{\"for_suspended_start\":false,\"state\":\"BUFFERING_HAVE_ENOUGH\"}}"
+        },
+        {
+          "timestamp": 215926.527729,
+          "value": "{\"event\":\"kPlay\"}"
+        }
+      ]
+    }
+  },
+  {
+    "method": "Media.playerPropertiesChanged",
+    "params": {
+      "playerId": "B5A6880B43360F9ABD67FC7DAD05906D",
+      "properties": [
+        {
+          "name": "kVideoDecoderName",
+          "value": "VaapiVideoDecoder"
+        },
+        {
+          "name": "kIsStreaming",
+          "value": "false"
+        },
+        {
+          "name": "kFrameUrl",
+          "value": "http://localhost:3000/test-render.html?src=/test-media/remux_4k_prof0.webm"
+        },
+        {
+          "name": "kAudioTracks",
+          "value": "[{\"bytes per channel\":2,\"bytes per frame\":2,\"channel layout\":\"MONO\",\"channels\":1,\"codec\":\"opus\",\"codec delay\":312,\"discard decoder delay\":true,\"encryption scheme\":\"Unencrypted\",\"has extra data\":true,\"profile\":\"unknown\",\"sample format\":\"Signed 16-bit\",\"samples per second\":48000,\"seek preroll\":\"80000us\"}]"
+        },
+        {
+          "name": "kResolution",
+          "value": "3840x2160"
+        },
+        {
+          "name": "kRendererName",
+          "value": "RendererImpl"
+        },
+        {
+          "name": "kTotalBytes",
+          "value": "0x9b4d6"
+        },
+        {
+          "name": "kMaxDuration",
+          "value": "5.028"
+        },
+        {
+          "name": "kFrameTitle",
+          "value": "NEXUS Real Client-Side Rendering & GPU Telemetry"
+        },
+        {
+          "name": "kIsPlatformAudioDecoder",
+          "value": "false"
+        },
+        {
+          "name": "kAudioDecoderName",
+          "value": "OpusAudioDecoder"
+        },
+        {
+          "name": "kVideoTracks",
+          "value": "[{\"alpha mode\":\"is_opaque\",\"codec\":\"vp9\",\"coded size\":\"3840x2160\",\"color space\":{\"matrix\":\"UNSPECIFIED\",\"primaries\":\"UNSPECIFIED\",\"range\":\"LIMITED\",\"transfer\":\"UNSPECIFIED\"},\"encryption scheme\":\"Unencrypted\",\"has extra data\":false,\"hdr metadata\":{},\"natural size\":\"3840x2160\",\"orientation\":\"0°\",\"profile\":\"vp9 profile0\",\"visible rect\":\"0,0 3840x2160\"}]"
+        },
+        {
+          "name": "kIsRangeHeaderSupported",
+          "value": "true"
+        },
+        {
+          "name": "kIsVideoDecryptingDemuxerStream",
+          "value": "false"
+        },
+        {
+          "name": "kStartTime",
+          "value": "0.0"
+        },
+        {
+          "name": "kBitrate",
+          "value": "1012120"
+        },
+        {
+          "name": "kIsPlatformVideoDecoder",
+          "value": "true"
+        },
+        {
+          "name": "kIsSingleOrigin",
+          "value": "true"
+        },
+        {
+          "name": "kIsAudioDecryptingDemuxerStream",
+          "value": "false"
+        }
+      ]
+    }
+  },
+  {
+    "method": "Media.playerMessagesLogged",
+    "params": {
+      "playerId": "B5A6880B43360F9ABD67FC7DAD05906D",
+      "messages": [
+        {
+          "level": "info",
+          "message": "FFmpegDemuxer: created video stream, config codec: vp9, profile: vp9 profile0, level: not available, alpha_mode: is_opaque, coded size: [3840,2160], visible rect: [0,0,3840,2160], natural size: [3840,2160], has extra data: false, encryption scheme: Unencrypted, rotation: 0°, flipped: 0, color space: {primaries:INVALID, transfer:INVALID, matrix:INVALID, range:LIMITED}, spatial format: [projection_type: none, stereo_mode: mono]"
+        },
+        {
+          "level": "info",
+          "message": "FFmpegDemuxer: created audio stream, config codec: opus, profile: unknown, bytes_per_channel: 2, channel_layout: MONO, channels: 1, samples_per_second: 48000, sample_format: Signed 16-bit, bytes_per_frame: 2, seek_preroll: 80000us, codec_delay: 312, has extra data: true, encryption scheme: Unencrypted, discard decoder delay: true, target_output_channel_layout: NONE, target_output_sample_format: Unknown sample format"
+        },
+        {
+          "level": "info",
+          "message": "Cannot select SymphoniaAudioDecoder for audio decoding. status=DecoderStatus::Codes::kUnsupportedCodec"
+        },
+        {
+          "level": "info",
+          "message": "Cannot select IamfAudioDecoder for audio decoding. status=DecoderStatus::Codes::kUnsupportedCodec"
+        },
+        {
+          "level": "info",
+          "message": "Selected OpusAudioDecoder for audio decoding, config: codec: opus, profile: unknown, bytes_per_channel: 2, channel_layout: MONO, channels: 1, samples_per_second: 48000, sample_format: Signed 16-bit, bytes_per_frame: 2, seek_preroll: 80000us, codec_delay: 312, has extra data: true, encryption scheme: Unencrypted, discard decoder delay: true, target_output_channel_layout: STEREO, target_output_sample_format: Unknown sample format"
+        },
+        {
+          "level": "info",
+          "message": "VideoDecoderPipeline |decoder_| Initialize() successful"
+        },
+        {
+          "level": "info",
+          "message": "Selected VaapiVideoDecoder for video decoding, config: codec: vp9, profile: vp9 profile0, level: not available, alpha_mode: is_opaque, coded size: [3840,2160], visible rect: [0,0,3840,2160], natural size: [3840,2160], has extra data: false, encryption scheme: Unencrypted, rotation: 0°, flipped: 0, color space: {primaries:INVALID, transfer:INVALID, matrix:INVALID, range:LIMITED}, spatial format: [projection_type: none, stereo_mode: mono]"
+        },
+        {
+          "level": "info",
+          "message": "Effective playback rate changed from 0 to 1"
+        }
+      ]
+    }
+  },
+  {
+    "method": "Media.playerMessagesLogged",
+    "params": {
+      "playerId": "B5A6880B43360F9ABD67FC7DAD05906D",
+      "messages": [
+        {
+          "level": "debug",
+          "message": "FFmpegDemuxer: av_read_frame(): End of file"
+        }
+      ]
+    }
+  }
+]

@@ -1,0 +1,7 @@
+{
+  "platform": "iOS / iPadOS (Apple WebKit)",
+  "status": "NOT_AVAILABLE_IN_LAB",
+  "reason": "No physical iPhone / iPad hardware connected via USB and no remote device farm provisioned",
+  "prerequisite": "Physical iOS device with WebKit VideoToolbox hardware acceleration",
+  "tested": false
+}

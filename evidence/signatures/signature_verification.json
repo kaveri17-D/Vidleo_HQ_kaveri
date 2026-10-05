@@ -1,0 +1,11 @@
+{
+  "algorithm": "Ed25519 (RFC 8032)",
+  "manifest_path": "evidence/EVIDENCE_MANIFEST.sha256",
+  "signature_path": "evidence/signatures/EVIDENCE_MANIFEST.sha256.sig",
+  "public_key_path": "evidence/signatures/EVIDENCE_SIGNING_PUBLIC_KEY.pem",
+  "public_key_fingerprint": "c97bdf110cf1433b036d59ca1df2ba71d7acb85ace2b87baacde860ef8238cd3",
+  "signing_timestamp": "2026-10-04T14:33:32.626755+00:00",
+  "verification_output": "Signature Verified Successfully",
+  "verification_status": "PASS",
+  "total_evidence_files_hashed": 76
+}
