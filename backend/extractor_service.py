@@ -528,25 +528,31 @@ def _get_youtube_po_token_bundle(url: str) -> dict[str, str] | None:
         return None
 
 
-def _youtube_probe_extractor_args(po_token_bundle: dict[str, str] | None) -> dict[str, list[str]] | None:
-    if not po_token_bundle:
-        return None
+def _youtube_probe_extractor_args(po_token_bundle: dict[str, str] | None) -> dict[str, list[str]]:
+    if po_token_bundle:
+        return {
+            "youtube": [
+                "player_client=default,ios",
+                f"po_token=ios+{po_token_bundle['poToken']}",
+                f"visitor_data={po_token_bundle['visitorData']}",
+            ]
+        }
     return {
         "youtube": [
-            "player_client=default,ios",
-            f"po_token=ios+{po_token_bundle['poToken']}",
-            f"visitor_data={po_token_bundle['visitorData']}",
+            "player_client=android,tv,web",
         ]
     }
 
 
 def _youtube_probe_extractor_args_cli(po_token_bundle: dict[str, str] | None) -> list[str]:
-    if not po_token_bundle:
-        return []
+    if po_token_bundle:
+        return [
+            "youtube:"
+            f"player_client=default,ios;po_token=ios+{po_token_bundle['poToken']};"
+            f"visitor_data={po_token_bundle['visitorData']}"
+        ]
     return [
-        "youtube:"
-        f"player_client=default,ios;po_token=ios+{po_token_bundle['poToken']};"
-        f"visitor_data={po_token_bundle['visitorData']}"
+        "youtube:player_client=android,tv,web"
     ]
 
 
@@ -671,8 +677,8 @@ def extract_media_info(
             return cached
 
     youtube_po_token_bundle = _get_youtube_po_token_bundle(normalized) if provider == "youtube" else None
-    youtube_extractor_args = _youtube_probe_extractor_args(youtube_po_token_bundle)
-    youtube_extractor_args_cli = _youtube_probe_extractor_args_cli(youtube_po_token_bundle)
+    youtube_extractor_args = _youtube_probe_extractor_args(youtube_po_token_bundle) if provider == "youtube" else None
+    youtube_extractor_args_cli = _youtube_probe_extractor_args_cli(youtube_po_token_bundle) if provider == "youtube" else []
 
     combined_output = ""
     normalized_error: MediaExtractionError | None = None
