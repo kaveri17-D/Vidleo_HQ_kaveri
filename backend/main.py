@@ -2480,3 +2480,9 @@ async def metrics() -> Response:
     except Exception as exc:
         log.warning("Metrics generation error: %s", exc)
         return Response(content=f"# Metrics error: {str(exc)}\n", status_code=500, media_type="text/plain; charset=utf-8")
+
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", "8000"))
+    uvicorn.run("backend.main:app", host="0.0.0.0", port=port, reload=False)

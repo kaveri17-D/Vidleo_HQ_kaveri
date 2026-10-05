@@ -19,5 +19,5 @@ COPY . ./backend
 ENV PYTHONPATH=/app
 EXPOSE 8000
 
-# The startup command is dynamically overridden by docker-compose.yml, but we provide a safe fallback
-CMD ["python", "main.py"]
+# The startup command defaults to production uvicorn listening on 0.0.0.0:$PORT
+CMD ["sh", "-c", "uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
