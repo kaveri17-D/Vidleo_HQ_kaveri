@@ -6,6 +6,7 @@ import { motion } from 'framer-motion';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { ArrowLeft, AlertCircle, Loader2, ShieldCheck, Zap } from 'lucide-react';
 import { VidleoLogo } from '@/components/brand/VidleoLogo';
+import { getSiteUrl } from '@/lib/siteUrl';
 
 function LoginForm() {
   const router = useRouter();
@@ -40,8 +41,8 @@ function LoginForm() {
 
     try {
       const next = searchParams.get('next') || '/dashboard';
-      const origin = typeof window !== 'undefined' ? window.location.origin : '';
-      const redirectTo = `${origin}/auth/callback?next=${encodeURIComponent(next)}`;
+      const baseUrl = getSiteUrl();
+      const redirectTo = `${baseUrl}/auth/callback?next=${encodeURIComponent(next)}`;
 
       const { error } = await signInWithGoogle(redirectTo);
       if (error) {

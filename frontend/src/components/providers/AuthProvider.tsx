@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useEffect, useState, useMemo, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { syncUserProfile } from '@/lib/supabase/profile';
+import { getSiteUrl } from '@/lib/siteUrl';
 import type { User, Session } from '@supabase/supabase-js';
 
 interface AuthContextType {
@@ -75,8 +76,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signInWithGoogle = useCallback(
     async (customRedirectTo?: string) => {
       try {
-        const origin = typeof window !== 'undefined' ? window.location.origin : '';
-        const redirectTo = customRedirectTo || `${origin}/auth/callback`;
+        const baseUrl = getSiteUrl();
+        const redirectTo = customRedirectTo || `${baseUrl}/auth/callback`;
 
         const { error } = await supabase.auth.signInWithOAuth({
           provider: 'google',
