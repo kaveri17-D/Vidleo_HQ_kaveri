@@ -561,9 +561,17 @@ export class DownloaderService {
 
         if (status === 'completed') {
           isComplete = true;
-          const downloadUrl = progData.download_url?.startsWith('http')
+          let downloadUrl = progData.download_url?.startsWith('http')
             ? progData.download_url
             : `${apiBase}/api/download/file/${jobId}`;
+
+          // Attach token parameter if authenticated and downloading from backend endpoint
+          const token = authHeaders['Authorization']?.replace(/^Bearer\s+/i, '');
+          if (token && downloadUrl.includes('/api/download/file/')) {
+            const separator = downloadUrl.includes('?') ? '&' : '?';
+            downloadUrl = `${downloadUrl}${separator}token=${encodeURIComponent(token)}`;
+          }
+
           session.downloadUrl = downloadUrl;
           session.status = 'ready';
         }

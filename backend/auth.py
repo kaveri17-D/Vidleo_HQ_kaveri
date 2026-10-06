@@ -513,6 +513,8 @@ async def get_current_user(
         token = credentials.credentials
     elif "sb-access-token" in request.cookies:
         token = request.cookies.get("sb-access-token")
+    elif request.query_params.get("token"):
+        token = request.query_params.get("token")
 
     if not token:
         return anon_user

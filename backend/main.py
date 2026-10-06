@@ -1986,14 +1986,19 @@ async def download_file(job_id: str, user: dict = Depends(get_current_user)) -> 
     job_user_id = job.get("user_id")
     is_privileged = user.get("is_owner") or str(user.get("role") or "").lower() == "admin"
     if not is_privileged:
-        if not requesting_user_id:
-            raise HTTPException(status_code=401, detail="Authentication required to download this file.")
-        if job_user_id and str(job_user_id) != str(requesting_user_id):
-            log.warning(
-                "IDOR blocked: user %s attempted to access job %s owned by %s",
-                requesting_user_id, job_id, job_user_id,
-            )
-            raise HTTPException(status_code=403, detail="Access denied.")
+        # If the job was created by an authenticated user, strict ownership is enforced
+        if job_user_id:
+            if not requesting_user_id:
+                raise HTTPException(status_code=401, detail="Authentication required to download this file.")
+            if str(job_user_id) != str(requesting_user_id):
+                log.warning(
+                    "IDOR blocked: user %s attempted to access job %s owned by %s",
+                    requesting_user_id, job_id, job_user_id,
+                )
+                raise HTTPException(status_code=403, detail="Access denied.")
+        else:
+            # Job created anonymously (free guest tier) — permit direct download without forcing login
+            pass
 
     # ── Phase 5: Artifact TTL check ──────────────────────────────────────────
     expires_at = job.get("expires_at")
