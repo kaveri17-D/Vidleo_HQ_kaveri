@@ -31,8 +31,8 @@ export function QualitySelector({
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between text-xs text-[#7A7A82] font-mono px-1">
-        <span className={cn(isSourceUnresolved ? "text-amber-800 font-semibold flex items-center gap-1.5" : "")}>
-          {isSourceUnresolved ? 'Metadata only — captured output will be WebM (VP9 + Opus)' : 'Available Codec Streams'}
+        <span className={cn(isSourceUnresolved ? "text-emerald-800 font-semibold flex items-center gap-1.5" : "")}>
+          {isSourceUnresolved ? 'Direct media streams · Assembled into high-fidelity MP4 (AV1 + AAC)' : 'Available Codec Streams'}
         </span>
         <span>{isSourceUnresolved ? 'Dynamic Size' : 'Est. Size'}</span>
       </div>

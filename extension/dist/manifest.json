@@ -18,7 +18,8 @@
         "https://frontend-kaveri-d.vercel.app/*",
         "http://localhost:3000/*",
         "http://127.0.0.1:3000/*",
-        "http://localhost:8092/*"
+        "http://localhost:8092/*",
+        "http://127.0.0.1:8092/*"
       ],
       "js": ["content.js"],
       "run_at": "document_start"
@@ -41,6 +42,8 @@
     "http://127.0.0.1:8000/*",
     "http://localhost:8000/*",
     "http://127.0.0.1:8089/*",
+    "http://127.0.0.1:8092/*",
+    "http://localhost:8092/*",
     "https://backend-production-2ff30.up.railway.app/*"
   ],
   "externally_connectable": {
@@ -48,7 +51,8 @@
       "https://frontend-kaveri-d.vercel.app/*",
       "http://localhost:3000/*",
       "http://127.0.0.1:3000/*",
-      "http://localhost:8092/*"
+      "http://localhost:8092/*",
+      "http://127.0.0.1:8092/*"
     ]
   },
   "background": {

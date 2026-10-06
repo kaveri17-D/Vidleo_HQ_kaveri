@@ -23,7 +23,14 @@ export type NexusMessageType =
   | 'PLAYBACK_CAPTURE_COMPLETE'
   | 'PLAYBACK_CAPTURE_FAILED'
   | 'PROCESS_PLAYBACK_CAPTURE_FFMPEG'
-  | 'YOUTUBE_MEDIA_OBSERVED';
+  | 'YOUTUBE_MEDIA_OBSERVED'
+  | 'NEXUS_CDP_DOWNLOAD_START'
+  | 'NEXUS_CDP_STATUS'
+  | 'NEXUS_CDP_PROGRESS'
+  | 'NEXUS_CDP_RESULT'
+  | 'NEXUS_CDP_ERROR'
+  | 'NEXUS_CDP_CANCEL'
+  | 'PROCESS_CDP_MEDIA_FFMPEG';
 
 export interface StartDirectAcquisitionPayload {
   sessionId: string;
@@ -147,8 +154,69 @@ export interface ProcessPlaybackCaptureFfmpegPayload {
   videoHeight: number;
 }
 
+export interface StartCdpDownloadPayload {
+  sessionId: string;
+  videoId?: string;
+  videoUrl: string;
+  targetFilename?: string;
+  durationSeconds?: number;
+}
+
+export interface CdpDownloadProgressPayload {
+  sessionId: string;
+  state:
+    | 'EXTENSION_READY'
+    | 'YOUTUBE_TAB_READY'
+    | 'CDP_ATTACHING'
+    | 'NETWORK_LISTENING'
+    | 'MEDIA_DETECTED'
+    | 'RESPONSE_BODY_ACQUIRING'
+    | 'MEDIA_BYTES_ACQUIRED'
+    | 'UMP_DEMUXING'
+    | 'VIDEO_ASSEMBLY'
+    | 'AUDIO_ASSEMBLY'
+    | 'MUXING'
+    | 'FINALIZING'
+    | 'DOWNLOAD_READY'
+    | 'COMPLETE';
+  percent: number;
+  message: string;
+  bytesAcquired?: number;
+  videoBytes?: number;
+  audioBytes?: number;
+  requestId?: string;
+}
+
+export interface CdpDownloadResultPayload {
+  success: boolean;
+  sessionId: string;
+  filename: string;
+  totalBytes: number;
+  rawUmpBytes: number;
+  videoBytes: number;
+  audioBytes: number;
+  duration: number;
+  videoCodec: string;
+  audioCodec: string;
+  resolution: string;
+  sha256: string;
+  blobUrl?: string;
+  downloadStarted: boolean;
+  provenance: 'CDP_ACTIVE_PLAYER_MEDIA_RESPONSE_BODY';
+}
+
+export interface ProcessCdpMediaFfmpegPayload {
+  sessionId: string;
+  filename: string;
+  videoBase64: string;
+  audioBase64: string;
+  videoBytesCount: number;
+  audioBytesCount: number;
+}
+
 export interface NexusMessage<T = any> {
   type: NexusMessageType;
   payload: T;
   timestamp?: number;
 }
+

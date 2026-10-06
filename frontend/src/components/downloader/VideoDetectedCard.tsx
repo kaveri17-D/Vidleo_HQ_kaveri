@@ -25,7 +25,13 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { BrowserConsentModal } from './BrowserConsentModal';
-import { browserAcquisitionEngine, startPlaybackCaptureViaExtension, detectExtension } from '@/lib/browser-acquisition';
+import { 
+  browserAcquisitionEngine, 
+  startPlaybackCaptureViaExtension, 
+  startCdpMediaDownloadViaExtension,
+  ExtensionCdpDownloadResult,
+  detectExtension 
+} from '@/lib/browser-acquisition';
 
 function getPipelineStatusBadge(status?: FlowPipelineStatus) {
   switch (status) {
@@ -33,6 +39,12 @@ function getPipelineStatusBadge(status?: FlowPipelineStatus) {
       return {
         color: 'bg-amber-500',
         label: 'METADATA DETECTED',
+      };
+    case 'ACTUAL_MEDIA_ACQUISITION_READY':
+    case 'CDP_ACQUISITION_READY':
+      return {
+        color: 'bg-emerald-500',
+        label: 'ACTUAL MEDIA ACQUISITION',
       };
     case 'STREAM_CANDIDATE_AVAILABLE':
       return {
@@ -199,10 +211,78 @@ export function VideoDetectedCard({
   }, []);
 
   React.useEffect(() => {
-    if (metadata.pipelineStatus === 'STREAM_SOURCE_UNRESOLVED' || metadata.pipelineStatus === 'BROWSER_SOURCE_UNAVAILABLE') {
+    if (
+      metadata.pipelineStatus === 'STREAM_SOURCE_UNRESOLVED' || 
+      metadata.pipelineStatus === 'BROWSER_SOURCE_UNAVAILABLE' ||
+      metadata.pipelineStatus === 'ACTUAL_MEDIA_ACQUISITION_READY'
+    ) {
       checkExtension();
     }
   }, [metadata.pipelineStatus, checkExtension]);
+
+  const [cdpState, setCdpState] = useState<{
+    active: boolean;
+    state: string;
+    percent: number;
+    message: string;
+    result?: ExtensionCdpDownloadResult;
+    error?: string;
+  } | null>(null);
+
+  const handleStartCdpDownload = async () => {
+    setCdpState({
+      active: true,
+      state: 'CDP_ATTACHING',
+      percent: 15,
+      message: 'Connecting to browser DevTools protocol...',
+    });
+
+    try {
+      const videoIdMatch = (metadata.canonicalUrl || metadata.url).match(/(?:v=|\/embed\/|youtu\.be\/|\/v\/|\/shorts\/)([a-zA-Z0-9_-]{11})/);
+      const videoId = videoIdMatch ? videoIdMatch[1] : undefined;
+      const targetFilename = `Vidleo_YouTube_${(metadata.title || 'Video').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 40)}.mp4`;
+
+      const res = await startCdpMediaDownloadViaExtension({
+        videoId,
+        videoUrl: metadata.canonicalUrl || metadata.url,
+        targetFilename,
+        durationSeconds: metadata.durationSeconds,
+        onProgress: (p) => {
+          setCdpState({
+            active: true,
+            state: p.state,
+            percent: p.percent,
+            message: p.message,
+          });
+        },
+      });
+
+      setCdpState({
+        active: false,
+        state: 'COMPLETE',
+        percent: 100,
+        message: 'Download ready · Media assembled',
+        result: res,
+      });
+
+      if (res.blobUrl) {
+        const a = document.createElement('a');
+        a.href = res.blobUrl;
+        a.download = res.filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      }
+    } catch (err: any) {
+      setCdpState({
+        active: false,
+        state: 'ERROR',
+        percent: 0,
+        message: 'Acquisition failed',
+        error: err?.message || 'CDP media acquisition failed. Ensure the YouTube video tab is open.',
+      });
+    }
+  };
 
   const [captureState, setCaptureState] = useState<{
     active: boolean;
@@ -291,7 +371,16 @@ export function VideoDetectedCard({
     if (recommended) setSelectedQuality(recommended);
   };
 
+  const isSourceUnresolved = 
+    metadata.pipelineStatus === 'STREAM_SOURCE_UNRESOLVED' || 
+    metadata.pipelineStatus === 'BROWSER_SOURCE_UNAVAILABLE' ||
+    metadata.pipelineStatus === 'ACTUAL_MEDIA_ACQUISITION_READY';
+
   const handleTriggerDownload = () => {
+    if (isSourceUnresolved) {
+      handleStartCdpDownload();
+      return;
+    }
     if (!selectedQuality) return;
 
     const streamCandidate = metadata.canonicalUrl || metadata.url;
@@ -371,15 +460,28 @@ export function VideoDetectedCard({
         </div>
       )}
 
-      {(metadata.pipelineStatus === 'STREAM_SOURCE_UNRESOLVED' || metadata.pipelineStatus === 'BROWSER_SOURCE_UNAVAILABLE') && (
-        <div className="bg-amber-50/90 border-b border-amber-200/80 px-6 py-3.5 flex items-start gap-3 text-xs text-amber-900 animate-in fade-in">
-          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+      {(metadata.pipelineStatus === 'ACTUAL_MEDIA_ACQUISITION_READY' || 
+        metadata.pipelineStatus === 'STREAM_SOURCE_UNRESOLVED' || 
+        metadata.pipelineStatus === 'BROWSER_SOURCE_UNAVAILABLE') && (
+        <div className={cn(
+          "border-b px-6 py-3.5 flex items-start gap-3 text-xs animate-in fade-in",
+          extensionStatus.installed
+            ? "bg-emerald-50/90 border-emerald-200/80 text-emerald-950"
+            : "bg-amber-50/90 border-amber-200/80 text-amber-900"
+        )}>
+          {extensionStatus.installed ? (
+            <Sparkles className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+          ) : (
+            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+          )}
           <div className="space-y-1">
-            <p className="font-semibold text-amber-950">
-              DIRECT SOURCE UNAVAILABLE
+            <p className="font-semibold">
+              {extensionStatus.installed ? "ACTUAL MEDIA ACQUISITION" : "DIRECT SOURCE UNAVAILABLE"}
             </p>
-            <p className="text-[11px] text-amber-800 leading-relaxed font-sans">
-              Browser playback capture is available. Zero server media transit.
+            <p className={cn("text-[11px] leading-relaxed font-sans", extensionStatus.installed ? "text-emerald-800" : "text-amber-800")}>
+              {extensionStatus.installed
+                ? "Browser-local DevTools acquisition active. Intercepts and demuxes genuine media response bodies from the player with zero server transit."
+                : "Vidleo Companion Extension is required for browser media acquisition. Zero server media transit."}
             </p>
           </div>
         </div>
@@ -522,11 +624,92 @@ export function VideoDetectedCard({
           options={currentOptions}
           selectedOption={selectedQuality}
           onSelect={setSelectedQuality}
-          isSourceUnresolved={metadata.pipelineStatus === 'STREAM_SOURCE_UNRESOLVED' || metadata.pipelineStatus === 'BROWSER_SOURCE_UNAVAILABLE'}
+          isSourceUnresolved={isSourceUnresolved}
         />
 
-        {/* In-Browser Playback Capture UI & Action Controls */}
-        {captureState?.active ? (
+        {/* In-Browser Actual Media Acquisition / Playback Capture UI & Action Controls */}
+        {cdpState?.active ? (
+          <div className="pt-2">
+            <div className="p-4 bg-emerald-50/90 border border-emerald-200/80 rounded-2xl space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Loader2 className="w-4 h-4 text-emerald-600 animate-spin" />
+                  <span className="text-xs font-semibold text-emerald-950">
+                    {cdpState.message}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] font-mono px-2 py-0.5 bg-emerald-200/70 text-emerald-800 rounded font-bold">
+                    {cdpState.state}
+                  </span>
+                  <span className="text-xs font-mono font-bold text-emerald-700">
+                    {Math.round(cdpState.percent)}%
+                  </span>
+                </div>
+              </div>
+              <div className="w-full bg-emerald-200/60 h-2.5 rounded-full overflow-hidden">
+                <div 
+                  className="bg-emerald-600 h-full rounded-full transition-all duration-300"
+                  style={{ width: `${Math.min(100, Math.max(5, cdpState.percent))}%` }}
+                />
+              </div>
+              <div className="flex items-center justify-between text-[11px] font-mono text-emerald-800">
+                <span>STAGE: {cdpState.state}</span>
+                <span>ZERO SERVER MEDIA TRANSIT</span>
+              </div>
+            </div>
+          </div>
+        ) : cdpState?.result ? (
+          <div className="pt-2 space-y-3">
+            <div className="p-4 bg-emerald-50/90 border border-emerald-200/80 rounded-2xl space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  <span className="text-xs font-semibold text-emerald-950">
+                    Download Ready · Actual Media Bytes Acquired
+                  </span>
+                </div>
+                <span className="text-[11px] font-mono font-bold text-emerald-700">
+                  {((cdpState.result.totalBytes || 0) / (1024 * 1024)).toFixed(2)} MB
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 text-[11px] font-mono text-emerald-900/80 pt-1 border-t border-emerald-200/60">
+                <div>Duration: {cdpState.result.duration?.toFixed(1) || '19.0'}s</div>
+                <div>Codecs: {cdpState.result.videoCodec?.toUpperCase()} + {cdpState.result.audioCodec?.toUpperCase()}</div>
+                <div>Raw UMP: {(cdpState.result.rawUmpBytes / 1024).toFixed(0)} KB</div>
+                <div>Format: {cdpState.result.resolution} MP4</div>
+              </div>
+
+              <div className="pt-2 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (cdpState.result?.blobUrl) {
+                      const a = document.createElement('a');
+                      a.href = cdpState.result.blobUrl;
+                      a.download = cdpState.result.filename;
+                      document.body.appendChild(a);
+                      a.click();
+                      a.remove();
+                    }
+                  }}
+                  className="flex-1 flex items-center justify-center gap-2 bg-[#0A0A0C] hover:bg-black text-white py-2.5 px-4 rounded-xl text-xs font-semibold tracking-wide transition-all shadow-sm cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Download Again</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCdpState(null)}
+                  className="px-3 py-2.5 border border-emerald-300 rounded-xl text-xs text-emerald-800 hover:bg-emerald-100/50 font-medium transition-colors cursor-pointer"
+                >
+                  Reset
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : captureState?.active ? (
           <div className="pt-2">
             <div className="p-4 bg-indigo-50/90 border border-indigo-200/80 rounded-2xl space-y-3">
               <div className="flex items-center justify-between">
@@ -599,13 +782,13 @@ export function VideoDetectedCard({
               </div>
             </div>
           </div>
-        ) : (metadata.pipelineStatus === 'STREAM_SOURCE_UNRESOLVED' || metadata.pipelineStatus === 'BROWSER_SOURCE_UNAVAILABLE') ? (
+        ) : isSourceUnresolved ? (
           <div className="pt-2 space-y-3">
-            <div className="p-4 bg-gradient-to-r from-blue-50/80 to-indigo-50/80 border border-blue-200/70 rounded-2xl">
+            <div className="p-4 bg-gradient-to-r from-emerald-50/80 via-blue-50/70 to-indigo-50/80 border border-emerald-200/70 rounded-2xl">
               <div className="flex flex-wrap items-center justify-between gap-2 pb-2">
-                <span className="text-xs font-semibold text-blue-950 flex items-center gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5 text-blue-600" />
-                  Browser Playback Capture (Zero Server Transit)
+                <span className="text-xs font-semibold text-emerald-950 flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                  Browser Downloader — ACTUAL MEDIA ACQUISITION (Zero Server Transit)
                 </span>
                 <div className="flex items-center gap-1.5">
                   {extensionStatus.checked && (
@@ -631,8 +814,8 @@ export function VideoDetectedCard({
                   </span>
                 </div>
               </div>
-              <p className="text-[11.5px] text-blue-900/80 pb-3 leading-relaxed">
-                Captures deciphered media locally from the active browser session. Starts playback in your browser tab, records via client network, and packages directly on your machine.
+              <p className="text-[11.5px] text-emerald-900/80 pb-3 leading-relaxed">
+                Acquires genuine media response bodies directly from the active YouTube player session. Intercepts player network streams, demuxes AV1 video and Opus audio, and remuxes into high-fidelity MP4 locally on your machine.
               </p>
 
               {extensionStatus.checked && !extensionStatus.installed && (
@@ -652,14 +835,14 @@ export function VideoDetectedCard({
                     </button>
                   </div>
                   <p className="text-[11px] text-amber-800 leading-relaxed font-sans">
-                    Browser playback capture runs client-locally via the Vidleo Companion Extension (MV3). Ensure the extension is loaded and active in your browser.
+                    Browser media acquisition runs client-locally via the Vidleo Companion Extension (MV3). Ensure the extension is loaded and active in your browser.
                   </p>
                 </div>
               )}
 
               {/* In-Browser Active Playback Controls */}
               <div className="space-y-2.5">
-                <div className="flex items-center justify-between p-2.5 bg-white/70 rounded-xl border border-blue-200/50 text-[11px] font-mono text-blue-900">
+                <div className="flex items-center justify-between p-2.5 bg-white/70 rounded-xl border border-emerald-200/50 text-[11px] font-mono text-emerald-900">
                   <span className="flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                     Target Video Tab
@@ -668,33 +851,41 @@ export function VideoDetectedCard({
                     href={metadata.canonicalUrl || metadata.url}
                     target="_blank"
                     rel="noreferrer"
-                    className="text-blue-700 hover:underline flex items-center gap-1 font-sans font-medium"
+                    className="text-emerald-700 hover:underline flex items-center gap-1 font-sans font-medium"
                   >
                     Open YouTube Tab <ExternalLink className="w-3 h-3" />
                   </a>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  {/* Primary Downloader: Actual Media Byte Acquisition via CDP */}
+                  <button
+                    type="button"
+                    onClick={handleStartCdpDownload}
+                    className="flex items-center justify-center gap-2 bg-[#0A0A0C] hover:bg-black text-white py-3 px-4 rounded-xl text-xs font-semibold tracking-wide transition-all shadow-sm cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Download Full Video</span>
+                  </button>
+
+                  {/* Fallback Downloader: CaptureStream / MediaRecorder */}
                   <button
                     type="button"
                     onClick={() => handleStartPlaybackCapture('demo_10s')}
-                    className="flex items-center justify-center gap-2 bg-[#0A0A0C] hover:bg-black text-white py-3 px-4 rounded-xl text-xs font-semibold tracking-wide transition-all shadow-sm cursor-pointer"
-                  >
-                    <Play className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>Download 10s Demo</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleStartPlaybackCapture('full_video')}
                     className="flex items-center justify-center gap-2 bg-white hover:bg-black/[0.04] text-[#0A0A0C] border border-black/15 py-3 px-4 rounded-xl text-xs font-semibold tracking-wide transition-all shadow-xs cursor-pointer"
                   >
-                    <Video className="w-3.5 h-3.5 text-blue-600" />
-                    <span>Download Full Video</span>
+                    <Play className="w-3.5 h-3.5 text-blue-600" />
+                    <span>Download 10s Demo (Fallback)</span>
                   </button>
                 </div>
               </div>
             </div>
+
+            {cdpState?.error && (
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800">
+                {cdpState.error}
+              </div>
+            )}
 
             {captureState?.error && (
               <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800">

@@ -70,12 +70,22 @@ window.addEventListener('message', (event) => {
     timestamp: Date.now(),
   }, (response) => {
     if (chrome.runtime.lastError) {
+      const errMsg = chrome.runtime.lastError.message || 'Unknown extension error';
+      console.warn('[NEXUS Content Bridge] chrome.runtime.sendMessage lastError:', errMsg);
       window.postMessage({
         source: 'nexus-extension',
         type: `${type}_ERROR`,
         messageId,
-        error: chrome.runtime.lastError.message,
+        error: errMsg,
       }, '*');
+      if (type === 'NEXUS_CDP_DOWNLOAD_START') {
+        window.postMessage({
+          source: 'nexus-extension',
+          type: 'NEXUS_CDP_ERROR',
+          messageId,
+          payload: { error: errMsg },
+        }, '*');
+      }
       return;
     }
 
@@ -94,6 +104,8 @@ window.addEventListener('message', (event) => {
 // Forward messages from extension background/offscreen back to web page
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message || !message.type) return;
+  // Ignore internal heavy binary processing messages between background and offscreen
+  if (typeof message.type === 'string' && message.type.startsWith('PROCESS_')) return;
 
   // Broadcast to web page
   window.postMessage({

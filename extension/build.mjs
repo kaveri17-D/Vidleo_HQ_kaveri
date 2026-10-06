@@ -127,10 +127,14 @@ async function build() {
     );
   }
   if (fs.existsSync(path.resolve(ffmpegPkgDist, 'worker.js'))) {
-    fs.copyFileSync(
-      path.resolve(ffmpegPkgDist, 'worker.js'),
-      path.resolve(distDir, 'ffmpeg-worker.js')
-    );
+    await esbuild.build({
+      entryPoints: [path.resolve(ffmpegPkgDist, 'worker.js')],
+      outfile: path.resolve(distDir, 'ffmpeg-worker.js'),
+      bundle: true,
+      format: 'esm',
+      target: ['chrome110'],
+      platform: 'browser',
+    });
   }
 
   console.log('[NEXUS Extension Build] Build completed successfully into extension/dist!');

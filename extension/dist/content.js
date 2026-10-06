@@ -56,12 +56,22 @@
       timestamp: Date.now()
     }, (response) => {
       if (chrome.runtime.lastError) {
+        const errMsg = chrome.runtime.lastError.message || "Unknown extension error";
+        console.warn("[NEXUS Content Bridge] chrome.runtime.sendMessage lastError:", errMsg);
         window.postMessage({
           source: "nexus-extension",
           type: `${type}_ERROR`,
           messageId,
-          error: chrome.runtime.lastError.message
+          error: errMsg
         }, "*");
+        if (type === "NEXUS_CDP_DOWNLOAD_START") {
+          window.postMessage({
+            source: "nexus-extension",
+            type: "NEXUS_CDP_ERROR",
+            messageId,
+            payload: { error: errMsg }
+          }, "*");
+        }
         return;
       }
       if (response) {
@@ -77,6 +87,7 @@
   });
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (!message || !message.type) return;
+    if (typeof message.type === "string" && message.type.startsWith("PROCESS_")) return;
     window.postMessage({
       source: "nexus-extension",
       ...message

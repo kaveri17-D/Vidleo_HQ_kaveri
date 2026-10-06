@@ -418,3 +418,104 @@ export async function startPlaybackCaptureViaExtension(
   });
 }
 
+export interface ExtensionCdpDownloadOptions {
+  videoId?: string;
+  videoUrl: string;
+  targetFilename?: string;
+  durationSeconds?: number;
+  onProgress?: (progress: {
+    state: string;
+    percent: number;
+    message: string;
+    bytesAcquired?: number;
+    videoBytes?: number;
+    audioBytes?: number;
+  }) => void;
+}
+
+export interface ExtensionCdpDownloadResult {
+  success: boolean;
+  sessionId: string;
+  filename: string;
+  totalBytes: number;
+  rawUmpBytes: number;
+  videoBytes: number;
+  audioBytes: number;
+  duration: number;
+  videoCodec: string;
+  audioCodec: string;
+  resolution: string;
+  sha256: string;
+  blobUrl?: string;
+  downloadStarted: boolean;
+  provenance: 'CDP_ACTIVE_PLAYER_MEDIA_RESPONSE_BODY';
+}
+
+/**
+ * Triggers actual media byte acquisition via Chrome DevTools Protocol in Vidleo Companion Extension
+ */
+export async function startCdpMediaDownloadViaExtension(
+  options: ExtensionCdpDownloadOptions
+): Promise<ExtensionCdpDownloadResult> {
+  const extStatus = await detectExtension(800);
+  if (!extStatus.installed) {
+    throw new Error('Vidleo Companion Extension is required for browser media acquisition. Please ensure the extension is loaded and enabled in Chrome.');
+  }
+
+  const sessionId = `cdp-acq-${Date.now()}`;
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+
+    const cleanup = () => {
+      window.removeEventListener('message', handleMessage);
+    };
+
+    function handleMessage(event: MessageEvent) {
+      if (!event.data || event.data.source !== 'nexus-extension') return;
+
+      const { type, payload } = event.data;
+
+      if (type === 'NEXUS_CDP_PROGRESS') {
+        if (payload?.sessionId === sessionId && options.onProgress) {
+          options.onProgress({
+            state: payload.state || 'WORKING',
+            percent: payload.percent || 0,
+            message: payload.message || 'Processing...',
+            bytesAcquired: payload.bytesAcquired,
+            videoBytes: payload.videoBytes,
+            audioBytes: payload.audioBytes,
+          });
+        }
+      } else if (type === 'NEXUS_CDP_RESULT') {
+        if (!settled && (payload?.sessionId === sessionId || !payload?.sessionId)) {
+          settled = true;
+          cleanup();
+          resolve(payload);
+        }
+      } else if (type === 'NEXUS_CDP_ERROR') {
+        if (!settled && (payload?.sessionId === sessionId || !payload?.sessionId)) {
+          settled = true;
+          cleanup();
+          reject(new Error(payload.error || 'CDP media acquisition failed in extension'));
+        }
+      }
+    }
+
+    window.addEventListener('message', handleMessage);
+
+    window.postMessage({
+      source: 'nexus-webpage',
+      type: 'NEXUS_CDP_DOWNLOAD_START',
+      payload: {
+        sessionId,
+        videoId: options.videoId,
+        videoUrl: options.videoUrl,
+        targetFilename: options.targetFilename,
+        durationSeconds: options.durationSeconds,
+      },
+    }, '*');
+  });
+}
+
+
