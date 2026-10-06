@@ -10,6 +10,7 @@ interface QualitySelectorProps {
   options: QualityOption[];
   selectedOption: QualityOption;
   onSelect: (option: QualityOption) => void;
+  isSourceUnresolved?: boolean;
 }
 
 export function QualitySelector({
@@ -17,6 +18,7 @@ export function QualitySelector({
   options,
   selectedOption,
   onSelect,
+  isSourceUnresolved,
 }: QualitySelectorProps) {
   if (!options || options.length === 0) {
     return (
@@ -29,8 +31,10 @@ export function QualitySelector({
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between text-xs text-[#7A7A82] font-mono px-1">
-        <span>Available Codec Streams</span>
-        <span>Est. Size</span>
+        <span className={cn(isSourceUnresolved ? "text-amber-800 font-semibold flex items-center gap-1.5" : "")}>
+          {isSourceUnresolved ? 'Metadata format — direct media source unresolved' : 'Available Codec Streams'}
+        </span>
+        <span>{isSourceUnresolved ? 'Catalog Size' : 'Est. Size'}</span>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
@@ -81,6 +85,11 @@ export function QualitySelector({
                         HDR
                       </span>
                     )}
+                    {isSourceUnresolved && (
+                      <span className="text-[9px] font-mono uppercase px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 font-bold border border-amber-200">
+                        METADATA ONLY
+                      </span>
+                    )}
                   </div>
 
                   <p className="text-[10.5px] text-[#7A7A82] font-mono pt-0.5">
@@ -93,6 +102,11 @@ export function QualitySelector({
                 <span className="text-xs font-mono font-semibold text-[#0A0A0C]">
                   {opt.fileSizeApprox}
                 </span>
+                {isSourceUnresolved && (
+                  <p className="text-[9.5px] font-mono text-[#7A7A82]">
+                    Catalog est.
+                  </p>
+                )}
               </div>
             </button>
           );

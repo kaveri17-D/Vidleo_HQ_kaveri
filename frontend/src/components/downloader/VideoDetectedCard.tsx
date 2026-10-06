@@ -50,6 +50,36 @@ function getPipelineStatusBadge(status?: FlowPipelineStatus) {
         color: 'bg-indigo-500',
         label: 'BROWSER EXTENSION READY',
       };
+    case 'PLAYER_STREAM_OBSERVED':
+      return {
+        color: 'bg-cyan-500',
+        label: 'PLAYER STREAM OBSERVED',
+      };
+    case 'BROWSER_MEDIA_ACQUISITION_STARTED':
+      return {
+        color: 'bg-cyan-600',
+        label: 'BROWSER ACQUISITION STARTED',
+      };
+    case 'BROWSER_MEDIA_BYTES_ACQUIRED':
+      return {
+        color: 'bg-emerald-500',
+        label: 'BROWSER MEDIA BYTES ACQUIRED',
+      };
+    case 'BROWSER_MEDIA_BYTES_VERIFIED':
+      return {
+        color: 'bg-emerald-600',
+        label: 'BROWSER MEDIA BYTES VERIFIED',
+      };
+    case 'FFMPEG_INPUT_VERIFIED':
+      return {
+        color: 'bg-blue-600',
+        label: 'FFMPEG INPUT VERIFIED',
+      };
+    case 'FFMPEG_OUTPUT_VERIFIED':
+      return {
+        color: 'bg-emerald-600',
+        label: 'FFMPEG OUTPUT VERIFIED',
+      };
     case 'BROWSER_ACQUISITION_READY':
       return {
         color: 'bg-emerald-500',
@@ -367,6 +397,7 @@ export function VideoDetectedCard({
           options={currentOptions}
           selectedOption={selectedQuality}
           onSelect={setSelectedQuality}
+          isSourceUnresolved={metadata.pipelineStatus === 'STREAM_SOURCE_UNRESOLVED' || metadata.pipelineStatus === 'BROWSER_SOURCE_UNAVAILABLE'}
         />
 
         {/* Primary Download Button */}

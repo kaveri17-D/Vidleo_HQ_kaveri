@@ -171,4 +171,43 @@ This audit and verification pass was conducted under strict **Zero False Claims*
 | **Gate 6: YouTube Watch-Page Discovery** | Direct client network oEmbed & watch-page | Metadata resolved with 0 Railway calls | **VERIFIED** |
 | **Gate 7: Real YouTube Media Byte Fetch** | Unassisted direct fetch of ciphered format | Upstream cipher requires active player | **BLOCKED_BY_UPSTREAM_CIPHER** |
 | **Gate 8: Player Stream Observation** | Active player videoplayback stream observed | Captured & linked to video ID in MV3 | **VERIFIED** |
-| **Gate 9: Production Availability** | Frontend & Backend live | HTTP 200 verified on both endpoints | **VERIFIED** |
+| **Gate 9: Real YouTube Byte Acquisition** | Direct byte acquisition of player request | Returns UMP `sabr.malformed_config` | **BLOCKED_BY_UPSTREAM_SABR** |
+| **Gate 10: Production Availability** | Frontend & Backend live | HTTP 200 verified on both endpoints | **VERIFIED** |
+
+---
+
+## 8. Final Real YouTube Byte Acquisition Attempt (Definitive Audit)
+
+1. **Exact Video URL**: `https://www.youtube.com/watch?v=jNQXAC9IVRw` ("Me at the zoo")
+2. **Exact Browser Environment**: Headless Chromium 153.0.0.0 on Linux x86_64 with Vidleo Companion Extension (MV3) loaded.
+3. **Observed Player Request**:
+   - `Method`: **`POST`**
+   - `URL`: `https://rr8---sn-gwpa-2o9e.googlevideo.com/videoplayback?expire=1791316307&ei=...&ip=157.32.139.203&id=...&source=youtube&requiressl=yes&sabr=1&rqh=1&keepalive=yes&c=WEB&...`
+   - `PostData`: Proprietary binary protobuf framing containing active player session tokens, playback client state, and BotGuard tokens.
+4. **Acquisition Attempt**:
+   - The Vidleo Companion Extension background service worker observed the request via `webRequest` and attempted byte acquisition of the exact URL via the extension offscreen document.
+5. **HTTP Response Result**:
+   - `HTTP Status`: **200 OK**
+   - `Content-Type`: **`application/vnd.yt-ump`** (YouTube Universal Media Protocol)
+6. **Actual Response Byte Count**: **31 bytes**
+7. **SHA-256 of Acquired Bytes**:
+   - `82e3b1795a6da616240e64841eae3486520ff1138d5614383dbb6c3165f06927`
+   - First 16 bytes (hex): `2c1d 0a15 7361 6272 2e6d 616c 666f 726d`
+   - Payload Text: **`sabr.malformed_config`** (binary error packet written to `frontend/scripts/real-youtube-acquired-bytes.bin`)
+8. **FFmpeg.wasm Processing Result**:
+   - **`BLOCKED_BY_FORMAT`**: The acquired 31-byte response is a proprietary SABR protocol packet, not a standard standalone MP4 or WebM media container. Feeding non-media protocol packets into FFmpeg correctly fails.
+9. **Backend Media Accounting During Test**:
+   - Endpoint: `https://backend-production-2ff30.up.railway.app/api/accounting/media`
+   - `backend_media_bytes_received`: 0
+   - `backend_media_bytes_sent`: 0
+   - `backend_media_bytes`: 0
+   - `server_ffmpeg_processes`: 0
+10. **Exact Failure Boundary**:
+   - In modern YouTube web architecture, video playback in Chromium does NOT use plain HTTP GET range requests for discrete MP4 files.
+   - It utilizes Google's proprietary **SABR (Streaming Adaptive BitRate)** protocol over HTTP POST with Universal Media Protocol (`application/vnd.yt-ump`) binary framing.
+   - Independent requests issued without the active player's internal state machine are rejected by googlevideo with `sabr.malformed_config`.
+   - Without reverse-engineering proprietary SABR protocols or decrypting BotGuard tokens (which is strictly forbidden under our safety and legal guidelines), standalone byte acquisition of modern YouTube web player streams is restricted by upstream architecture.
+   - **Final Status Classification**:
+     - `PLAYER_STREAM_OBSERVED`: **VERIFIED**
+     - `BROWSER_MEDIA_BYTES_ACQUIRED`: **BLOCKED_BY_UPSTREAM_SABR_PROTOCOL**
+
