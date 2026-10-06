@@ -1,0 +1,39 @@
+{
+  "success": true,
+  "results": {
+    "suite1_fixture_acquisition": {
+      "pass": true,
+      "bytes": 122762,
+      "source": "BROWSER_NETWORK",
+      "playback": true
+    },
+    "suite2_youtube_cors_block": {
+      "pass": true,
+      "status": "CORS_BLOCKED",
+      "source": "UNKNOWN",
+      "verifiedBlock": true,
+      "message": "YouTube correctly identified as CORS-restricted for direct browser JS fetch."
+    },
+    "suite3_consent_state_machine": {
+      "pass": true,
+      "states": [
+        "CONSENT_DIALOG",
+        "DECLINED",
+        "GRANTED"
+      ]
+    },
+    "suite4_resource_budget_limit": {
+      "pass": true,
+      "status": "UNSUPPORTED",
+      "reason": "File size exceeds safe browser limit (450 MB) for this device class. Use Server Download instead."
+    },
+    "suite5_ssrf_security_block": {
+      "pass": true,
+      "blocked": [
+        "127.0.0.1",
+        "localhost",
+        "ftp"
+      ]
+    }
+  }
+}
