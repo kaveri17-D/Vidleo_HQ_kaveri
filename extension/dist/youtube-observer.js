@@ -86,6 +86,10 @@
       if (!video) {
         throw new Error("No active YouTube HTMLVideoElement found on page");
       }
+      if (mode === "full_video" && video.currentTime > 1) {
+        video.currentTime = 0;
+        await new Promise((r) => setTimeout(r, 200));
+      }
       if (video.paused) {
         try {
           await video.play();
@@ -135,8 +139,25 @@
       });
       recorder.start(500);
       const recordingStartTime = Date.now();
-      const finalDurationLimit = targetDuration > 0 ? targetDuration : video.duration || 60;
+      const finalDurationLimit = targetDuration > 0 ? targetDuration : video.duration > 0 ? video.duration : 60;
       await new Promise((resolve) => {
+        let stopped = false;
+        const doStop = () => {
+          if (stopped) return;
+          stopped = true;
+          clearInterval(interval);
+          video.removeEventListener("ended", onEnded);
+          recorder.onstop = () => resolve();
+          try {
+            recorder.stop();
+          } catch {
+            resolve();
+          }
+        };
+        const onEnded = () => {
+          doStop();
+        };
+        video.addEventListener("ended", onEnded);
         const interval = setInterval(() => {
           const elapsed = (Date.now() - recordingStartTime) / 1e3;
           const currentBytes = chunks.reduce((acc, c) => acc + c.size, 0);
@@ -152,18 +173,12 @@
             }
           }).catch(() => {
           });
-          const isTimeUp = elapsed >= finalDurationLimit;
-          const isVideoFinished = mode === "full_video" && (video.ended || video.duration > 0 && video.currentTime >= video.duration - 0.5);
+          const isTimeUp = mode === "demo_10s" ? elapsed >= finalDurationLimit : elapsed >= finalDurationLimit + 3;
+          const isVideoFinished = mode === "full_video" && (video.ended || video.duration > 0 && video.currentTime >= Math.max(1, video.duration - 0.3));
           if (isTimeUp || isVideoFinished) {
-            clearInterval(interval);
-            recorder.onstop = () => resolve();
-            try {
-              recorder.stop();
-            } catch {
-              resolve();
-            }
+            doStop();
           }
-        }, 500);
+        }, 400);
       });
       const capturedBlob = new Blob(chunks, { type: mimeType });
       const arrayBuffer = await capturedBlob.arrayBuffer();

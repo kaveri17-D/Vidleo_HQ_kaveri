@@ -14,7 +14,10 @@ const extDistPath = path.resolve(rootDir, '../extension/dist');
 const VIDEO_URL = 'https://www.youtube.com/watch?v=jNQXAC9IVRw';
 const DOWNLOAD_DIR = '/downloads';
 const EVIDENCE_FILE = path.resolve(__dirname, 'real-youtube-demo-download-evidence.json');
-const TARGET_FILENAME = 'Vidleo_YouTube_Demo_Me_At_The_Zoo.webm';
+const RUN_MODE = process.env.TEST_MODE || process.argv[2] || 'full_video';
+const TARGET_FILENAME = RUN_MODE === 'full_video' 
+  ? 'Vidleo_YouTube_Full_Me_At_The_Zoo.webm' 
+  : 'Vidleo_YouTube_Demo_Me_At_The_Zoo.webm';
 
 function fetchBackendAccounting() {
   return new Promise((resolve) => {
@@ -92,8 +95,9 @@ function fetchBackendAccounting() {
   await ytPage.waitForSelector('video', { timeout: 15000 });
   console.log('[PASS] YouTube Player video element discovered on DOM.');
 
-  // Step 4: Ensure Playback and Capture 10s of Playback Media
-  console.log('\n[Step 4] Starting real playback and in-browser captureStream()...');
+  // Step 4: Ensure Playback and Capture Playback Media (Mode A: 10s Demo, Mode B: Full Video)
+  console.log(`\n[Step 4] Starting real playback and in-browser captureStream() [Mode: ${RUN_MODE}]...`);
+  await ytPage.evaluate((m) => { window.__TEST_MODE = m; }, RUN_MODE);
   const captureRaw = await ytPage.evaluate(async (targetFilename) => {
     const video = document.querySelector('video');
     if (!video) throw new Error('No video element found');
@@ -134,12 +138,40 @@ function fetchBackendAccounting() {
 
     recorder.start(500);
 
-    // Record for 10 seconds (Mode A)
-    await new Promise(resolve => setTimeout(resolve, 10000));
+    // Record according to Mode (Mode A: 10s demo, Mode B: full video)
+    const mode = window.__TEST_MODE || 'demo_10s';
+    const startTime = Date.now();
 
-    const stopPromise = new Promise(resolve => { recorder.onstop = resolve; });
-    recorder.stop();
-    await stopPromise;
+    await new Promise((resolve) => {
+      let stopped = false;
+      const doStop = () => {
+        if (stopped) return;
+        stopped = true;
+        clearInterval(iv);
+        video.removeEventListener('ended', onEnded);
+        recorder.onstop = () => resolve();
+        try {
+          recorder.stop();
+        } catch {
+          resolve();
+        }
+      };
+
+      const onEnded = () => doStop();
+      video.addEventListener('ended', onEnded);
+
+      const iv = setInterval(() => {
+        const elapsed = (Date.now() - startTime) / 1000;
+        const isTimeUp = mode === 'demo_10s' ? elapsed >= 10 : elapsed >= (video.duration > 0 ? video.duration + 2 : 25);
+        const isVideoFinished = mode === 'full_video' && (
+          video.ended || (video.duration > 0 && video.currentTime >= Math.max(1, video.duration - 0.3))
+        );
+
+        if (isTimeUp || isVideoFinished) {
+          doStop();
+        }
+      }, 300);
+    });
 
     const blob = new Blob(chunks, { type: mimeType });
     const arrayBuffer = await blob.arrayBuffer();
