@@ -385,6 +385,8 @@ def _metadata_args(
             "-J",
             "--no-playlist",
             "--no-warnings",
+            "--js-runtimes",
+            "node",
         ]
     )
 
@@ -539,7 +541,7 @@ def _youtube_probe_extractor_args(po_token_bundle: dict[str, str] | None) -> dic
         }
     return {
         "youtube": {
-            "player_client": ["android", "tv", "web"],
+            "player_client": ["visionos", "android", "tv", "web"],
         }
     }
 
@@ -552,7 +554,7 @@ def _youtube_probe_extractor_args_cli(po_token_bundle: dict[str, str] | None) ->
             f"visitor_data={po_token_bundle['visitorData']}"
         ]
     return [
-        "youtube:player_client=android,tv,web"
+        "youtube:player_client=visionos,android,tv,web"
     ]
 
 
@@ -626,6 +628,7 @@ def _extract_probe_info_with_yt_dlp(
         "extract_flat": "in_playlist",
         "compat_opts": ["no-youtube-unavailable-videos"],
         "skip_download": True,
+        "js_runtimes": {"node": {}},
     }
     if youtube_extractor_args:
         options["extractor_args"] = youtube_extractor_args
