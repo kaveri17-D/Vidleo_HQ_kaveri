@@ -12,6 +12,7 @@ import { parseAndValidateVideoUrl } from './urlParser';
 import { StorageService } from './storageService';
 import { createClient } from '@/lib/supabase/client';
 import { MediaEngine } from '@/packages/media-engine';
+import { browserAcquisitionEngine } from '@/lib/browser-acquisition';
 
 export type ProgressCallback = (state: AnalysisStateData) => void;
 export type DownloadProgressCallback = (session: DownloadSession) => void;
@@ -269,7 +270,8 @@ export class DownloaderService {
     quality: QualityOption,
     format: MediaFormatType,
     onProgress: DownloadProgressCallback,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    routePreference: 'browser' | 'server' = 'browser'
   ): Promise<DownloadSession> {
     const totalBytes = quality.fileSizeBytes;
     const sessionId = `session-${Date.now()}`;
@@ -285,9 +287,79 @@ export class DownloaderService {
       totalBytes,
       speedFormatted: undefined,
       timeRemainingFormatted: undefined,
+      route: routePreference,
+      acquisitionSource: 'UNKNOWN',
     };
 
     onProgress(session);
+
+    // 0A. Direct Browser-First Media Acquisition Attempt (if user selected/allowed browser route)
+    if (routePreference === 'browser') {
+      const progressiveStreams = metadata.manifest?.streams?.progressive || [];
+      const videoStreams = metadata.manifest?.streams?.video || [];
+      const candidateStream = progressiveStreams.find((s: any) => s.format_id === quality.id) ||
+        videoStreams.find((s: any) => s.format_id === quality.id) ||
+        (metadata.manifest?.source?.url ? { url: metadata.manifest.source.url } : null);
+
+      if (candidateStream && candidateStream.url) {
+        const canAcquire = browserAcquisitionEngine.canAcquire(candidateStream.url, totalBytes);
+        if (canAcquire.canAcquire) {
+          try {
+            const acqResult = await browserAcquisitionEngine.acquire({
+              sourceUrl: candidateStream.url,
+              targetFilename: `${metadata.title.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 40)}.${quality.container}`,
+              expectedBytes: totalBytes,
+              signal,
+              onProgress: (p) => {
+                session = {
+                  ...session,
+                  status: p.stage === 'complete' ? 'ready' : p.stage === 'processing' ? 'converting' : 'downloading',
+                  progress: p.percent,
+                  downloadedBytes: p.bytesReceived,
+                  speedFormatted: p.speedFormatted,
+                  timeRemainingFormatted: p.etaFormatted,
+                  acquisitionSource: p.source,
+                  route: 'browser',
+                };
+                onProgress(session);
+              },
+              enableFfmpegProcessing: true,
+              targetContainer: quality.container as any,
+            });
+
+            if (acqResult.success && acqResult.totalBytes > 0) {
+              session = {
+                ...session,
+                status: 'ready',
+                progress: 100,
+                downloadedBytes: acqResult.totalBytes,
+                downloadUrl: acqResult.mediaUrl,
+                speedFormatted: 'Done',
+                timeRemainingFormatted: 'Ready',
+                acquisitionSource: 'BROWSER_NETWORK',
+                route: 'browser',
+              };
+              onProgress(session);
+              StorageService.addHistoryItem(metadata, quality, format);
+              return session;
+            }
+          } catch (browserAcqErr: any) {
+            if (signal?.aborted) {
+              throw new Error('Download aborted by user');
+            }
+            console.warn('[BrowserAcquisition] Direct browser path unavailable, routing to server fallback:', browserAcqErr?.message);
+            // Notify user of fallback without breaking workflow
+            session = {
+              ...session,
+              status: 'downloading',
+              route: 'server',
+              acquisitionSource: 'SERVER',
+            };
+            onProgress(session);
+          }
+        }
+      }
+    }
 
     const apiBase = DownloaderService.getApiEndpoint();
     if (!apiBase) {
@@ -304,7 +376,7 @@ export class DownloaderService {
     try {
       const authHeaders = await DownloaderService.getAuthHeaders();
 
-      // 0. Attempt client-first execution via NEXUS MediaEngine
+      // 0B. Attempt client-first execution via NEXUS MediaEngine
       if (metadata.manifest) {
         try {
           let latestEngineResult: any = null;

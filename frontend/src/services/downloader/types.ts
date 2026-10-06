@@ -82,6 +82,8 @@ export interface DownloadSession {
   timeRemainingFormatted?: string; // e.g. "4s"
   downloadUrl?: string;
   errorMessage?: string;
+  acquisitionSource?: 'BROWSER_NETWORK' | 'SERVER' | 'UNKNOWN';
+  route?: 'browser' | 'server';
 }
 
 export interface HistoryItem {

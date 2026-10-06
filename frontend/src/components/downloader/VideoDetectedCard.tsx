@@ -18,10 +18,12 @@ import {
   Music
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { BrowserConsentModal } from './BrowserConsentModal';
+import { browserAcquisitionEngine } from '@/lib/browser-acquisition';
 
 interface VideoDetectedCardProps {
   metadata: VideoMetadata;
-  onDownload: (quality: QualityOption, format: MediaFormatType) => void;
+  onDownload: (quality: QualityOption, format: MediaFormatType, routePreference?: 'browser' | 'server') => void;
   onCancel?: () => void;
   onReset?: () => void;
 }
@@ -33,6 +35,7 @@ export function VideoDetectedCard({
   onReset,
 }: VideoDetectedCardProps) {
   const [activeFormat, setActiveFormat] = useState<MediaFormatType>('video');
+  const [showConsentModal, setShowConsentModal] = useState(false);
 
   const videoOptions = metadata.availableVideoQualities || [];
   const audioOptions = metadata.availableAudioQualities || [];
@@ -55,9 +58,26 @@ export function VideoDetectedCard({
   };
 
   const handleTriggerDownload = () => {
-    if (selectedQuality) {
-      onDownload(selectedQuality, activeFormat);
+    if (!selectedQuality) return;
+
+    const streamCandidate = metadata.canonicalUrl || metadata.url;
+    const check = browserAcquisitionEngine.canAcquire(streamCandidate, selectedQuality.fileSizeBytes);
+
+    if (check.canAcquire) {
+      setShowConsentModal(true);
+    } else {
+      onDownload(selectedQuality, activeFormat, 'server');
     }
+  };
+
+  const handleAllowBrowser = () => {
+    setShowConsentModal(false);
+    onDownload(selectedQuality, activeFormat, 'browser');
+  };
+
+  const handleUseServer = () => {
+    setShowConsentModal(false);
+    onDownload(selectedQuality, activeFormat, 'server');
   };
 
   const handleActionReset = onReset || onCancel || (() => {});
@@ -240,6 +260,16 @@ export function VideoDetectedCard({
           </p>
         </div>
       </div>
+
+      {/* Operation-scoped Browser Acquisition Consent Modal */}
+      <BrowserConsentModal
+        isOpen={showConsentModal}
+        videoTitle={metadata.title}
+        filesizeFormatted={selectedQuality?.fileSizeApprox}
+        onAllowBrowser={handleAllowBrowser}
+        onUseServer={handleUseServer}
+        onClose={() => setShowConsentModal(false)}
+      />
     </div>
   );
 }

@@ -104,7 +104,11 @@ export function UrlDownloader({
     }
   };
 
-  const handleDownloadTrigger = async (quality: QualityOption, format: MediaFormatType) => {
+  const handleDownloadTrigger = async (
+    quality: QualityOption, 
+    format: MediaFormatType, 
+    routePreference: 'browser' | 'server' = 'browser'
+  ) => {
     if (!metadata) return;
 
     setStage('downloading');
@@ -118,7 +122,8 @@ export function UrlDownloader({
         (progressSession) => {
           setDownloadSession(progressSession);
         },
-        abortControllerRef.current.signal
+        abortControllerRef.current.signal,
+        routePreference
       );
 
       if (session) {

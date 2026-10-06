@@ -67,13 +67,25 @@ export function DownloadReadyState({
             <h3 className="font-display font-[800] text-sm tracking-tight text-[#0A0A0C]">
               {isComplete ? 'Extraction Complete & Ready' : 'Processing Media Stream'}
             </h3>
-            <p className="text-xs text-[#7A7A82] font-mono">
-              {session.status === 'converting'
-                ? 'Muxing video & audio codec layers...'
-                : session.status === 'downloading'
-                ? `Transmitting stream (${session.progress}%)`
-                : 'Asset verified and ready for disk storage'}
-            </p>
+            <div className="flex items-center gap-2 mt-0.5">
+              <p className="text-xs text-[#7A7A82] font-mono">
+                {session.status === 'converting'
+                  ? 'Muxing video & audio codec layers...'
+                  : session.status === 'downloading'
+                  ? `Transmitting stream (${session.progress}%)`
+                  : 'Asset verified and ready for disk storage'}
+              </p>
+              {session.acquisitionSource === 'BROWSER_NETWORK' && (
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-purple-100 text-purple-900 border border-purple-200">
+                  BROWSER ACQUISITION (ZERO SERVER BYTES)
+                </span>
+              )}
+              {session.acquisitionSource === 'SERVER' && (
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-gray-100 text-gray-700 border border-gray-200">
+                  SERVER FALLBACK
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
