@@ -26,6 +26,7 @@ export interface QualityOption {
   isRecommended?: boolean;
   hasAudio: boolean;
   hdr?: boolean;
+  streamUrl?: string;
 }
 
 export interface VideoMetadata {

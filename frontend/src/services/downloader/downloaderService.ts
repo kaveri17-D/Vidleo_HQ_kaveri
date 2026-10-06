@@ -81,6 +81,7 @@ function mapBackendFormatsToQualities(
       isRecommended: index === 0 || height === 1080,
       hasAudio: f.has_audio !== false,
       hdr: Boolean(f.hdr),
+      streamUrl: f.url || undefined,
     };
   });
 }
@@ -295,11 +296,14 @@ export class DownloaderService {
 
     // 0A. Direct Browser-First Media Acquisition Attempt (if user selected/allowed browser route)
     if (routePreference === 'browser') {
+      const directStreamUrl = quality.streamUrl;
       const progressiveStreams = metadata.manifest?.streams?.progressive || [];
       const videoStreams = metadata.manifest?.streams?.video || [];
-      const candidateStream = progressiveStreams.find((s: any) => s.format_id === quality.id) ||
-        videoStreams.find((s: any) => s.format_id === quality.id) ||
-        (metadata.manifest?.source?.url ? { url: metadata.manifest.source.url } : null);
+      const candidateStream = directStreamUrl 
+        ? { url: directStreamUrl }
+        : progressiveStreams.find((s: any) => s.format_id === quality.id) ||
+          videoStreams.find((s: any) => s.format_id === quality.id) ||
+          (metadata.manifest?.source?.url ? { url: metadata.manifest.source.url } : null);
 
       if (candidateStream && candidateStream.url) {
         const canAcquire = browserAcquisitionEngine.canAcquire(candidateStream.url, totalBytes);
