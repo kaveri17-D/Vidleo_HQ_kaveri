@@ -15,7 +15,15 @@ export type NexusMessageType =
   | 'ACQUISITION_STARTED'
   | 'ACQUISITION_PROGRESS'
   | 'ACQUISITION_COMPLETE'
-  | 'ACQUISITION_FAILED';
+  | 'ACQUISITION_FAILED'
+  | 'START_PLAYBACK_CAPTURE'
+  | 'START_TAB_PLAYBACK_CAPTURE'
+  | 'PLAYBACK_CAPTURE_STARTED'
+  | 'PLAYBACK_CAPTURE_PROGRESS'
+  | 'PLAYBACK_CAPTURE_COMPLETE'
+  | 'PLAYBACK_CAPTURE_FAILED'
+  | 'PROCESS_PLAYBACK_CAPTURE_FFMPEG'
+  | 'YOUTUBE_MEDIA_OBSERVED';
 
 export interface StartDirectAcquisitionPayload {
   sessionId: string;
@@ -88,6 +96,55 @@ export interface ResolveMediaSuccessPayload {
 export interface ResolveMediaErrorPayload {
   error: string;
   code?: string;
+}
+
+export interface StartPlaybackCapturePayload {
+  sessionId: string;
+  videoId?: string;
+  videoUrl?: string;
+  durationSeconds?: number;
+  mode?: 'demo_10s' | 'full_video';
+  targetFilename?: string;
+}
+
+export interface PlaybackCaptureProgressPayload {
+  sessionId: string;
+  stage: 'locating_player' | 'recording' | 'processing_ffmpeg' | 'verifying_output' | 'downloading';
+  recordedSeconds: number;
+  targetSeconds?: number;
+  percent: number;
+  bytesReceived: number;
+}
+
+export interface PlaybackCaptureCompletePayload {
+  sessionId: string;
+  filename: string;
+  captureBytes: number;
+  captureSha256: string;
+  ffmpegInputSha256: string;
+  ffmpegOutputSha256: string;
+  outputBytes: number;
+  outputDuration: number;
+  outputWidth: number;
+  outputHeight: number;
+  videoTracksCount: number;
+  audioTracksCount: number;
+  mimeType: string;
+  blobUrl?: string;
+  downloadStarted?: boolean;
+}
+
+export interface ProcessPlaybackCaptureFfmpegPayload {
+  sessionId: string;
+  filename: string;
+  base64Data: string;
+  captureBytes: number;
+  captureSha256: string;
+  mimeType: string;
+  videoTracksCount: number;
+  audioTracksCount: number;
+  videoWidth: number;
+  videoHeight: number;
 }
 
 export interface NexusMessage<T = any> {

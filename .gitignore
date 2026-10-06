@@ -70,3 +70,5 @@ storage_data/
 uploads/
 downloads/
 .railway_home/
+extension/dist/*.wasm
+

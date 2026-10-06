@@ -14,6 +14,42 @@ declare namespace chrome {
       ): void;
       removeListener(callback: Function): void;
     };
+    const onMessageExternal: {
+      addListener(
+        callback: (
+          message: any,
+          sender: any,
+          sendResponse: (response?: any) => void
+        ) => boolean | void
+      ): void;
+      removeListener(callback: Function): void;
+    };
+  }
+
+  namespace tabs {
+    interface Tab {
+      id?: number;
+      url?: string;
+      title?: string;
+      active?: boolean;
+    }
+    function query(queryInfo: { url?: string | string[]; active?: boolean; currentWindow?: boolean }, callback: (result: Tab[]) => void): void;
+    function get(tabId: number, callback: (tab: Tab) => void): void;
+    function create(createProperties: { url: string; active?: boolean }, callback?: (tab: Tab) => void): void;
+    function sendMessage(tabId: number, message: any, responseCallback?: (response: any) => void): Promise<any>;
+  }
+
+  namespace webRequest {
+    interface RequestFilter {
+      urls: string[];
+    }
+    const onBeforeRequest: {
+      addListener(
+        callback: (details: { url: string; tabId: number; method: string; requestBody?: any }) => void,
+        filter: RequestFilter,
+        extraInfoSpec?: string[]
+      ): void;
+    };
   }
 
   namespace offscreen {
@@ -56,5 +92,18 @@ declare namespace chrome {
     const session: StorageArea;
     const local: StorageArea;
     const sync: StorageArea;
+  }
+}
+
+declare module '@ffmpeg/ffmpeg' {
+  export class FFmpeg {
+    load(config?: any): Promise<void>;
+    writeFile(path: string, data: any): Promise<void>;
+    readFile(path: string): Promise<any>;
+    deleteFile(path: string): Promise<void>;
+    exec(args: string[]): Promise<number>;
+    on(event: string, callback: (...args: any[]) => void): void;
+    off(event: string, callback: (...args: any[]) => void): void;
+    terminate(): Promise<void>;
   }
 }

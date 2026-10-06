@@ -110,6 +110,29 @@ async function build() {
     path.resolve(distDir, 'manifest.json')
   );
 
+  // Copy local FFmpeg.wasm assets into extension dist for zero-network offline execution
+  const ffmpegCoreDist = path.resolve(frontendNodeModules, '@ffmpeg/core/dist/esm');
+  const ffmpegPkgDist = path.resolve(frontendNodeModules, '@ffmpeg/ffmpeg/dist/esm');
+
+  if (fs.existsSync(path.resolve(ffmpegCoreDist, 'ffmpeg-core.js'))) {
+    fs.copyFileSync(
+      path.resolve(ffmpegCoreDist, 'ffmpeg-core.js'),
+      path.resolve(distDir, 'ffmpeg-core.js')
+    );
+  }
+  if (fs.existsSync(path.resolve(ffmpegCoreDist, 'ffmpeg-core.wasm'))) {
+    fs.copyFileSync(
+      path.resolve(ffmpegCoreDist, 'ffmpeg-core.wasm'),
+      path.resolve(distDir, 'ffmpeg-core.wasm')
+    );
+  }
+  if (fs.existsSync(path.resolve(ffmpegPkgDist, 'worker.js'))) {
+    fs.copyFileSync(
+      path.resolve(ffmpegPkgDist, 'worker.js'),
+      path.resolve(distDir, 'ffmpeg-worker.js')
+    );
+  }
+
   console.log('[NEXUS Extension Build] Build completed successfully into extension/dist!');
 }
 

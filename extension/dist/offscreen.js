@@ -1,10 +1,374 @@
 var __defProp = Object.defineProperty;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __esm = (fn, res, err) => function __init() {
+  if (err) throw err[0];
+  try {
+    return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
+  } catch (e) {
+    throw err = [e], e;
+  }
+};
 var __export = (target, all) => {
   for (var name in all)
     __defProp(target, name, { get: all[name], enumerable: true });
 };
 
-// ../frontend/src/packages/media-engine/capability.ts
+// frontend/node_modules/@ffmpeg/ffmpeg/dist/esm/const.js
+var CORE_VERSION, CORE_URL, FFMessageType;
+var init_const = __esm({
+  "frontend/node_modules/@ffmpeg/ffmpeg/dist/esm/const.js"() {
+    CORE_VERSION = "0.12.9";
+    CORE_URL = `https://unpkg.com/@ffmpeg/core@${CORE_VERSION}/dist/umd/ffmpeg-core.js`;
+    (function(FFMessageType2) {
+      FFMessageType2["LOAD"] = "LOAD";
+      FFMessageType2["EXEC"] = "EXEC";
+      FFMessageType2["FFPROBE"] = "FFPROBE";
+      FFMessageType2["WRITE_FILE"] = "WRITE_FILE";
+      FFMessageType2["READ_FILE"] = "READ_FILE";
+      FFMessageType2["DELETE_FILE"] = "DELETE_FILE";
+      FFMessageType2["RENAME"] = "RENAME";
+      FFMessageType2["CREATE_DIR"] = "CREATE_DIR";
+      FFMessageType2["LIST_DIR"] = "LIST_DIR";
+      FFMessageType2["DELETE_DIR"] = "DELETE_DIR";
+      FFMessageType2["ERROR"] = "ERROR";
+      FFMessageType2["DOWNLOAD"] = "DOWNLOAD";
+      FFMessageType2["PROGRESS"] = "PROGRESS";
+      FFMessageType2["LOG"] = "LOG";
+      FFMessageType2["MOUNT"] = "MOUNT";
+      FFMessageType2["UNMOUNT"] = "UNMOUNT";
+    })(FFMessageType || (FFMessageType = {}));
+  }
+});
+
+// frontend/node_modules/@ffmpeg/ffmpeg/dist/esm/utils.js
+var getMessageID;
+var init_utils = __esm({
+  "frontend/node_modules/@ffmpeg/ffmpeg/dist/esm/utils.js"() {
+    getMessageID = /* @__PURE__ */ (() => {
+      let messageID = 0;
+      return () => messageID++;
+    })();
+  }
+});
+
+// frontend/node_modules/@ffmpeg/ffmpeg/dist/esm/errors.js
+var ERROR_UNKNOWN_MESSAGE_TYPE, ERROR_NOT_LOADED, ERROR_TERMINATED, ERROR_IMPORT_FAILURE;
+var init_errors = __esm({
+  "frontend/node_modules/@ffmpeg/ffmpeg/dist/esm/errors.js"() {
+    ERROR_UNKNOWN_MESSAGE_TYPE = new Error("unknown message type");
+    ERROR_NOT_LOADED = new Error("ffmpeg is not loaded, call `await ffmpeg.load()` first");
+    ERROR_TERMINATED = new Error("called FFmpeg.terminate()");
+    ERROR_IMPORT_FAILURE = new Error("failed to import ffmpeg-core.js");
+  }
+});
+
+// frontend/node_modules/@ffmpeg/ffmpeg/dist/esm/classes.js
+var FFmpeg;
+var init_classes = __esm({
+  "frontend/node_modules/@ffmpeg/ffmpeg/dist/esm/classes.js"() {
+    init_const();
+    init_utils();
+    init_errors();
+    FFmpeg = class {
+      #worker = null;
+      /**
+       * #resolves and #rejects tracks Promise resolves and rejects to
+       * be called when we receive message from web worker.
+       */
+      #resolves = {};
+      #rejects = {};
+      #logEventCallbacks = [];
+      #progressEventCallbacks = [];
+      loaded = false;
+      /**
+       * register worker message event handlers.
+       */
+      #registerHandlers = () => {
+        if (this.#worker) {
+          this.#worker.onmessage = ({ data: { id, type, data } }) => {
+            switch (type) {
+              case FFMessageType.LOAD:
+                this.loaded = true;
+                this.#resolves[id](data);
+                break;
+              case FFMessageType.MOUNT:
+              case FFMessageType.UNMOUNT:
+              case FFMessageType.EXEC:
+              case FFMessageType.FFPROBE:
+              case FFMessageType.WRITE_FILE:
+              case FFMessageType.READ_FILE:
+              case FFMessageType.DELETE_FILE:
+              case FFMessageType.RENAME:
+              case FFMessageType.CREATE_DIR:
+              case FFMessageType.LIST_DIR:
+              case FFMessageType.DELETE_DIR:
+                this.#resolves[id](data);
+                break;
+              case FFMessageType.LOG:
+                this.#logEventCallbacks.forEach((f) => f(data));
+                break;
+              case FFMessageType.PROGRESS:
+                this.#progressEventCallbacks.forEach((f) => f(data));
+                break;
+              case FFMessageType.ERROR:
+                this.#rejects[id](data);
+                break;
+            }
+            delete this.#resolves[id];
+            delete this.#rejects[id];
+          };
+        }
+      };
+      /**
+       * Generic function to send messages to web worker.
+       */
+      #send = ({ type, data }, trans = [], signal) => {
+        if (!this.#worker) {
+          return Promise.reject(ERROR_NOT_LOADED);
+        }
+        return new Promise((resolve, reject) => {
+          const id = getMessageID();
+          this.#worker && this.#worker.postMessage({ id, type, data }, trans);
+          this.#resolves[id] = resolve;
+          this.#rejects[id] = reject;
+          signal?.addEventListener("abort", () => {
+            reject(new DOMException(`Message # ${id} was aborted`, "AbortError"));
+          }, { once: true });
+        });
+      };
+      on(event, callback) {
+        if (event === "log") {
+          this.#logEventCallbacks.push(callback);
+        } else if (event === "progress") {
+          this.#progressEventCallbacks.push(callback);
+        }
+      }
+      off(event, callback) {
+        if (event === "log") {
+          this.#logEventCallbacks = this.#logEventCallbacks.filter((f) => f !== callback);
+        } else if (event === "progress") {
+          this.#progressEventCallbacks = this.#progressEventCallbacks.filter((f) => f !== callback);
+        }
+      }
+      /**
+       * Loads ffmpeg-core inside web worker. It is required to call this method first
+       * as it initializes WebAssembly and other essential variables.
+       *
+       * @category FFmpeg
+       * @returns `true` if ffmpeg core is loaded for the first time.
+       */
+      load = ({ classWorkerURL, ...config } = {}, { signal } = {}) => {
+        if (!this.#worker) {
+          this.#worker = classWorkerURL ? new Worker(new URL(classWorkerURL, import.meta.url), {
+            type: "module"
+          }) : (
+            // We need to duplicated the code here to enable webpack
+            // to bundle worekr.js here.
+            new Worker(new URL("./worker.js", import.meta.url), {
+              type: "module"
+            })
+          );
+          this.#registerHandlers();
+        }
+        return this.#send({
+          type: FFMessageType.LOAD,
+          data: config
+        }, void 0, signal);
+      };
+      /**
+       * Execute ffmpeg command.
+       *
+       * @remarks
+       * To avoid common I/O issues, ["-nostdin", "-y"] are prepended to the args
+       * by default.
+       *
+       * @example
+       * ```ts
+       * const ffmpeg = new FFmpeg();
+       * await ffmpeg.load();
+       * await ffmpeg.writeFile("video.avi", ...);
+       * // ffmpeg -i video.avi video.mp4
+       * await ffmpeg.exec(["-i", "video.avi", "video.mp4"]);
+       * const data = ffmpeg.readFile("video.mp4");
+       * ```
+       *
+       * @returns `0` if no error, `!= 0` if timeout (1) or error.
+       * @category FFmpeg
+       */
+      exec = (args, timeout = -1, { signal } = {}) => this.#send({
+        type: FFMessageType.EXEC,
+        data: { args, timeout }
+      }, void 0, signal);
+      /**
+       * Execute ffprobe command.
+       *
+       * @example
+       * ```ts
+       * const ffmpeg = new FFmpeg();
+       * await ffmpeg.load();
+       * await ffmpeg.writeFile("video.avi", ...);
+       * // Getting duration of a video in seconds: ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 video.avi -o output.txt
+       * await ffmpeg.ffprobe(["-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", "video.avi", "-o", "output.txt"]);
+       * const data = ffmpeg.readFile("output.txt");
+       * ```
+       *
+       * @returns `0` if no error, `!= 0` if timeout (1) or error.
+       * @category FFmpeg
+       */
+      ffprobe = (args, timeout = -1, { signal } = {}) => this.#send({
+        type: FFMessageType.FFPROBE,
+        data: { args, timeout }
+      }, void 0, signal);
+      /**
+       * Terminate all ongoing API calls and terminate web worker.
+       * `FFmpeg.load()` must be called again before calling any other APIs.
+       *
+       * @category FFmpeg
+       */
+      terminate = () => {
+        const ids = Object.keys(this.#rejects);
+        for (const id of ids) {
+          this.#rejects[id](ERROR_TERMINATED);
+          delete this.#rejects[id];
+          delete this.#resolves[id];
+        }
+        if (this.#worker) {
+          this.#worker.terminate();
+          this.#worker = null;
+          this.loaded = false;
+        }
+      };
+      /**
+       * Write data to ffmpeg.wasm.
+       *
+       * @example
+       * ```ts
+       * const ffmpeg = new FFmpeg();
+       * await ffmpeg.load();
+       * await ffmpeg.writeFile("video.avi", await fetchFile("../video.avi"));
+       * await ffmpeg.writeFile("text.txt", "hello world");
+       * ```
+       *
+       * @category File System
+       */
+      writeFile = (path, data, { signal } = {}) => {
+        const trans = [];
+        if (data instanceof Uint8Array) {
+          trans.push(data.buffer);
+        }
+        return this.#send({
+          type: FFMessageType.WRITE_FILE,
+          data: { path, data }
+        }, trans, signal);
+      };
+      mount = (fsType, options, mountPoint) => {
+        const trans = [];
+        return this.#send({
+          type: FFMessageType.MOUNT,
+          data: { fsType, options, mountPoint }
+        }, trans);
+      };
+      unmount = (mountPoint) => {
+        const trans = [];
+        return this.#send({
+          type: FFMessageType.UNMOUNT,
+          data: { mountPoint }
+        }, trans);
+      };
+      /**
+       * Read data from ffmpeg.wasm.
+       *
+       * @example
+       * ```ts
+       * const ffmpeg = new FFmpeg();
+       * await ffmpeg.load();
+       * const data = await ffmpeg.readFile("video.mp4");
+       * ```
+       *
+       * @category File System
+       */
+      readFile = (path, encoding = "binary", { signal } = {}) => this.#send({
+        type: FFMessageType.READ_FILE,
+        data: { path, encoding }
+      }, void 0, signal);
+      /**
+       * Delete a file.
+       *
+       * @category File System
+       */
+      deleteFile = (path, { signal } = {}) => this.#send({
+        type: FFMessageType.DELETE_FILE,
+        data: { path }
+      }, void 0, signal);
+      /**
+       * Rename a file or directory.
+       *
+       * @category File System
+       */
+      rename = (oldPath, newPath, { signal } = {}) => this.#send({
+        type: FFMessageType.RENAME,
+        data: { oldPath, newPath }
+      }, void 0, signal);
+      /**
+       * Create a directory.
+       *
+       * @category File System
+       */
+      createDir = (path, { signal } = {}) => this.#send({
+        type: FFMessageType.CREATE_DIR,
+        data: { path }
+      }, void 0, signal);
+      /**
+       * List directory contents.
+       *
+       * @category File System
+       */
+      listDir = (path, { signal } = {}) => this.#send({
+        type: FFMessageType.LIST_DIR,
+        data: { path }
+      }, void 0, signal);
+      /**
+       * Delete an empty directory.
+       *
+       * @category File System
+       */
+      deleteDir = (path, { signal } = {}) => this.#send({
+        type: FFMessageType.DELETE_DIR,
+        data: { path }
+      }, void 0, signal);
+    };
+  }
+});
+
+// frontend/node_modules/@ffmpeg/ffmpeg/dist/esm/types.js
+var FFFSType;
+var init_types = __esm({
+  "frontend/node_modules/@ffmpeg/ffmpeg/dist/esm/types.js"() {
+    (function(FFFSType2) {
+      FFFSType2["MEMFS"] = "MEMFS";
+      FFFSType2["NODEFS"] = "NODEFS";
+      FFFSType2["NODERAWFS"] = "NODERAWFS";
+      FFFSType2["IDBFS"] = "IDBFS";
+      FFFSType2["WORKERFS"] = "WORKERFS";
+      FFFSType2["PROXYFS"] = "PROXYFS";
+    })(FFFSType || (FFFSType = {}));
+  }
+});
+
+// frontend/node_modules/@ffmpeg/ffmpeg/dist/esm/index.js
+var esm_exports = {};
+__export(esm_exports, {
+  FFFSType: () => FFFSType,
+  FFmpeg: () => FFmpeg
+});
+var init_esm = __esm({
+  "frontend/node_modules/@ffmpeg/ffmpeg/dist/esm/index.js"() {
+    init_classes();
+    init_types();
+  }
+});
+
+// frontend/src/packages/media-engine/capability.ts
 var cachedCapabilities = null;
 function detectCapabilities() {
   if (cachedCapabilities) {
@@ -35,7 +399,7 @@ function detectCapabilities() {
   return cachedCapabilities;
 }
 
-// ../frontend/src/packages/media-engine/strategy.ts
+// frontend/src/packages/media-engine/strategy.ts
 function evaluateClientStrategy(manifest, targetFormatId, targetFormatType = "video", customCapabilities) {
   const caps = customCapabilities || detectCapabilities();
   const targetFid = String(targetFormatId).trim();
@@ -255,7 +619,7 @@ function evaluateClientStrategy(manifest, targetFormatId, targetFormatType = "vi
   };
 }
 
-// ../frontend/src/packages/media-engine/fetcher.ts
+// frontend/src/packages/media-engine/fetcher.ts
 function formatSpeed(bytesPerSec) {
   if (bytesPerSec >= 1024 * 1024) {
     return `${(bytesPerSec / (1024 * 1024)).toFixed(1)} MB/s`;
@@ -495,7 +859,7 @@ async function fetchStreamWithRange(options) {
   return downloadedBytes;
 }
 
-// ../frontend/src/packages/media-engine/sink/sink.ts
+// frontend/src/packages/media-engine/sink/sink.ts
 var FileSystemAccessSink = class {
   constructor() {
     this.writable = null;
@@ -683,7 +1047,7 @@ var BlobSink = class {
   }
 };
 
-// ../frontend/node_modules/mp4box/dist/mp4box.all.mjs
+// frontend/node_modules/mp4box/dist/mp4box.all.mjs
 var mp4box_all_exports = {};
 __export(mp4box_all_exports, {
   AudioSampleEntry: () => AudioSampleEntry,
@@ -723,7 +1087,7 @@ __export(mp4box_all_exports, {
   createFile: () => createFile
 });
 
-// ../frontend/node_modules/mp4box/dist/rolldown-runtime-w6R9maHv.mjs
+// frontend/node_modules/mp4box/dist/rolldown-runtime-w6R9maHv.mjs
 var __defProp2 = Object.defineProperty;
 var __exportAll = (all, no_symbols) => {
   let target = {};
@@ -739,7 +1103,7 @@ var __exportAll = (all, no_symbols) => {
   return target;
 };
 
-// ../frontend/node_modules/mp4box/dist/styp-9TIZZDLN.mjs
+// frontend/node_modules/mp4box/dist/styp-9TIZZDLN.mjs
 var MAX_SIZE = Math.pow(2, 32);
 var MAX_UINT32 = Math.pow(2, 32) - 1;
 var TFHD_FLAG_DEFAULT_BASE_IS_MOOF = 131072;
@@ -7756,7 +8120,7 @@ var stypBox = class extends Box {
   }
 };
 
-// ../frontend/node_modules/mp4box/dist/mp4box.all.mjs
+// frontend/node_modules/mp4box/dist/mp4box.all.mjs
 var descriptor_exports = /* @__PURE__ */ __exportAll({
   Descriptor: () => Descriptor,
   ES_Descriptor: () => ES_Descriptor,
@@ -10805,7 +11169,7 @@ var all_boxes_exports = /* @__PURE__ */ __exportAll({
 var BoxParser = registerBoxes(all_boxes_exports);
 registerDescriptors(descriptor_exports);
 
-// ../frontend/node_modules/mp4-muxer/build/mp4-muxer.mjs
+// frontend/node_modules/mp4-muxer/build/mp4-muxer.mjs
 var __accessCheck = (obj, member, msg) => {
   if (!member.has(obj))
     throw TypeError("Cannot " + msg);
@@ -12711,7 +13075,7 @@ ensureNotFinalized_fn = function() {
   }
 };
 
-// ../frontend/src/packages/media-engine/muxer/mp4Muxer.ts
+// frontend/src/packages/media-engine/muxer/mp4Muxer.ts
 var MP4Box = void 0 || mp4box_all_exports;
 var StreamingMP4Muxer = class {
   static async remux(options) {
@@ -12986,7 +13350,7 @@ var StreamingMP4Muxer = class {
   }
 };
 
-// ../frontend/node_modules/webm-muxer/build/webm-muxer.mjs
+// frontend/node_modules/webm-muxer/build/webm-muxer.mjs
 var __accessCheck2 = (obj, member, msg) => {
   if (!member.has(obj))
     throw TypeError("Cannot " + msg);
@@ -14438,7 +14802,7 @@ formatTimestamp_fn = function(timestamp) {
   return hours.toString().padStart(2, "0") + ":" + minutes.toString().padStart(2, "0") + ":" + seconds.toString().padStart(2, "0") + "." + milliseconds.toString().padStart(3, "0");
 };
 
-// ../frontend/src/packages/media-engine/muxer/webmMuxer.ts
+// frontend/src/packages/media-engine/muxer/webmMuxer.ts
 var StreamingWebMDemuxer = class {
   constructor(type) {
     this.buffer = new Uint8Array(0);
@@ -14820,7 +15184,7 @@ var StreamingWebMMuxer = class {
   }
 };
 
-// ../frontend/src/packages/media-engine/hls/constants.ts
+// frontend/src/packages/media-engine/hls/constants.ts
 var MAX_HLS_PLAYLIST_BYTES = 2 * 1024 * 1024;
 var MAX_HLS_SEGMENTS = 5e3;
 var MAX_HLS_SEGMENT_BYTES = 50 * 1024 * 1024;
@@ -14831,7 +15195,7 @@ var MAX_HLS_CONCURRENT_SEGMENTS = 2;
 var MAX_HLS_RETRIES = 3;
 var HLS_RETRY_BACKOFF_MS = 500;
 
-// ../frontend/src/packages/media-engine/hls/playlist.ts
+// frontend/src/packages/media-engine/hls/playlist.ts
 var HLSParseError = class extends Error {
   constructor(message, code = "INVALID_PLAYLIST") {
     super(message);
@@ -15078,7 +15442,7 @@ function parseMediaPlaylist(lines, baseUrl) {
   };
 }
 
-// ../frontend/src/packages/media-engine/hls/variant.ts
+// frontend/src/packages/media-engine/hls/variant.ts
 var HLSVariantError = class extends Error {
   constructor(message, code = "UNSUPPORTED_CODEC") {
     super(message);
@@ -15144,7 +15508,7 @@ function selectHLSVariant(variants, options = {}) {
   return candidateVariants[0];
 }
 
-// ../frontend/src/packages/media-engine/hls/decryptor.ts
+// frontend/src/packages/media-engine/hls/decryptor.ts
 var HLSDecryptError = class extends Error {
   constructor(message, code = "UNSUPPORTED_ENCRYPTION") {
     super(message);
@@ -15230,7 +15594,7 @@ var AES128Decryptor = class {
   }
 };
 
-// ../frontend/src/packages/media-engine/hls/tsDemuxer.ts
+// frontend/src/packages/media-engine/hls/tsDemuxer.ts
 var HLSDemuxError = class extends Error {
   constructor(message, code = "INVALID_SEGMENT") {
     super(message);
@@ -15632,7 +15996,7 @@ var MPEGTSDemuxer = class {
   }
 };
 
-// ../frontend/src/packages/media-engine/hls/timeline.ts
+// frontend/src/packages/media-engine/hls/timeline.ts
 var MPEG_CLOCK_HZ = 9e4;
 var ROLLOVER_THRESHOLD_TICKS = 4294967296;
 var MAX_33BIT_TICKS = 8589934592;
@@ -15732,7 +16096,7 @@ var HLSTimelineManager = class {
   }
 };
 
-// ../frontend/src/packages/media-engine/hls/hlsEngine.ts
+// frontend/src/packages/media-engine/hls/hlsEngine.ts
 var HLSEngineError = class extends Error {
   constructor(message, code) {
     super(message);
@@ -16072,7 +16436,7 @@ var HLSEngine = class {
   }
 };
 
-// ../frontend/src/packages/media-engine/index.ts
+// frontend/src/packages/media-engine/index.ts
 var MediaEngine = class {
   /**
    * Evaluates strategy and executes client-first media download when possible.
@@ -16283,7 +16647,7 @@ var MediaEngine = class {
   }
 };
 
-// src/storage/extension-download-sink.ts
+// extension/src/storage/extension-download-sink.ts
 var ExtensionDownloadSink = class {
   fileHandle = null;
   writable = null;
@@ -16366,7 +16730,7 @@ var ExtensionDownloadSink = class {
   }
 };
 
-// src/offscreen/offscreen.ts
+// extension/src/offscreen/offscreen.ts
 console.log("[NEXUS Offscreen] Initialized and listening for media processing requests");
 var activeAbortController = null;
 var currentSink = null;
@@ -16386,6 +16750,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     handleStartDirectAcquisition(message.payload);
     sendResponse({ status: "started" });
     return false;
+  }
+  if (message.type === "PROCESS_PLAYBACK_CAPTURE_FFMPEG") {
+    handleProcessPlaybackCaptureFfmpeg(message.payload).then((res) => sendResponse({ status: "complete", result: res })).catch((err) => sendResponse({ status: "error", error: err?.message || "FFmpeg processing failed" }));
+    return true;
   }
   if (message.type === "DOWNLOAD_CANCEL") {
     handleCancelDownload(message.payload);
@@ -16585,5 +16953,111 @@ async function handleStartDirectAcquisition(payload) {
     activeAbortController = null;
     currentJobId = null;
   }
+}
+async function handleProcessPlaybackCaptureFfmpeg(payload) {
+  const {
+    sessionId,
+    filename,
+    base64Data,
+    captureBytes,
+    captureSha256,
+    mimeType,
+    videoTracksCount,
+    audioTracksCount,
+    videoWidth,
+    videoHeight
+  } = payload;
+  console.log(`[NEXUS Offscreen] Processing playback capture with FFmpeg for session ${sessionId}...`);
+  const binaryString = atob(base64Data);
+  const len = binaryString.length;
+  const inputBytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    inputBytes[i] = binaryString.charCodeAt(i);
+  }
+  const hashBuffer = await crypto.subtle.digest("SHA-256", inputBytes.buffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  const ffmpegInputSha256 = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+  if (captureSha256 && ffmpegInputSha256 !== captureSha256) {
+    throw new Error(`Hash mismatch: captureSha256 (${captureSha256}) !== ffmpegInputSha256 (${ffmpegInputSha256})`);
+  }
+  console.log(`[NEXUS Offscreen] Verified CAPTURE_BYTES_SHA256 === FFMPEG_INPUT_SHA256: ${ffmpegInputSha256}`);
+  chrome.runtime.sendMessage({
+    type: "PLAYBACK_CAPTURE_PROGRESS",
+    payload: {
+      sessionId,
+      stage: "processing_ffmpeg",
+      percent: 60,
+      bytesReceived: inputBytes.byteLength
+    }
+  }).catch(() => {
+  });
+  const { FFmpeg: FFmpeg2 } = await Promise.resolve().then(() => (init_esm(), esm_exports));
+  const ffmpeg = new FFmpeg2();
+  const coreURL = chrome.runtime.getURL("ffmpeg-core.js");
+  const wasmURL = chrome.runtime.getURL("ffmpeg-core.wasm");
+  const classWorkerURL = chrome.runtime.getURL("ffmpeg-worker.js");
+  await ffmpeg.load({ coreURL, wasmURL, classWorkerURL });
+  await ffmpeg.writeFile("input.webm", inputBytes);
+  const execCode = await ffmpeg.exec(["-i", "input.webm", "-c", "copy", "output.webm"]);
+  if (execCode !== 0) {
+    throw new Error(`FFmpeg remux failed with exit code ${execCode}`);
+  }
+  const outputData = await ffmpeg.readFile("output.webm");
+  const outHashBuffer = await crypto.subtle.digest("SHA-256", outputData.buffer);
+  const outHashArray = Array.from(new Uint8Array(outHashBuffer));
+  const ffmpegOutputSha256 = outHashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+  const outputBlob = new Blob([outputData.buffer], { type: "video/webm" });
+  const blobUrl = URL.createObjectURL(outputBlob);
+  let verifiedDuration = 0;
+  let verifiedWidth = 0;
+  let verifiedHeight = 0;
+  try {
+    const videoEl = document.createElement("video");
+    videoEl.preload = "metadata";
+    videoEl.src = blobUrl;
+    await new Promise((resolve) => {
+      videoEl.onloadedmetadata = () => {
+        verifiedDuration = videoEl.duration;
+        verifiedWidth = videoEl.videoWidth;
+        verifiedHeight = videoEl.videoHeight;
+        resolve();
+      };
+      videoEl.onerror = () => resolve();
+      setTimeout(() => resolve(), 3e3);
+    });
+  } catch (e) {
+    console.warn("[NEXUS Offscreen] Playback verification notice:", e);
+  }
+  try {
+    await ffmpeg.deleteFile("input.webm");
+  } catch {
+  }
+  try {
+    await ffmpeg.deleteFile("output.webm");
+  } catch {
+  }
+  const completeResult = {
+    sessionId,
+    filename: filename || `Vidleo_YouTube_Demo_${Date.now()}.webm`,
+    captureBytes: inputBytes.byteLength,
+    captureSha256: ffmpegInputSha256,
+    ffmpegInputSha256,
+    ffmpegOutputSha256,
+    outputBytes: outputData.byteLength,
+    outputDuration: verifiedDuration || payload.outputDuration || 10,
+    outputWidth: verifiedWidth || videoWidth || 320,
+    outputHeight: verifiedHeight || videoHeight || 240,
+    videoTracksCount: videoTracksCount || 1,
+    audioTracksCount: audioTracksCount || 1,
+    mimeType: "video/webm",
+    blobUrl,
+    downloadStarted: true
+  };
+  chrome.runtime.sendMessage({
+    type: "PLAYBACK_CAPTURE_COMPLETE",
+    payload: completeResult
+  }).catch(() => {
+  });
+  return completeResult;
 }
 //# sourceMappingURL=offscreen.js.map

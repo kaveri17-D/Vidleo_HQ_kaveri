@@ -1,4 +1,4 @@
-// src/background/service-worker.ts
+// extension/src/background/service-worker.ts
 var DEFAULT_API_BASE_URL = "http://127.0.0.1:8000";
 var OFFSCREEN_DOCUMENT_PATH = "offscreen.html";
 console.log("[NEXUS Service Worker] Background Service Worker initialized");
@@ -239,6 +239,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     });
     return true;
   }
+  if (message.type === "START_PLAYBACK_CAPTURE") {
+    const payload = message.payload;
+    handleStartPlaybackCapture(payload).then((result) => {
+      sendResponse({ status: "complete", result });
+    }).catch((err) => {
+      console.error("[NEXUS Service Worker] Playback capture failed:", err);
+      broadcastToTabs({
+        type: "PLAYBACK_CAPTURE_FAILED",
+        payload: { sessionId: payload?.sessionId, error: err.message }
+      });
+      sendResponse({ status: "error", error: err.message });
+    });
+    return true;
+  }
   if (message.type === "DOWNLOAD_COMPLETE") {
     const payload = message.payload;
     console.log(`[NEXUS Service Worker] Download complete for job ${payload.jobId}, initiating chrome.downloads...`);
@@ -357,7 +371,115 @@ if (chrome.runtime.onMessageExternal) {
       });
       return true;
     }
+    if (message.type === "START_PLAYBACK_CAPTURE") {
+      const payload = message.payload;
+      handleStartPlaybackCapture(payload).then((result) => {
+        sendResponse({ status: "complete", result });
+      }).catch((err) => {
+        sendResponse({ status: "error", error: err.message });
+      });
+      return true;
+    }
     return false;
   });
+}
+async function handleStartPlaybackCapture(payload) {
+  const { sessionId, videoId, videoUrl, durationSeconds, mode, targetFilename } = payload;
+  await ensureOffscreenDocument();
+  broadcastToTabs({
+    type: "PLAYBACK_CAPTURE_STARTED",
+    payload: { sessionId, stage: "locating_player" }
+  });
+  const ytTabs = await new Promise((resolve) => {
+    if (chrome.tabs && chrome.tabs.query) {
+      chrome.tabs.query({ url: ["*://*.youtube.com/*", "*://youtube.com/*"] }, (tabs) => {
+        resolve(tabs || []);
+      });
+    } else {
+      resolve([]);
+    }
+  });
+  let targetTab = ytTabs.find((t) => videoId && t.url?.includes(videoId)) || ytTabs[0];
+  if (!targetTab && videoUrl && chrome.tabs && chrome.tabs.create) {
+    targetTab = await new Promise((resolve) => {
+      chrome.tabs.create({ url: videoUrl, active: false }, (newTab) => {
+        resolve(newTab);
+      });
+    });
+    await new Promise((r) => setTimeout(r, 3e3));
+  }
+  if (!targetTab?.id) {
+    throw new Error("No YouTube tab available for playback capture. Please open video in YouTube first.");
+  }
+  console.log(`[NEXUS Service Worker] Requesting START_TAB_PLAYBACK_CAPTURE from tab ${targetTab.id}...`);
+  const tabResponse = await new Promise((resolve, reject) => {
+    chrome.tabs.sendMessage(targetTab.id, {
+      type: "START_TAB_PLAYBACK_CAPTURE",
+      payload: { sessionId, durationSeconds, mode, targetFilename }
+    }, (resp) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+      } else if (resp?.status === "error") {
+        reject(new Error(resp.error));
+      } else {
+        resolve(resp?.result || resp);
+      }
+    });
+  });
+  console.log(`[NEXUS Service Worker] Content script capture finished, dispatching to offscreen FFmpeg...`);
+  broadcastToTabs({
+    type: "PLAYBACK_CAPTURE_PROGRESS",
+    payload: {
+      sessionId,
+      stage: "processing_ffmpeg",
+      percent: 50,
+      bytesReceived: tabResponse.captureBytes
+    }
+  });
+  const ffmpegResponse = await new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage({
+      type: "PROCESS_PLAYBACK_CAPTURE_FFMPEG",
+      payload: {
+        sessionId,
+        filename: targetFilename || tabResponse.filename || `Vidleo_YouTube_Demo_${Date.now()}.webm`,
+        base64Data: tabResponse.base64Data,
+        captureBytes: tabResponse.captureBytes,
+        captureSha256: tabResponse.captureSha256,
+        mimeType: tabResponse.mimeType,
+        videoTracksCount: tabResponse.videoTracksCount,
+        audioTracksCount: tabResponse.audioTracksCount,
+        videoWidth: tabResponse.videoWidth,
+        videoHeight: tabResponse.videoHeight
+      }
+    }, (resp) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+      } else if (resp?.status === "error") {
+        reject(new Error(resp.error));
+      } else {
+        resolve(resp?.result || resp);
+      }
+    });
+  });
+  const finalResult = ffmpegResponse || tabResponse;
+  if (finalResult.blobUrl && chrome.downloads) {
+    console.log(`[NEXUS Service Worker] Initiating chrome.downloads for ${finalResult.filename}...`);
+    chrome.downloads.download({
+      url: finalResult.blobUrl,
+      filename: finalResult.filename,
+      saveAs: false
+    }, (downloadId) => {
+      if (chrome.runtime.lastError) {
+        console.warn("[NEXUS Service Worker] chrome.downloads error:", chrome.runtime.lastError.message);
+      } else {
+        console.log(`[NEXUS Service Worker] Chrome download started with ID ${downloadId}`);
+      }
+    });
+  }
+  broadcastToTabs({
+    type: "PLAYBACK_CAPTURE_COMPLETE",
+    payload: finalResult
+  });
+  return finalResult;
 }
 //# sourceMappingURL=background.js.map

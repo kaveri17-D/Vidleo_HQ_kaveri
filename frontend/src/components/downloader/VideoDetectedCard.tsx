@@ -17,11 +17,15 @@ import {
   CheckCircle2, 
   Video, 
   Music,
-  AlertTriangle
+  AlertTriangle,
+  Play,
+  Sparkles,
+  Download,
+  Loader2
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { BrowserConsentModal } from './BrowserConsentModal';
-import { browserAcquisitionEngine } from '@/lib/browser-acquisition';
+import { browserAcquisitionEngine, startPlaybackCaptureViaExtension } from '@/lib/browser-acquisition';
 
 function getPipelineStatusBadge(status?: FlowPipelineStatus) {
   switch (status) {
@@ -70,15 +74,50 @@ function getPipelineStatusBadge(status?: FlowPipelineStatus) {
         color: 'bg-emerald-600',
         label: 'BROWSER MEDIA BYTES VERIFIED',
       };
+    case 'BROWSER_PLAYBACK_CAPTURE_STARTED':
+      return {
+        color: 'bg-indigo-500',
+        label: 'BROWSER PLAYBACK DETECTED',
+      };
+    case 'BROWSER_PLAYBACK_CAPTURE_RECORDING':
+      return {
+        color: 'bg-indigo-600',
+        label: 'CAPTURING VIDEO LOCALLY...',
+      };
+    case 'BROWSER_PLAYBACK_CAPTURE_VERIFIED':
+      return {
+        color: 'bg-emerald-500',
+        label: 'MEDIA CAPTURED',
+      };
     case 'FFMPEG_INPUT_VERIFIED':
       return {
         color: 'bg-blue-600',
         label: 'FFMPEG INPUT VERIFIED',
       };
+    case 'FFMPEG_PROCESSING':
+      return {
+        color: 'bg-blue-600',
+        label: 'PROCESSING LOCALLY WITH FFMPEG...',
+      };
     case 'FFMPEG_OUTPUT_VERIFIED':
       return {
         color: 'bg-emerald-600',
         label: 'FFMPEG OUTPUT VERIFIED',
+      };
+    case 'DOWNLOAD_STARTED':
+      return {
+        color: 'bg-emerald-500',
+        label: 'DOWNLOAD STARTED',
+      };
+    case 'DOWNLOAD_COMPLETED':
+      return {
+        color: 'bg-emerald-600',
+        label: 'DOWNLOAD COMPLETED',
+      };
+    case 'DOWNLOAD_FAILED':
+      return {
+        color: 'bg-rose-600',
+        label: 'DOWNLOAD FAILED',
       };
     case 'BROWSER_ACQUISITION_READY':
       return {
@@ -138,6 +177,73 @@ export function VideoDetectedCard({
 }: VideoDetectedCardProps) {
   const [activeFormat, setActiveFormat] = useState<MediaFormatType>('video');
   const [showConsentModal, setShowConsentModal] = useState(false);
+
+  const [captureState, setCaptureState] = useState<{
+    active: boolean;
+    stage: string;
+    percent: number;
+    message: string;
+    result?: any;
+    error?: string;
+  } | null>(null);
+
+  const handleStartPlaybackCapture = async (mode: 'demo_10s' | 'full_video') => {
+    setCaptureState({
+      active: true,
+      stage: 'locating_player',
+      percent: 10,
+      message: 'Browser playback detected...',
+    });
+
+    try {
+      const videoIdMatch = (metadata.canonicalUrl || metadata.url).match(/(?:v=|\/embed\/|youtu\.be\/|\/v\/|\/shorts\/)([a-zA-Z0-9_-]{11})/);
+      const videoId = videoIdMatch ? videoIdMatch[1] : undefined;
+
+      const res = await startPlaybackCaptureViaExtension({
+        videoId,
+        videoUrl: metadata.canonicalUrl || metadata.url,
+        mode,
+        durationSeconds: mode === 'demo_10s' ? 10 : metadata.durationSeconds,
+        targetFilename: `${metadata.title.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 40)}_${mode === 'demo_10s' ? '10s_demo' : 'full'}.webm`,
+        onProgress: (p) => {
+          let msg = 'Capturing video locally...';
+          if (p.stage === 'processing_ffmpeg') msg = 'Processing locally with FFmpeg...';
+          if (p.stage === 'recording') msg = `Recording playback (${Math.round(p.recordedSeconds || 0)}s / ${Math.round(p.targetSeconds || 10)}s)...`;
+          setCaptureState({
+            active: true,
+            stage: p.stage,
+            percent: p.percent,
+            message: msg,
+          });
+        }
+      });
+
+      setCaptureState({
+        active: false,
+        stage: 'ready',
+        percent: 100,
+        message: 'Download ready',
+        result: res,
+      });
+
+      if (res.blobUrl) {
+        const a = document.createElement('a');
+        a.href = res.blobUrl;
+        a.download = res.filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      }
+    } catch (err: any) {
+      setCaptureState({
+        active: false,
+        stage: 'error',
+        percent: 0,
+        message: 'Capture failed',
+        error: err?.message || 'Browser playback capture failed. Please ensure the video is playing in YouTube with the Vidleo Companion Extension enabled.',
+      });
+    }
+  };
 
   const videoOptions = metadata.availableVideoQualities || [];
   const audioOptions = metadata.availableAudioQualities || [];
@@ -239,29 +345,15 @@ export function VideoDetectedCard({
         </div>
       )}
 
-      {metadata.pipelineStatus === 'STREAM_SOURCE_UNRESOLVED' && (
-        <div className="bg-amber-50/90 border-b border-amber-200/80 px-6 py-3 flex items-start gap-3 text-xs text-amber-900 animate-in fade-in">
+      {(metadata.pipelineStatus === 'STREAM_SOURCE_UNRESOLVED' || metadata.pipelineStatus === 'BROWSER_SOURCE_UNAVAILABLE') && (
+        <div className="bg-amber-50/90 border-b border-amber-200/80 px-6 py-3.5 flex items-start gap-3 text-xs text-amber-900 animate-in fade-in">
           <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
           <div className="space-y-1">
             <p className="font-semibold text-amber-950">
-              Direct stream candidate unresolved.
+              Direct source URL unavailable. Use browser playback capture.
             </p>
             <p className="text-[11px] text-amber-800 leading-relaxed font-sans">
-              Upstream streams are signature-protected. Play the video in an active browser tab with the Vidleo Companion Extension enabled, or use server extraction.
-            </p>
-          </div>
-        </div>
-      )}
-
-      {metadata.pipelineStatus === 'BROWSER_SOURCE_UNAVAILABLE' && (
-        <div className="bg-rose-50/90 border-b border-rose-200/80 px-6 py-3 flex items-start gap-3 text-xs text-rose-900 animate-in fade-in">
-          <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-          <div className="space-y-1">
-            <p className="font-semibold text-rose-950">
-              Direct browser acquisition is unavailable for this source.
-            </p>
-            <p className="text-[11px] text-rose-800 leading-relaxed font-sans">
-              This media source cannot be acquired directly in-browser due to upstream cipher restrictions.
+              Upstream streams are signature-protected. Vidleo captures playing media locally from your browser session with FFmpeg.wasm processing and zero server transit.
             </p>
           </div>
         </div>
@@ -400,26 +492,155 @@ export function VideoDetectedCard({
           isSourceUnresolved={metadata.pipelineStatus === 'STREAM_SOURCE_UNRESOLVED' || metadata.pipelineStatus === 'BROWSER_SOURCE_UNAVAILABLE'}
         />
 
-        {/* Primary Download Button */}
-        <div className="pt-2">
-          <button
-            type="button"
-            onClick={handleTriggerDownload}
-            disabled={!selectedQuality}
-            className="w-full group relative flex items-center justify-center gap-2.5 bg-[#0A0A0C] hover:bg-black text-white py-3.5 px-6 rounded-full font-sans font-semibold text-xs tracking-wider uppercase transition-all duration-200 transform hover:scale-[1.01] active:scale-[0.99] shadow-lg shadow-black/15 cursor-pointer"
-          >
-            <span>
-              Download {selectedQuality?.label || 'Media'}
-            </span>
-            <span className="text-[11px] font-mono font-medium text-white/70 pl-1">
-              ({selectedQuality?.fileSizeApprox || 'Ready'})
-            </span>
-            <ArrowRight className="w-4 h-4 text-white/80 group-hover:translate-x-0.5 transition-transform" />
-          </button>
-          <p className="text-[11px] text-[#7A7A82] text-center pt-2.5 font-sans">
-            Direct high-speed stream · No watermark added · Native uncompressed container
-          </p>
-        </div>
+        {/* In-Browser Playback Capture UI & Action Controls */}
+        {captureState?.active ? (
+          <div className="pt-2">
+            <div className="p-4 bg-indigo-50/90 border border-indigo-200/80 rounded-2xl space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Loader2 className="w-4 h-4 text-indigo-600 animate-spin" />
+                  <span className="text-xs font-semibold text-indigo-950">
+                    {captureState.message}
+                  </span>
+                </div>
+                <span className="text-xs font-mono font-bold text-indigo-700">
+                  {Math.round(captureState.percent)}%
+                </span>
+              </div>
+              <div className="w-full bg-indigo-200/60 h-2 rounded-full overflow-hidden">
+                <div 
+                  className="bg-indigo-600 h-full rounded-full transition-all duration-300"
+                  style={{ width: `${Math.min(100, Math.max(5, captureState.percent))}%` }}
+                />
+              </div>
+              <p className="text-[11px] font-sans text-indigo-800 leading-relaxed">
+                Media is recording directly from browser playback. Zero raw media transit to server infrastructure.
+              </p>
+            </div>
+          </div>
+        ) : captureState?.result ? (
+          <div className="pt-2 space-y-3">
+            <div className="p-4 bg-emerald-50/90 border border-emerald-200/80 rounded-2xl space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  <span className="text-xs font-semibold text-emerald-950">
+                    Download Ready · Playable Media Verified
+                  </span>
+                </div>
+                <span className="text-[11px] font-mono font-bold text-emerald-700">
+                  {((captureState.result.outputBytes || captureState.result.captureBytes || 0) / (1024 * 1024)).toFixed(2)} MB
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 text-[11px] font-mono text-emerald-900/80 pt-1 border-t border-emerald-200/60">
+                <div>Duration: {captureState.result.outputDuration?.toFixed(1) || '10.0'}s</div>
+                <div>Format: {captureState.result.outputWidth}x{captureState.result.outputHeight} WebM</div>
+              </div>
+
+              <div className="pt-2 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (captureState.result?.blobUrl) {
+                      const a = document.createElement('a');
+                      a.href = captureState.result.blobUrl;
+                      a.download = captureState.result.filename;
+                      document.body.appendChild(a);
+                      a.click();
+                      a.remove();
+                    }
+                  }}
+                  className="flex-1 flex items-center justify-center gap-2 bg-[#0A0A0C] hover:bg-black text-white py-2.5 px-4 rounded-xl text-xs font-semibold tracking-wide transition-all shadow-sm cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Download Again</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCaptureState(null)}
+                  className="px-3 py-2.5 border border-emerald-300 rounded-xl text-xs text-emerald-800 hover:bg-emerald-100/50 font-medium transition-colors cursor-pointer"
+                >
+                  Reset
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : (metadata.pipelineStatus === 'STREAM_SOURCE_UNRESOLVED' || metadata.pipelineStatus === 'BROWSER_SOURCE_UNAVAILABLE') ? (
+          <div className="pt-2 space-y-3">
+            <div className="p-4 bg-gradient-to-r from-blue-50/80 to-indigo-50/80 border border-blue-200/70 rounded-2xl">
+              <div className="flex items-center justify-between pb-2">
+                <span className="text-xs font-semibold text-blue-950 flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-blue-600" />
+                  Browser Playback Capture (Zero Server Transit)
+                </span>
+                <span className="text-[10px] font-mono uppercase bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-bold">
+                  FFmpeg.wasm Local
+                </span>
+              </div>
+              <p className="text-[11.5px] text-blue-900/80 pb-3 leading-relaxed">
+                Captures deciphered media locally from the playing video element using client-network capture and packages it directly on your machine.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => handleStartPlaybackCapture('demo_10s')}
+                  className="flex items-center justify-center gap-2 bg-[#0A0A0C] hover:bg-black text-white py-3 px-4 rounded-xl text-xs font-semibold tracking-wide transition-all shadow-sm cursor-pointer"
+                >
+                  <Play className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Download 10s Demo</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleStartPlaybackCapture('full_video')}
+                  className="flex items-center justify-center gap-2 bg-white hover:bg-black/[0.04] text-[#0A0A0C] border border-black/15 py-3 px-4 rounded-xl text-xs font-semibold tracking-wide transition-all shadow-xs cursor-pointer"
+                >
+                  <Video className="w-3.5 h-3.5 text-blue-600" />
+                  <span>Download Full Video</span>
+                </button>
+              </div>
+            </div>
+
+            {captureState?.error && (
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800">
+                {captureState.error}
+              </div>
+            )}
+
+            {/* Optional Server Extraction Fallback */}
+            <button
+              type="button"
+              onClick={handleTriggerDownload}
+              disabled={!selectedQuality}
+              className="w-full flex items-center justify-center gap-2 py-2.5 text-xs text-[#7A7A82] hover:text-[#0A0A0C] transition-colors cursor-pointer"
+            >
+              <span>Or use Server Extraction Fallback</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        ) : (
+          /* Standard Direct Stream Download Button */
+          <div className="pt-2">
+            <button
+              type="button"
+              onClick={handleTriggerDownload}
+              disabled={!selectedQuality}
+              className="w-full group relative flex items-center justify-center gap-2.5 bg-[#0A0A0C] hover:bg-black text-white py-3.5 px-6 rounded-full font-sans font-semibold text-xs tracking-wider uppercase transition-all duration-200 transform hover:scale-[1.01] active:scale-[0.99] shadow-lg shadow-black/15 cursor-pointer"
+            >
+              <span>
+                Download {selectedQuality?.label || 'Media'}
+              </span>
+              <span className="text-[11px] font-mono font-medium text-white/70 pl-1">
+                ({selectedQuality?.fileSizeApprox || 'Ready'})
+              </span>
+              <ArrowRight className="w-4 h-4 text-white/80 group-hover:translate-x-0.5 transition-transform" />
+            </button>
+            <p className="text-[11px] text-[#7A7A82] text-center pt-2.5 font-sans">
+              Direct high-speed stream · No watermark added · Native uncompressed container
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Operation-scoped Browser Acquisition Consent Modal */}

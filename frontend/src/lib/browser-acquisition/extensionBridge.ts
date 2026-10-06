@@ -224,3 +224,119 @@ export async function resolveMediaViaExtension(url: string, timeoutMs: number = 
   });
 }
 
+export interface ExtensionPlaybackCaptureOptions {
+  videoId?: string;
+  videoUrl: string;
+  mode?: 'demo_10s' | 'full_video';
+  durationSeconds?: number;
+  targetFilename?: string;
+  onProgress?: (progress: {
+    stage: string;
+    recordedSeconds?: number;
+    targetSeconds?: number;
+    percent: number;
+    bytesReceived?: number;
+  }) => void;
+}
+
+export interface ExtensionPlaybackCaptureResult {
+  success: boolean;
+  sessionId: string;
+  filename: string;
+  captureBytes: number;
+  captureSha256: string;
+  ffmpegInputSha256: string;
+  ffmpegOutputSha256: string;
+  outputBytes: number;
+  outputDuration: number;
+  outputWidth: number;
+  outputHeight: number;
+  videoTracksCount: number;
+  audioTracksCount: number;
+  blobUrl?: string;
+  downloadStarted: boolean;
+}
+
+/**
+ * Triggers in-browser YouTube playback capture via the Vidleo Companion Extension
+ */
+export async function startPlaybackCaptureViaExtension(
+  options: ExtensionPlaybackCaptureOptions
+): Promise<ExtensionPlaybackCaptureResult> {
+  const extStatus = await detectExtension(300);
+  if (!extStatus.installed) {
+    throw new Error('Vidleo Companion Extension is required for browser playback capture');
+  }
+
+  const sessionId = `playback-cap-${Date.now()}`;
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+
+    const cleanup = () => {
+      window.removeEventListener('message', handleMessage);
+    };
+
+    function handleMessage(event: MessageEvent) {
+      if (!event.data || event.data.source !== 'nexus-extension') return;
+
+      const { type, payload } = event.data;
+
+      if (type === 'PLAYBACK_CAPTURE_PROGRESS') {
+        if (payload?.sessionId === sessionId && options.onProgress) {
+          options.onProgress({
+            stage: payload.stage || 'recording',
+            recordedSeconds: payload.recordedSeconds,
+            targetSeconds: payload.targetSeconds,
+            percent: payload.percent || 0,
+            bytesReceived: payload.bytesReceived,
+          });
+        }
+      } else if (type === 'PLAYBACK_CAPTURE_COMPLETE') {
+        if (!settled && (payload?.sessionId === sessionId || !payload?.sessionId)) {
+          settled = true;
+          cleanup();
+          resolve({
+            success: true,
+            sessionId,
+            filename: payload.filename || options.targetFilename || 'video.webm',
+            captureBytes: payload.captureBytes || 0,
+            captureSha256: payload.captureSha256 || '',
+            ffmpegInputSha256: payload.ffmpegInputSha256 || '',
+            ffmpegOutputSha256: payload.ffmpegOutputSha256 || '',
+            outputBytes: payload.outputBytes || 0,
+            outputDuration: payload.outputDuration || 0,
+            outputWidth: payload.outputWidth || 0,
+            outputHeight: payload.outputHeight || 0,
+            videoTracksCount: payload.videoTracksCount || 1,
+            audioTracksCount: payload.audioTracksCount || 1,
+            blobUrl: payload.blobUrl,
+            downloadStarted: Boolean(payload.downloadStarted),
+          });
+        }
+      } else if (type === 'PLAYBACK_CAPTURE_FAILED') {
+        if (!settled && (payload?.sessionId === sessionId || !payload?.sessionId)) {
+          settled = true;
+          cleanup();
+          reject(new Error(payload.error || 'Playback capture failed in extension'));
+        }
+      }
+    }
+
+    window.addEventListener('message', handleMessage);
+
+    window.postMessage({
+      source: 'nexus-webpage',
+      type: 'START_PLAYBACK_CAPTURE',
+      payload: {
+        sessionId,
+        videoId: options.videoId,
+        videoUrl: options.videoUrl,
+        mode: options.mode || 'demo_10s',
+        durationSeconds: options.durationSeconds,
+        targetFilename: options.targetFilename,
+      },
+    }, '*');
+  });
+}
+
