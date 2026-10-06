@@ -1,4 +1,4 @@
-// extension/src/background/service-worker.ts
+// src/background/service-worker.ts
 var DEFAULT_API_BASE_URL = "http://127.0.0.1:8000";
 var OFFSCREEN_DOCUMENT_PATH = "offscreen.html";
 console.log("[NEXUS Service Worker] Background Service Worker initialized");
@@ -33,6 +33,33 @@ async function ensureOffscreenDocument() {
       throw err;
     }
   }
+}
+var observedYouTubeStreams = /* @__PURE__ */ new Map();
+if (chrome.webRequest && chrome.webRequest.onBeforeRequest) {
+  chrome.webRequest.onBeforeRequest.addListener(
+    (details) => {
+      try {
+        const streamUrl = details.url;
+        if (!streamUrl.includes("/videoplayback")) return;
+        const parsed = new URL(streamUrl);
+        const itag = parsed.searchParams.get("itag") || "";
+        if (details.tabId >= 0 && chrome.tabs) {
+          chrome.tabs.get(details.tabId, (tab) => {
+            if (chrome.runtime.lastError || !tab?.url) return;
+            const vm = tab.url.match(/(?:v=|\/embed\/|youtu\.be\/|\/v\/|\/shorts\/)([a-zA-Z0-9_-]{11})/);
+            if (vm && vm[1]) {
+              const videoId = vm[1];
+              const entry = { url: streamUrl, itag, videoId, timestamp: Date.now() };
+              observedYouTubeStreams.set(videoId, entry);
+              if (itag) observedYouTubeStreams.set(`${videoId}-${itag}`, entry);
+            }
+          });
+        }
+      } catch {
+      }
+    },
+    { urls: ["*://*.googlevideo.com/videoplayback*"] }
+  );
 }
 async function resolveYouTubeDirect(url) {
   const videoIdMatch = url.match(/(?:v=|\/embed\/|youtu\.be\/|\/v\/|\/shorts\/)([a-zA-Z0-9_-]{11})/);
@@ -69,8 +96,11 @@ async function resolveYouTubeDirect(url) {
   const thumbnail = oembedData?.thumbnail_url || (videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : "");
   const formats = playerData?.streamingData?.formats || [];
   const adaptiveFormats = playerData?.streamingData?.adaptiveFormats || [];
-  const candidateStream = formats.find((f) => Boolean(f.url)) || adaptiveFormats.find((f) => Boolean(f.url));
+  const observed = videoId ? observedYouTubeStreams.get(videoId) : null;
+  const isObservedRecent = Boolean(observed && Date.now() - observed.timestamp < 36e5);
+  const candidateStream = formats.find((f) => Boolean(f.url)) || adaptiveFormats.find((f) => Boolean(f.url)) || (isObservedRecent && observed ? { url: observed.url } : null);
   const hasDirectUrl = Boolean(candidateStream?.url);
+  const pipelineStatus = hasDirectUrl ? isObservedRecent ? "BROWSER_ACQUISITION_READY" : "STREAM_CANDIDATE_AVAILABLE" : "STREAM_SOURCE_UNRESOLVED";
   return {
     job_id: `yt-ext-${Date.now()}`,
     id: videoId || `yt-${Date.now()}`,
@@ -79,7 +109,7 @@ async function resolveYouTubeDirect(url) {
     duration: durationSec,
     thumbnail,
     platform: "youtube",
-    pipeline_status: hasDirectUrl ? "STREAM_CANDIDATE_AVAILABLE" : "METADATA_DETECTED",
+    pipeline_status: pipelineStatus,
     direct_stream_available: hasDirectUrl,
     candidate_stream_url: candidateStream?.url || null,
     video_formats: formats.map((f) => ({
@@ -89,8 +119,8 @@ async function resolveYouTubeDirect(url) {
       filesize: f.contentLength ? parseInt(f.contentLength, 10) : 0,
       vcodec: f.mimeType?.split("codecs=")[1]?.replace(/["']/g, "") || "h264",
       acodec: "aac",
-      url: f.url || void 0,
-      is_ciphered: !f.url && (Boolean(f.signatureCipher) || Boolean(f.cipher))
+      url: f.url || (isObservedRecent && observed?.itag === String(f.itag) ? observed.url : void 0),
+      is_ciphered: !f.url && !(isObservedRecent && observed?.itag === String(f.itag)) && (Boolean(f.signatureCipher) || Boolean(f.cipher))
     })),
     audio_formats: adaptiveFormats.filter((f) => f.mimeType?.startsWith("audio/")).map((f) => ({
       format_id: String(f.itag),
@@ -98,8 +128,8 @@ async function resolveYouTubeDirect(url) {
       ext: f.mimeType?.includes("webm") ? "webm" : "m4a",
       filesize: f.contentLength ? parseInt(f.contentLength, 10) : 0,
       acodec: f.mimeType?.includes("webm") ? "opus" : "aac",
-      url: f.url || void 0,
-      is_ciphered: !f.url && (Boolean(f.signatureCipher) || Boolean(f.cipher))
+      url: f.url || (isObservedRecent && observed?.itag === String(f.itag) ? observed.url : void 0),
+      is_ciphered: !f.url && !(isObservedRecent && observed?.itag === String(f.itag)) && (Boolean(f.signatureCipher) || Boolean(f.cipher))
     }))
   };
 }
@@ -149,6 +179,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message || !message.type) return false;
   if (message.type === "PING") {
     sendResponse({ type: "PONG", role: "service_worker", timestamp: Date.now() });
+    return false;
+  }
+  if (message.type === "YOUTUBE_MEDIA_OBSERVED") {
+    const payload = message.payload;
+    if (payload?.streamUrl) {
+      const vid = payload.videoId;
+      if (vid) {
+        observedYouTubeStreams.set(vid, {
+          url: payload.streamUrl,
+          videoId: vid,
+          timestamp: Date.now()
+        });
+      }
+    }
+    sendResponse({ status: "recorded" });
     return false;
   }
   if (message.type === "RESOLVE_MEDIA") {

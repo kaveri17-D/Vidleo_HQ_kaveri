@@ -599,7 +599,7 @@ def _normalize_error(output: str, *, provider: str | None = None) -> MediaExtrac
         return MediaExtractionError("Network issue while contacting provider", status_code=503, code="network_issue")
     if provider == "youtube" and _is_youtube_bot_block(detail):
         return MediaExtractionError(
-            "YouTube Anti-Bot Triggered: Upstream rate limit. Please try again or use proxy.",
+            "Server extraction is currently rate-limited. Vidleo is attempting direct browser acquisition.",
             status_code=429,
             code="youtube_antibot_triggered",
         )
@@ -708,7 +708,7 @@ def extract_media_info(
                     if not allocation.get("available"):
                         if not youtube_pool_attempt_groups:
                             raise MediaExtractionError(
-                                "YouTube Anti-Bot Triggered: Upstream rate limit. Please try again or use proxy.",
+                                "Server extraction is currently rate-limited. Vidleo is attempting direct browser acquisition.",
                                 status_code=429,
                                 code="youtube_antibot_triggered",
                             )

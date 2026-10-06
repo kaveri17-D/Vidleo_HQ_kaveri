@@ -120,7 +120,11 @@ function adaptBackendExtractResponse(
     availableVideoQualities: videoQualities,
     availableAudioQualities: audioQualities,
     manifest: data.manifest || undefined,
-    pipelineStatus: data.pipeline_status || 'STREAM_CANDIDATE_AVAILABLE',
+    pipelineStatus: data.pipeline_status || (
+      (data.candidate_stream_url || data.direct_stream_available || videoQualities.some(q => Boolean(q.streamUrl)))
+        ? 'STREAM_CANDIDATE_AVAILABLE'
+        : 'STREAM_SOURCE_UNRESOLVED'
+    ),
   };
 }
 
@@ -211,7 +215,7 @@ export class DownloaderService {
           const extResult = await resolveMediaViaExtension(parsed.cleanUrl, 5000);
           if (extResult && (extResult.title || extResult.video_formats?.length > 0)) {
             const metadata = adaptBackendExtractResponse(extResult, parsed);
-            metadata.pipelineStatus = extResult.pipeline_status || (extResult.direct_stream_available ? 'STREAM_CANDIDATE_AVAILABLE' : 'METADATA_DETECTED');
+            metadata.pipelineStatus = extResult.pipeline_status || (extResult.direct_stream_available ? 'STREAM_CANDIDATE_AVAILABLE' : 'STREAM_SOURCE_UNRESOLVED');
             if (onProgress) {
               onProgress({
                 step: 'complete',

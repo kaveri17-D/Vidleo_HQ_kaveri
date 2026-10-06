@@ -46,6 +46,44 @@ async function ensureOffscreenDocument(): Promise<void> {
   }
 }
 
+interface ObservedYouTubeStream {
+  url: string;
+  itag?: string;
+  videoId?: string;
+  timestamp: number;
+}
+
+const observedYouTubeStreams = new Map<string, ObservedYouTubeStream>();
+
+// Non-blocking webRequest observer for googlevideo streams initiated by active tabs
+if (chrome.webRequest && chrome.webRequest.onBeforeRequest) {
+  chrome.webRequest.onBeforeRequest.addListener(
+    (details) => {
+      try {
+        const streamUrl = details.url;
+        if (!streamUrl.includes('/videoplayback')) return;
+
+        const parsed = new URL(streamUrl);
+        const itag = parsed.searchParams.get('itag') || '';
+
+        if (details.tabId >= 0 && chrome.tabs) {
+          chrome.tabs.get(details.tabId, (tab) => {
+            if (chrome.runtime.lastError || !tab?.url) return;
+            const vm = tab.url.match(/(?:v=|\/embed\/|youtu\.be\/|\/v\/|\/shorts\/)([a-zA-Z0-9_-]{11})/);
+            if (vm && vm[1]) {
+              const videoId = vm[1];
+              const entry: ObservedYouTubeStream = { url: streamUrl, itag, videoId, timestamp: Date.now() };
+              observedYouTubeStreams.set(videoId, entry);
+              if (itag) observedYouTubeStreams.set(`${videoId}-${itag}`, entry);
+            }
+          });
+        }
+      } catch {}
+    },
+    { urls: ['*://*.googlevideo.com/videoplayback*'] }
+  );
+}
+
 /**
  * Resolves YouTube media directly from the user's browser network.
  * Zero Railway transit; bypasses server datacenter IP rate limits (HTTP 429/403).
@@ -89,8 +127,18 @@ async function resolveYouTubeDirect(url: string): Promise<any> {
   const formats = playerData?.streamingData?.formats || [];
   const adaptiveFormats = playerData?.streamingData?.adaptiveFormats || [];
 
-  const candidateStream = formats.find((f: any) => Boolean(f.url)) || adaptiveFormats.find((f: any) => Boolean(f.url));
+  // Check if an observed player stream exists for this video ID from active player playback
+  const observed = videoId ? observedYouTubeStreams.get(videoId) : null;
+  const isObservedRecent = Boolean(observed && (Date.now() - observed.timestamp < 3600000)); // 1 hour
+
+  const candidateStream = formats.find((f: any) => Boolean(f.url)) || 
+                          adaptiveFormats.find((f: any) => Boolean(f.url)) ||
+                          (isObservedRecent && observed ? { url: observed.url } : null);
+
   const hasDirectUrl = Boolean(candidateStream?.url);
+  const pipelineStatus = hasDirectUrl 
+    ? (isObservedRecent ? 'BROWSER_ACQUISITION_READY' : 'STREAM_CANDIDATE_AVAILABLE')
+    : 'STREAM_SOURCE_UNRESOLVED';
 
   return {
     job_id: `yt-ext-${Date.now()}`,
@@ -100,7 +148,7 @@ async function resolveYouTubeDirect(url: string): Promise<any> {
     duration: durationSec,
     thumbnail,
     platform: 'youtube',
-    pipeline_status: hasDirectUrl ? 'STREAM_CANDIDATE_AVAILABLE' : 'METADATA_DETECTED',
+    pipeline_status: pipelineStatus,
     direct_stream_available: hasDirectUrl,
     candidate_stream_url: candidateStream?.url || null,
     video_formats: formats.map((f: any) => ({
@@ -110,8 +158,8 @@ async function resolveYouTubeDirect(url: string): Promise<any> {
       filesize: f.contentLength ? parseInt(f.contentLength, 10) : 0,
       vcodec: f.mimeType?.split('codecs=')[1]?.replace(/["']/g, '') || 'h264',
       acodec: 'aac',
-      url: f.url || undefined,
-      is_ciphered: !f.url && (Boolean(f.signatureCipher) || Boolean(f.cipher)),
+      url: f.url || (isObservedRecent && observed?.itag === String(f.itag) ? observed.url : undefined),
+      is_ciphered: !f.url && !(isObservedRecent && observed?.itag === String(f.itag)) && (Boolean(f.signatureCipher) || Boolean(f.cipher)),
     })),
     audio_formats: adaptiveFormats
       .filter((f: any) => f.mimeType?.startsWith('audio/'))
@@ -121,8 +169,8 @@ async function resolveYouTubeDirect(url: string): Promise<any> {
         ext: f.mimeType?.includes('webm') ? 'webm' : 'm4a',
         filesize: f.contentLength ? parseInt(f.contentLength, 10) : 0,
         acodec: f.mimeType?.includes('webm') ? 'opus' : 'aac',
-        url: f.url || undefined,
-        is_ciphered: !f.url && (Boolean(f.signatureCipher) || Boolean(f.cipher)),
+        url: f.url || (isObservedRecent && observed?.itag === String(f.itag) ? observed.url : undefined),
+        is_ciphered: !f.url && !(isObservedRecent && observed?.itag === String(f.itag)) && (Boolean(f.signatureCipher) || Boolean(f.cipher)),
       })),
   };
 }
@@ -192,6 +240,23 @@ chrome.runtime.onMessage.addListener((message: NexusMessage, sender, sendRespons
 
   if (message.type === 'PING') {
     sendResponse({ type: 'PONG', role: 'service_worker', timestamp: Date.now() });
+    return false;
+  }
+
+  // Handle observed YouTube media from content script
+  if (message.type === 'YOUTUBE_MEDIA_OBSERVED') {
+    const payload = (message as any).payload;
+    if (payload?.streamUrl) {
+      const vid = payload.videoId;
+      if (vid) {
+        observedYouTubeStreams.set(vid, {
+          url: payload.streamUrl,
+          videoId: vid,
+          timestamp: Date.now(),
+        });
+      }
+    }
+    sendResponse({ status: 'recorded' });
     return false;
   }
 

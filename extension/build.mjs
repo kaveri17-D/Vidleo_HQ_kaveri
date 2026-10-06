@@ -80,6 +80,21 @@ async function build() {
     logLevel: 'info',
   });
 
+  // Build YouTube Observer Content Script
+  console.log('[NEXUS Extension Build] Bundling YouTube observer script...');
+  await esbuild.build({
+    entryPoints: [path.resolve(__dirname, 'src/content/youtube-observer.ts')],
+    outfile: path.resolve(distDir, 'youtube-observer.js'),
+    bundle: true,
+    format: 'iife',
+    target: ['chrome110'],
+    platform: 'browser',
+    sourcemap: true,
+    define: defines,
+    nodePaths: [frontendNodeModules],
+    logLevel: 'info',
+  });
+
   // Copy HTML and manifest files
   console.log('[NEXUS Extension Build] Copying assets...');
   fs.copyFileSync(

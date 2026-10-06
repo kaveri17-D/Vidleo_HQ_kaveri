@@ -1,5 +1,5 @@
 (() => {
-  // extension/src/content/content.ts
+  // src/content/content.ts
   try {
     const script = document.createElement("script");
     script.textContent = `

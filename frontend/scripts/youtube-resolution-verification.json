@@ -1,0 +1,17 @@
+{
+  "success": true,
+  "timestamp": "2026-10-06T08:58:25.204Z",
+  "gates": {
+    "gate1_service_worker_liveness": "PASSED",
+    "gate2_truthful_stream_unresolved_status": "PASSED",
+    "gate3_player_stream_observation": "PASSED",
+    "gate4_mv3_webrequest_permissions": "PASSED"
+  },
+  "metadata": {
+    "title": "Me at the zoo",
+    "platform": "youtube",
+    "uploader": "jawed",
+    "initialPipelineStatus": "STREAM_SOURCE_UNRESOLVED",
+    "observedPipelineStatus": "BROWSER_ACQUISITION_READY"
+  }
+}

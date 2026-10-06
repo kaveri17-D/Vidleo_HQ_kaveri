@@ -35,6 +35,16 @@ function getPipelineStatusBadge(status?: FlowPipelineStatus) {
         color: 'bg-blue-500',
         label: 'STREAM CANDIDATE AVAILABLE',
       };
+    case 'STREAM_SOURCE_UNRESOLVED':
+      return {
+        color: 'bg-amber-500',
+        label: 'STREAM SOURCE UNRESOLVED',
+      };
+    case 'BROWSER_SOURCE_UNAVAILABLE':
+      return {
+        color: 'bg-rose-500',
+        label: 'BROWSER SOURCE UNAVAILABLE',
+      };
     case 'BROWSER_EXTENSION_READY':
       return {
         color: 'bg-indigo-500',
@@ -77,8 +87,8 @@ function getPipelineStatusBadge(status?: FlowPipelineStatus) {
       };
     default:
       return {
-        color: 'bg-blue-500',
-        label: 'STREAM CANDIDATE AVAILABLE',
+        color: 'bg-amber-500',
+        label: 'STREAM SOURCE UNRESOLVED',
       };
   }
 }
@@ -194,6 +204,34 @@ export function VideoDetectedCard({
             </p>
             <p className="text-[11px] text-rose-800 leading-relaxed font-sans">
               Direct source requests are restricted by upstream policy. Client-side browser download requires active player session.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {metadata.pipelineStatus === 'STREAM_SOURCE_UNRESOLVED' && (
+        <div className="bg-amber-50/90 border-b border-amber-200/80 px-6 py-3 flex items-start gap-3 text-xs text-amber-900 animate-in fade-in">
+          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <p className="font-semibold text-amber-950">
+              Direct stream candidate unresolved.
+            </p>
+            <p className="text-[11px] text-amber-800 leading-relaxed font-sans">
+              Upstream streams are signature-protected. Play the video in an active browser tab with the Vidleo Companion Extension enabled, or use server extraction.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {metadata.pipelineStatus === 'BROWSER_SOURCE_UNAVAILABLE' && (
+        <div className="bg-rose-50/90 border-b border-rose-200/80 px-6 py-3 flex items-start gap-3 text-xs text-rose-900 animate-in fade-in">
+          <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <p className="font-semibold text-rose-950">
+              Direct browser acquisition is unavailable for this source.
+            </p>
+            <p className="text-[11px] text-rose-800 leading-relaxed font-sans">
+              This media source cannot be acquired directly in-browser due to upstream cipher restrictions.
             </p>
           </div>
         </div>
