@@ -7,7 +7,13 @@
 export interface ExtensionStatus {
   installed: boolean;
   version?: string;
-  source: 'content_script' | 'runtime' | 'none';
+  source: 'content_script' | 'runtime' | 'dom_attribute' | 'none';
+  capabilities?: {
+    playbackCapture?: boolean;
+    captureStream?: boolean;
+    ffmpegLocal?: boolean;
+    zeroServerTransit?: boolean;
+  };
 }
 
 export interface ExtensionAcquisitionOptions {
@@ -34,28 +40,78 @@ export interface ExtensionAcquisitionResult {
   acquisitionSource: 'BROWSER_NETWORK';
 }
 
-// Timeout to detect extension via postMessage ping
-export async function detectExtension(timeoutMs: number = 300): Promise<ExtensionStatus> {
+// Timeout to detect extension via DOM markers and postMessage ping
+export async function detectExtension(timeoutMs: number = 800): Promise<ExtensionStatus> {
   if (typeof window === 'undefined') {
     return { installed: false, source: 'none' };
   }
 
-  // Check window flag injected by content script
+  // 1. Check window flag
   if ((window as any).__NEXUS_EXTENSION_INSTALLED__) {
+    const version = (window as any).__NEXUS_EXTENSION_VERSION__ || '1.0.0';
+    (window as any).__NEXUS_DIAGNOSTIC__ = {
+      extensionInstalled: true,
+      extensionReachable: true,
+      handshakeStarted: true,
+      handshakeSucceeded: true,
+      extensionVersion: version,
+      productionOriginAllowed: true,
+      detectionSource: 'window_flag',
+      lastChecked: Date.now(),
+    };
     return {
       installed: true,
-      version: (window as any).__NEXUS_EXTENSION_VERSION__ || '1.0.0',
+      version,
       source: 'content_script',
     };
   }
 
+  // 2. Check DOM markers on documentElement (CSP-safe marker set by content script)
+  if (typeof document !== 'undefined' && document.documentElement) {
+    const isDomInstalled = document.documentElement.getAttribute('data-nexus-extension-installed') === 'true' ||
+                           document.documentElement.dataset?.nexusExtensionInstalled === 'true';
+    if (isDomInstalled) {
+      const version = document.documentElement.getAttribute('data-nexus-extension-version') || 
+                      document.documentElement.dataset?.nexusExtensionVersion || '1.0.0';
+      (window as any).__NEXUS_EXTENSION_INSTALLED__ = true;
+      (window as any).__NEXUS_EXTENSION_VERSION__ = version;
+      (window as any).__NEXUS_DIAGNOSTIC__ = {
+        extensionInstalled: true,
+        extensionReachable: true,
+        handshakeStarted: true,
+        handshakeSucceeded: true,
+        extensionVersion: version,
+        productionOriginAllowed: true,
+        detectionSource: 'dom_attribute',
+        lastChecked: Date.now(),
+      };
+      return {
+        installed: true,
+        version,
+        source: 'dom_attribute',
+      };
+    }
+  }
+
+  // 3. Perform active window.postMessage handshake with retry
   return new Promise((resolve) => {
     let resolved = false;
+    let retryTimer: any = null;
 
     const timer = setTimeout(() => {
       if (!resolved) {
         resolved = true;
+        if (retryTimer) clearTimeout(retryTimer);
         window.removeEventListener('message', handleMessage);
+        (window as any).__NEXUS_DIAGNOSTIC__ = {
+          extensionInstalled: false,
+          extensionReachable: false,
+          handshakeStarted: true,
+          handshakeSucceeded: false,
+          productionOriginAllowed: true,
+          lastError: 'Extension handshake timed out (no PONG response received within timeout)',
+          lastChecked: Date.now(),
+        };
         resolve({ installed: false, source: 'none' });
       }
     }, timeoutMs);
@@ -65,19 +121,41 @@ export async function detectExtension(timeoutMs: number = 300): Promise<Extensio
         if (!resolved) {
           resolved = true;
           clearTimeout(timer);
+          if (retryTimer) clearTimeout(retryTimer);
           window.removeEventListener('message', handleMessage);
+          const version = event.data.version || '1.0.0';
           (window as any).__NEXUS_EXTENSION_INSTALLED__ = true;
+          (window as any).__NEXUS_EXTENSION_VERSION__ = version;
+          (window as any).__NEXUS_DIAGNOSTIC__ = {
+            extensionInstalled: true,
+            extensionReachable: true,
+            handshakeStarted: true,
+            handshakeSucceeded: true,
+            extensionVersion: version,
+            productionOriginAllowed: true,
+            detectionSource: 'post_message',
+            capabilities: event.data.capabilities,
+            lastChecked: Date.now(),
+          };
           resolve({
             installed: true,
-            version: event.data.version || '1.0.0',
+            version,
             source: 'content_script',
+            capabilities: event.data.capabilities,
           });
         }
       }
     }
 
     window.addEventListener('message', handleMessage);
+    // Primary ping
     window.postMessage({ source: 'nexus-webpage', type: 'PING' }, '*');
+    // Fast follow-up retry after 150ms in case content script was attaching
+    retryTimer = setTimeout(() => {
+      if (!resolved) {
+        window.postMessage({ source: 'nexus-webpage', type: 'PING' }, '*');
+      }
+    }, 150);
   });
 }
 
@@ -263,9 +341,9 @@ export interface ExtensionPlaybackCaptureResult {
 export async function startPlaybackCaptureViaExtension(
   options: ExtensionPlaybackCaptureOptions
 ): Promise<ExtensionPlaybackCaptureResult> {
-  const extStatus = await detectExtension(300);
+  const extStatus = await detectExtension(800);
   if (!extStatus.installed) {
-    throw new Error('Vidleo Companion Extension is required for browser playback capture');
+    throw new Error('Vidleo Companion Extension is required for browser playback capture. Please ensure the extension is loaded and enabled in Chrome.');
   }
 
   const sessionId = `playback-cap-${Date.now()}`;

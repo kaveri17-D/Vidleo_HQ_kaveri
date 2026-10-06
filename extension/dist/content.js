@@ -1,16 +1,29 @@
 (() => {
-  // extension/src/content/content.ts
+  // src/content/content.ts
   try {
-    const script = document.createElement("script");
-    script.textContent = `
-    window.__NEXUS_EXTENSION_INSTALLED__ = true;
-    window.__NEXUS_EXTENSION_VERSION__ = "1.0.0";
-    window.dispatchEvent(new CustomEvent('nexus-extension-ready', { detail: { version: '1.0.0' } }));
-  `;
-    (document.head || document.documentElement).appendChild(script);
-    script.remove();
+    if (document.documentElement) {
+      document.documentElement.setAttribute("data-nexus-extension-installed", "true");
+      document.documentElement.setAttribute("data-nexus-extension-version", "1.0.0");
+      document.documentElement.dataset.nexusExtensionInstalled = "true";
+      document.documentElement.dataset.nexusExtensionVersion = "1.0.0";
+    }
+    window.dispatchEvent(new CustomEvent("nexus-extension-ready", { detail: { version: "1.0.0" } }));
   } catch (e) {
-    console.warn("[NEXUS Content] Failed to inject window flags:", e);
+    console.warn("[NEXUS Content Bridge] Error setting DOM markers:", e);
+  }
+  try {
+    window.postMessage({
+      source: "nexus-extension",
+      type: "PONG",
+      version: "1.0.0",
+      capabilities: {
+        playbackCapture: true,
+        captureStream: true,
+        ffmpegLocal: true,
+        zeroServerTransit: true
+      }
+    }, "*");
+  } catch {
   }
   window.addEventListener("message", (event) => {
     if (!event.data || event.data.source !== "nexus-webpage") return;
@@ -20,8 +33,21 @@
         source: "nexus-extension",
         type: "PONG",
         messageId,
-        version: "1.0.0"
+        version: "1.0.0",
+        capabilities: {
+          playbackCapture: true,
+          captureStream: true,
+          ffmpegLocal: true,
+          zeroServerTransit: true
+        }
       }, "*");
+      try {
+        chrome.runtime.sendMessage({ type: "PING" }, () => {
+          if (chrome.runtime.lastError) {
+          }
+        });
+      } catch {
+      }
       return;
     }
     chrome.runtime.sendMessage({

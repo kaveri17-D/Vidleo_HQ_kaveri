@@ -1,4 +1,4 @@
-// extension/src/background/service-worker.ts
+// src/background/service-worker.ts
 var DEFAULT_API_BASE_URL = "http://127.0.0.1:8000";
 var OFFSCREEN_DOCUMENT_PATH = "offscreen.html";
 console.log("[NEXUS Service Worker] Background Service Worker initialized");

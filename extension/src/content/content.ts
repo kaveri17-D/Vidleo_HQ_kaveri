@@ -3,19 +3,33 @@
  * Bridges web page window.postMessage with chrome.runtime
  */
 
-// Inject window flag into the main page world
+// Safely set DOM attributes on documentElement (CSP-compliant, accessible to webpage JS)
 try {
-  const script = document.createElement('script');
-  script.textContent = `
-    window.__NEXUS_EXTENSION_INSTALLED__ = true;
-    window.__NEXUS_EXTENSION_VERSION__ = "1.0.0";
-    window.dispatchEvent(new CustomEvent('nexus-extension-ready', { detail: { version: '1.0.0' } }));
-  `;
-  (document.head || document.documentElement).appendChild(script);
-  script.remove();
+  if (document.documentElement) {
+    document.documentElement.setAttribute('data-nexus-extension-installed', 'true');
+    document.documentElement.setAttribute('data-nexus-extension-version', '1.0.0');
+    document.documentElement.dataset.nexusExtensionInstalled = 'true';
+    document.documentElement.dataset.nexusExtensionVersion = '1.0.0';
+  }
+  window.dispatchEvent(new CustomEvent('nexus-extension-ready', { detail: { version: '1.0.0' } }));
 } catch (e) {
-  console.warn('[NEXUS Content] Failed to inject window flags:', e);
+  console.warn('[NEXUS Content Bridge] Error setting DOM markers:', e);
 }
+
+// Proactively announce readiness via postMessage in case web page listener is active
+try {
+  window.postMessage({
+    source: 'nexus-extension',
+    type: 'PONG',
+    version: '1.0.0',
+    capabilities: {
+      playbackCapture: true,
+      captureStream: true,
+      ffmpegLocal: true,
+      zeroServerTransit: true,
+    },
+  }, '*');
+} catch {}
 
 // Listen for messages from the web page
 window.addEventListener('message', (event) => {
@@ -30,7 +44,22 @@ window.addEventListener('message', (event) => {
       type: 'PONG',
       messageId,
       version: '1.0.0',
+      capabilities: {
+        playbackCapture: true,
+        captureStream: true,
+        ffmpegLocal: true,
+        zeroServerTransit: true,
+      },
     }, '*');
+
+    // Also wake up / verify background service worker
+    try {
+      chrome.runtime.sendMessage({ type: 'PING' }, () => {
+        if (chrome.runtime.lastError) {
+          // Worker might be waking up
+        }
+      });
+    } catch {}
     return;
   }
 

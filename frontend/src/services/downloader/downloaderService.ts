@@ -201,7 +201,7 @@ export class DownloaderService {
 
     // 0. Client-First YouTube Resolution via Vidleo Companion Extension
     if (parsed.platform === 'youtube') {
-      const extStatus = await detectExtension(150);
+      const extStatus = await detectExtension(800);
       if (extStatus.installed) {
         if (onProgress) {
           onProgress({

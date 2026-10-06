@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { BrowserConsentModal } from './BrowserConsentModal';
-import { browserAcquisitionEngine, startPlaybackCaptureViaExtension } from '@/lib/browser-acquisition';
+import { browserAcquisitionEngine, startPlaybackCaptureViaExtension, detectExtension } from '@/lib/browser-acquisition';
 
 function getPipelineStatusBadge(status?: FlowPipelineStatus) {
   switch (status) {
@@ -177,6 +177,32 @@ export function VideoDetectedCard({
 }: VideoDetectedCardProps) {
   const [activeFormat, setActiveFormat] = useState<MediaFormatType>('video');
   const [showConsentModal, setShowConsentModal] = useState(false);
+
+  // Proactive extension detection state
+  const [extensionStatus, setExtensionStatus] = useState<{
+    checked: boolean;
+    installed: boolean;
+    version?: string;
+  }>({ checked: false, installed: false });
+  const [checkingExtension, setCheckingExtension] = useState(false);
+
+  const checkExtension = React.useCallback(async () => {
+    setCheckingExtension(true);
+    try {
+      const status = await detectExtension(800);
+      setExtensionStatus({ checked: true, installed: status.installed, version: status.version });
+    } catch {
+      setExtensionStatus({ checked: true, installed: false });
+    } finally {
+      setCheckingExtension(false);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    if (metadata.pipelineStatus === 'STREAM_SOURCE_UNRESOLVED' || metadata.pipelineStatus === 'BROWSER_SOURCE_UNAVAILABLE') {
+      checkExtension();
+    }
+  }, [metadata.pipelineStatus, checkExtension]);
 
   const [captureState, setCaptureState] = useState<{
     active: boolean;
@@ -576,18 +602,60 @@ export function VideoDetectedCard({
         ) : (metadata.pipelineStatus === 'STREAM_SOURCE_UNRESOLVED' || metadata.pipelineStatus === 'BROWSER_SOURCE_UNAVAILABLE') ? (
           <div className="pt-2 space-y-3">
             <div className="p-4 bg-gradient-to-r from-blue-50/80 to-indigo-50/80 border border-blue-200/70 rounded-2xl">
-              <div className="flex items-center justify-between pb-2">
+              <div className="flex flex-wrap items-center justify-between gap-2 pb-2">
                 <span className="text-xs font-semibold text-blue-950 flex items-center gap-1.5">
                   <Sparkles className="w-3.5 h-3.5 text-blue-600" />
                   Browser Playback Capture (Zero Server Transit)
                 </span>
-                <span className="text-[10px] font-mono uppercase bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-bold">
-                  FFmpeg.wasm Local
-                </span>
+                <div className="flex items-center gap-1.5">
+                  {extensionStatus.checked && (
+                    extensionStatus.installed ? (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                        EXTENSION READY (v{extensionStatus.version || '1.0.0'})
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={checkExtension}
+                        disabled={checkingExtension}
+                        className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-mono bg-amber-100 text-amber-800 border border-amber-300 font-semibold hover:bg-amber-200 transition-colors cursor-pointer"
+                      >
+                        <AlertTriangle className="w-3 h-3 text-amber-600" />
+                        {checkingExtension ? 'CHECKING...' : 'RECHECK EXTENSION'}
+                      </button>
+                    )
+                  )}
+                  <span className="text-[10px] font-mono uppercase bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-bold">
+                    FFmpeg.wasm Local
+                  </span>
+                </div>
               </div>
               <p className="text-[11.5px] text-blue-900/80 pb-3 leading-relaxed">
                 Captures deciphered media locally from the active browser session. Starts playback in your browser tab, records via client network, and packages directly on your machine.
               </p>
+
+              {extensionStatus.checked && !extensionStatus.installed && (
+                <div className="mb-2.5 p-3 bg-amber-50/90 border border-amber-200/90 rounded-xl space-y-1">
+                  <div className="flex items-center justify-between text-xs font-semibold text-amber-950">
+                    <span className="flex items-center gap-1.5">
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                      Vidleo Companion Extension Required
+                    </span>
+                    <button
+                      type="button"
+                      onClick={checkExtension}
+                      disabled={checkingExtension}
+                      className="text-[11px] underline font-medium text-amber-800 hover:text-amber-950 cursor-pointer"
+                    >
+                      {checkingExtension ? 'Checking...' : 'Check Connection'}
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-amber-800 leading-relaxed font-sans">
+                    Browser playback capture runs client-locally via the Vidleo Companion Extension (MV3). Ensure the extension is loaded and active in your browser.
+                  </p>
+                </div>
+              )}
 
               {/* In-Browser Active Playback Controls */}
               <div className="space-y-2.5">
