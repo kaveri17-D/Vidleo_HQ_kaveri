@@ -1525,6 +1525,17 @@ async def extract_route(
     except asyncio.TimeoutError:
         raise HTTPException(status_code=408, detail="Extraction timed out")
     except MediaExtractionError as exc:
+        if exc.code == "youtube_antibot_triggered":
+            raise HTTPException(
+                status_code=exc.status_code,
+                detail={
+                    "code": "UPSTREAM_RATE_LIMITED",
+                    "provider": "youtube",
+                    "retryable": True,
+                    "browser_fallback_available": True,
+                    "message": str(exc),
+                },
+            )
         raise HTTPException(status_code=exc.status_code, detail=str(exc))
     except HTTPException:
         raise
@@ -1547,7 +1558,21 @@ async def start_download(
     user = await _refresh_user_from_subscription_truth(user)
     await _enforce_runtime_dispatch_controls(user, "download")
 
-    info = await asyncio.to_thread(lambda: extract_media_info(payload.url, lightweight_probe=True))
+    try:
+        info = await asyncio.to_thread(lambda: extract_media_info(payload.url, lightweight_probe=True))
+    except MediaExtractionError as exc:
+        if exc.code == "youtube_antibot_triggered":
+            raise HTTPException(
+                status_code=exc.status_code,
+                detail={
+                    "code": "UPSTREAM_RATE_LIMITED",
+                    "provider": "youtube",
+                    "retryable": True,
+                    "browser_fallback_available": True,
+                    "message": str(exc),
+                },
+            )
+        raise HTTPException(status_code=exc.status_code, detail=str(exc))
     entitlement = user.get("entitlement") or build_effective_entitlement(user)
     include_owner_formats = bool(entitlement.get("4k_allowed") or user.get("is_owner"))
     catalog = build_format_catalog(info, include_owner_formats=include_owner_formats)

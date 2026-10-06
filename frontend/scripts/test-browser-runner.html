@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Browser Media Engine (ffmpeg.wasm) Real Browser Test</title>
+</head>
+<body>
+  <h1>Browser Media Engine Test Runner</h1>
+  <div id="status">Initializing...</div>
+  <pre id="logs"></pre>
+
+  <script type="module">
+    import { FFmpeg } from '/node_modules/@ffmpeg/ffmpeg/dist/esm/index.js';
+    import { toBlobURL } from '/node_modules/@ffmpeg/util/dist/esm/index.js';
+
+    const logEl = document.getElementById('logs');
+    const statusEl = document.getElementById('status');
+
+    function log(msg) {
+      console.log(msg);
+      logEl.textContent += msg + '\n';
+    }
+
+    async function runTest() {
+      try {
+        log('[1] Fetching real media fixture prog_720p.mp4...');
+        statusEl.textContent = 'Fetching media...';
+        const res = await fetch('/public/test-media/prog_720p.mp4');
+        if (!res.ok) throw new Error('Failed to load test fixture');
+        const inputBuffer = await res.arrayBuffer();
+        log(`[1] Media fetched successfully: ${inputBuffer.byteLength} bytes`);
+
+        log('[2] Initializing FFmpeg WebAssembly core from local assets...');
+        statusEl.textContent = 'Loading WASM core...';
+        const ffmpeg = new FFmpeg();
+
+        ffmpeg.on('log', ({ message }) => {
+          log('[FFmpeg] ' + message);
+        });
+
+        ffmpeg.on('progress', ({ progress, time }) => {
+          log(`[Progress] ${(progress * 100).toFixed(1)}%`);
+        });
+
+        log('[2.1] Converting coreURL to blob...');
+        const coreURL = await toBlobURL('/node_modules/@ffmpeg/core/dist/esm/ffmpeg-core.js', 'text/javascript');
+        log('[2.1] coreURL blob created: ' + coreURL);
+
+        log('[2.2] Converting wasmURL to blob...');
+        const wasmURL = await toBlobURL('/node_modules/@ffmpeg/core/dist/esm/ffmpeg-core.wasm', 'application/wasm');
+        log('[2.2] wasmURL blob created: ' + wasmURL);
+
+        log('[2.3] Setting same-origin classWorkerURL...');
+        const classWorkerURL = '/node_modules/@ffmpeg/ffmpeg/dist/esm/worker.js';
+        log('[2.3] classWorkerURL: ' + classWorkerURL);
+
+        log('[2.4] Calling ffmpeg.load...');
+        await ffmpeg.load({ coreURL, wasmURL, classWorkerURL });
+        log('[2.5] ffmpeg.load resolved successfully!');
+
+        log('[3] Writing input media to WebAssembly virtual filesystem...');
+        statusEl.textContent = 'Writing to virtual FS...';
+        await ffmpeg.writeFile('input.mp4', new Uint8Array(inputBuffer));
+
+        log('[4] Executing lossless remux operation (-c copy -movflags +faststart)...');
+        statusEl.textContent = 'Executing remux...';
+        const remuxCode = await ffmpeg.exec(['-i', 'input.mp4', '-c', 'copy', '-movflags', '+faststart', 'output.mp4']);
+        if (remuxCode !== 0) throw new Error(`Remux failed with code: ${remuxCode}`);
+
+        const remuxData = await ffmpeg.readFile('output.mp4');
+        log(`[4] Remux complete: ${remuxData.byteLength} bytes produced`);
+
+        log('[5] Executing trimming operation (-ss 1 -t 2 -c copy)...');
+        statusEl.textContent = 'Executing trim...';
+        const trimCode = await ffmpeg.exec(['-ss', '1', '-i', 'input.mp4', '-t', '2', '-c', 'copy', '-movflags', '+faststart', 'trimmed.mp4']);
+        if (trimCode !== 0) throw new Error(`Trim failed with code: ${trimCode}`);
+
+        const trimData = await ffmpeg.readFile('trimmed.mp4');
+        log(`[5] Trim complete: ${trimData.byteLength} bytes produced`);
+
+        log('[6] Verifying media playback in browser HTMLVideoElement...');
+        statusEl.textContent = 'Validating browser playback...';
+        const remuxBlob = new Blob([remuxData.buffer], { type: 'video/mp4' });
+        const videoUrl = URL.createObjectURL(remuxBlob);
+
+        const video = document.createElement('video');
+        video.preload = 'metadata';
+        video.src = videoUrl;
+
+        await new Promise((resolve, reject) => {
+          video.onloadedmetadata = () => {
+            log(`[6] Browser playback verified: duration=${video.duration.toFixed(2)}s, width=${video.videoWidth}, height=${video.videoHeight}`);
+            resolve();
+          };
+          video.onerror = () => {
+            reject(new Error('Browser failed to parse rendered MP4 video element'));
+          };
+          setTimeout(() => reject(new Error('Playback metadata loading timeout')), 5000);
+        });
+
+        URL.revokeObjectURL(videoUrl);
+
+        log('[7] Cleaning virtual filesystem files...');
+        await ffmpeg.deleteFile('input.mp4');
+        await ffmpeg.deleteFile('output.mp4');
+        await ffmpeg.deleteFile('trimmed.mp4');
+        await ffmpeg.terminate();
+
+        log('[8] Posting test results to verification server...');
+        statusEl.textContent = 'Success! Transmitting report...';
+
+        function bufferToBase64(uint8Arr) {
+          let binary = '';
+          const len = uint8Arr.byteLength;
+          const chunkSize = 8192;
+          for (let i = 0; i < len; i += chunkSize) {
+            const chunk = uint8Arr.subarray(i, Math.min(i + chunkSize, len));
+            binary += String.fromCharCode.apply(null, chunk);
+          }
+          return btoa(binary);
+        }
+
+        await fetch('/api/test-result', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            success: true,
+            remuxBytes: remuxData.byteLength,
+            trimBytes: trimData.byteLength,
+            videoDuration: video.duration,
+            videoWidth: video.videoWidth,
+            videoHeight: video.videoHeight,
+            remuxBase64: bufferToBase64(remuxData),
+            trimBase64: bufferToBase64(trimData)
+          })
+        });
+
+        statusEl.textContent = 'TEST COMPLETE: PASSED';
+      } catch (err) {
+        log('TEST FAILED: ' + err.message);
+        statusEl.textContent = 'TEST FAILED: ' + err.message;
+        await fetch('/api/test-result', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ success: false, error: err.message })
+        });
+      }
+    }
+
+    runTest();
+  </script>
+</body>
+</html>

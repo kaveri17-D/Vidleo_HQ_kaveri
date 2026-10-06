@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { DownloadSession } from '@/services/downloader/types';
 import { 
   CheckCircle2, 
@@ -9,9 +9,12 @@ import {
   FileVideo, 
   FileAudio, 
   ArrowDownToLine, 
-  ArrowRight
+  ArrowRight,
+  Cpu,
+  Sparkles
 } from 'lucide-react';
 import { formatBytes } from '@/lib/utils';
+import { BrowserMediaProcessor } from './BrowserMediaProcessor';
 
 interface DownloadReadyStateProps {
   session: DownloadSession;
@@ -24,6 +27,7 @@ export function DownloadReadyState({
   onReset,
 }: DownloadReadyStateProps) {
   const isComplete = session.status === 'ready';
+  const [showStudio, setShowStudio] = useState(false);
 
   const handleSaveToDisk = () => {
     if (!session.downloadUrl) {
@@ -166,6 +170,45 @@ export function DownloadReadyState({
               <ArrowRight className="w-3.5 h-3.5 text-[#0A0A0C]" />
             </button>
           </div>
+
+          {/* Optional Client-Side Media Studio (ffmpeg.wasm) */}
+          {session.downloadUrl && (
+            <div className="pt-2 border-t border-black/[0.06]">
+              {!showStudio ? (
+                <button
+                  type="button"
+                  onClick={() => setShowStudio(true)}
+                  className="w-full py-2.5 px-4 rounded-2xl bg-purple-50 hover:bg-purple-100 text-purple-900 border border-purple-200 text-xs font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                >
+                  <Sparkles className="w-4 h-4 text-purple-600" />
+                  <span>Open Client Media Studio (Trim / Remux / Convert in Browser)</span>
+                </button>
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-purple-900 flex items-center gap-1.5">
+                      <Cpu className="w-4 h-4 text-purple-600" />
+                      Client Media Studio (ffmpeg.wasm)
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setShowStudio(false)}
+                      className="text-xs text-[#7A7A82] hover:text-[#0A0A0C]"
+                    >
+                      Hide Studio
+                    </button>
+                  </div>
+
+                  <BrowserMediaProcessor
+                    mediaSource={session.downloadUrl}
+                    sourceFilename={`VIDLEO_${session.metadata.title.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 30)}.${session.selectedQuality.container}`}
+                    operation="remux"
+                    targetContainer="mp4"
+                  />
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>

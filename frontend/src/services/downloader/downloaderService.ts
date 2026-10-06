@@ -221,7 +221,11 @@ export class DownloaderService {
       let errDetail = 'Failed to extract video information';
       try {
         const errJson = await res.json();
-        errDetail = errJson.detail || errDetail;
+        if (typeof errJson.detail === 'object' && errJson.detail !== null) {
+          errDetail = errJson.detail.message || errJson.detail.detail || JSON.stringify(errJson.detail);
+        } else {
+          errDetail = errJson.detail || errDetail;
+        }
       } catch {}
       if (onProgress) {
         onProgress({
@@ -384,7 +388,11 @@ export class DownloaderService {
         let errDetail = 'Failed to initiate download job';
         try {
           const errJson = await res.json();
-          errDetail = errJson.detail || errDetail;
+          if (typeof errJson.detail === 'object' && errJson.detail !== null) {
+            errDetail = errJson.detail.message || errJson.detail.detail || JSON.stringify(errJson.detail);
+          } else {
+            errDetail = errJson.detail || errDetail;
+          }
         } catch {}
         session = {
           ...session,
