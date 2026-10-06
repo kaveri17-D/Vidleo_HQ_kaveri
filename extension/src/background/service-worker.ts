@@ -511,6 +511,70 @@ if (chrome.runtime.onMessageExternal) {
 }
 
 /**
+ * Attaches Chrome DevTools Protocol debugger to acquire raw active player media response bodies directly.
+ */
+async function acquireMediaViaCdp(tabId: number, timeoutMs = 25000): Promise<{ rawUmpBase64: string; byteCount: number } | null> {
+  if (!chrome.debugger) return null;
+  const debuggee = { tabId };
+
+  return new Promise((resolve) => {
+    let resolved = false;
+    let acquiredData: { rawUmpBase64: string; byteCount: number } | null = null;
+
+    const cleanup = () => {
+      try { chrome.debugger.onEvent.removeListener(eventListener); } catch {}
+      try { chrome.debugger.detach(debuggee, () => {}); } catch {}
+    };
+
+    const timer = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        cleanup();
+        resolve(acquiredData);
+      }
+    }, timeoutMs);
+
+    const eventListener = (source: chrome.debugger.Debuggee, method: string, params?: any) => {
+      if (source.tabId !== tabId) return;
+      if (method === 'Network.loadingFinished' && params?.requestId) {
+        chrome.debugger.sendCommand(debuggee, 'Network.getResponseBody', { requestId: params.requestId }, (res: any) => {
+          if (chrome.runtime.lastError || !res?.body) return;
+          const bodyStr = res.body;
+          const isB64 = Boolean(res.base64Encoded);
+          const estimatedSize = isB64 ? Math.round(bodyStr.length * 0.75) : bodyStr.length;
+
+          if (estimatedSize > 50000) {
+            acquiredData = {
+              rawUmpBase64: isB64 ? bodyStr : btoa(unescape(encodeURIComponent(bodyStr))),
+              byteCount: estimatedSize,
+            };
+            if (!resolved) {
+              resolved = true;
+              clearTimeout(timer);
+              cleanup();
+              resolve(acquiredData);
+            }
+          }
+        });
+      }
+    };
+
+    chrome.debugger.attach(debuggee, '1.3', () => {
+      if (chrome.runtime.lastError) {
+        clearTimeout(timer);
+        resolve(null);
+        return;
+      }
+      chrome.debugger.onEvent.addListener(eventListener);
+      chrome.debugger.sendCommand(debuggee, 'Network.enable', {
+        maxResourceBufferSize: 100 * 1024 * 1024,
+        maxTotalBufferSize: 200 * 1024 * 1024,
+      }, () => {});
+    });
+  });
+}
+
+/**
  * Coordinates in-browser playback capture across YouTube tab and offscreen FFmpeg engine
  */
 async function handleStartPlaybackCapture(payload: any) {

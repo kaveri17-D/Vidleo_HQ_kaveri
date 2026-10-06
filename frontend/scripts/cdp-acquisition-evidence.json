@@ -1,0 +1,64 @@
+{
+  "timestamp": "2026-10-06T19:43:27.574Z",
+  "pipeline": "CDP_NETWORK_GETRESPONSEBODY_UMP_ACQUISITION",
+  "videoUrl": "https://www.youtube.com/watch?v=jNQXAC9IVRw",
+  "requestId": "133.172",
+  "acquiredMedia": {
+    "rawUmpBytes": 480247,
+    "originalVideoMp4": {
+      "filename": "Vidleo_YouTube_Original_AV1_Me_At_The_Zoo.mp4",
+      "bytes": 223711,
+      "sha256": "63a05fdb43241427f0d5de2ad94fc57b085bebfe01083ad711154cb3e84c9d6a",
+      "codec": "av1",
+      "resolution": "320x240",
+      "duration": 18.933333,
+      "localPathDownload": "/downloads/Vidleo_YouTube_Original_AV1_Me_At_The_Zoo.mp4",
+      "localPathWorkspace": "/workspace/downloads/Vidleo_YouTube_Original_AV1_Me_At_The_Zoo.mp4"
+    },
+    "assembledMp4": {
+      "filename": "Vidleo_YouTube_Original_Byte_Acquired_Me_At_The_Zoo.mp4",
+      "bytes": 534771,
+      "sha256": "4bee7b8c7ab3bd2ea4b0cf160570780611295c5325938b0e63300492d089a164",
+      "videoCodec": "av1",
+      "audioCodec": "aac",
+      "resolution": "320x240",
+      "duration": 19.014,
+      "nbFrames": 284,
+      "localPathDownload": "/downloads/Vidleo_YouTube_Original_Byte_Acquired_Me_At_The_Zoo.mp4",
+      "localPathWorkspace": "/workspace/downloads/Vidleo_YouTube_Original_Byte_Acquired_Me_At_The_Zoo.mp4",
+      "chromiumPlaybackVerified": true,
+      "playbackMetrics": {
+        "playable": true,
+        "videoWidth": 320,
+        "videoHeight": 240,
+        "duration": 19.013,
+        "readyState": 4,
+        "currentTime": 2.00037
+      }
+    }
+  },
+  "backendAccounting": {
+    "initial": {
+      "control_plane_bytes_received": 6546,
+      "control_plane_bytes_sent": 305435,
+      "backend_control_bytes": 311981,
+      "backend_media_bytes_received": 0,
+      "backend_media_bytes_sent": 0,
+      "backend_media_bytes": 0,
+      "server_ffmpeg_processes": 0
+    },
+    "final": {
+      "control_plane_bytes_received": 6546,
+      "control_plane_bytes_sent": 305651,
+      "backend_control_bytes": 312197,
+      "backend_media_bytes_received": 0,
+      "backend_media_bytes_sent": 0,
+      "backend_media_bytes": 0,
+      "server_ffmpeg_processes": 0
+    },
+    "deltaBytesReceived": 0,
+    "deltaBytesSent": 0,
+    "deltaTotalBytes": 0,
+    "serverTransitZero": true
+  }
+}

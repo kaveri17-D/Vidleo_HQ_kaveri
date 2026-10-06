@@ -9,7 +9,8 @@
     "offscreen",
     "tabs",
     "tabCapture",
-    "webRequest"
+    "webRequest",
+    "debugger"
   ],
   "content_scripts": [
     {
