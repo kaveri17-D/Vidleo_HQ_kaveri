@@ -3,7 +3,8 @@ import { ExtensionDownloadSink } from '../storage/extension-download-sink';
 import type { 
   NexusMessage, 
   StartDownloadPayload, 
-  DownloadCancelPayload 
+  DownloadCancelPayload,
+  StartDirectAcquisitionPayload
 } from '../messaging/protocol';
 
 console.log('[NEXUS Offscreen] Initialized and listening for media processing requests');
@@ -22,6 +23,12 @@ chrome.runtime.onMessage.addListener((message: NexusMessage, sender, sendRespons
 
   if (message.type === 'START_DOWNLOAD') {
     handleStartDownload(message.payload as StartDownloadPayload);
+    sendResponse({ status: 'started' });
+    return false;
+  }
+
+  if (message.type === 'START_DIRECT_ACQUISITION') {
+    handleStartDirectAcquisition(message.payload as StartDirectAcquisitionPayload);
     sendResponse({ status: 'started' });
     return false;
   }
@@ -130,3 +137,121 @@ async function handleCancelDownload(payload: DownloadCancelPayload) {
     }
   }
 }
+
+async function handleStartDirectAcquisition(payload: StartDirectAcquisitionPayload) {
+  const { sessionId, streamUrl, targetFilename, expectedBytes, mimeType } = payload;
+  currentJobId = sessionId;
+  activeAbortController = new AbortController();
+
+  console.log(`[NEXUS Offscreen] Starting direct client acquisition for session ${sessionId}: ${streamUrl.substring(0, 80)}...`);
+
+  chrome.runtime.sendMessage({
+    type: 'ACQUISITION_STARTED',
+    payload: { sessionId, targetFilename }
+  }).catch(() => {});
+
+  const startTime = Date.now();
+  let lastReportTime = startTime;
+  let lastReportBytes = 0;
+
+  try {
+    const res = await fetch(streamUrl, {
+      signal: activeAbortController.signal,
+      headers: {
+        'Accept': '*/*',
+      }
+    });
+
+    if (!res.ok) {
+      throw new Error(`Upstream acquisition failed with HTTP status ${res.status}: ${res.statusText}`);
+    }
+
+    const contentLengthHeader = res.headers.get('content-length');
+    const totalBytes = contentLengthHeader ? parseInt(contentLengthHeader, 10) : (expectedBytes || 0);
+
+    const reader = res.body?.getReader();
+    if (!reader) {
+      throw new Error('ReadableStream not supported on response body');
+    }
+
+    const chunks: Uint8Array[] = [];
+    let bytesReceived = 0;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) {
+        chunks.push(value);
+        bytesReceived += value.byteLength;
+
+        const now = Date.now();
+        if (now - lastReportTime >= 250) {
+          const durationSec = (now - lastReportTime) / 1000;
+          const bytesDelta = bytesReceived - lastReportBytes;
+          const speedBps = durationSec > 0 ? bytesDelta / durationSec : 0;
+          const speedMb = (speedBps / (1024 * 1024)).toFixed(2);
+          const percent = totalBytes > 0 ? Math.min(99.9, (bytesReceived / totalBytes) * 100) : 0;
+
+          chrome.runtime.sendMessage({
+            type: 'ACQUISITION_PROGRESS',
+            payload: {
+              sessionId,
+              percent,
+              bytesReceived,
+              totalBytes,
+              speedFormatted: `${speedMb} MB/s`,
+            }
+          }).catch(() => {});
+
+          lastReportTime = now;
+          lastReportBytes = bytesReceived;
+        }
+      }
+    }
+
+    const contentType = res.headers.get('content-type') || mimeType || 'video/mp4';
+    const blob = new Blob(chunks, { type: contentType });
+    const blobUrl = URL.createObjectURL(blob);
+
+    console.log(`[NEXUS Offscreen] Direct acquisition completed for ${sessionId}. Total: ${bytesReceived} bytes. Generated blob.`);
+
+    (window as any).__LAST_ACQUISITION_RESULT__ = {
+      sessionId,
+      filename: targetFilename,
+      totalBytes: bytesReceived,
+      mimeType: contentType,
+      blobUrl,
+      blob,
+    };
+
+    chrome.runtime.sendMessage({
+      type: 'ACQUISITION_COMPLETE',
+      payload: {
+        sessionId,
+        filename: targetFilename,
+        totalBytes: bytesReceived,
+        mimeType: contentType,
+        blobUrl,
+      }
+    }).catch(() => {});
+
+  } catch (err: any) {
+    const isAbort = err.name === 'AbortError' || err.message?.includes('aborted');
+    console.error(`[NEXUS Offscreen] Direct acquisition failed for ${sessionId}:`, err);
+
+    if (!isAbort) {
+      chrome.runtime.sendMessage({
+        type: 'ACQUISITION_FAILED',
+        payload: {
+          sessionId,
+          error: err.message || 'Direct browser acquisition failed',
+          code: 'ACQUISITION_ERROR'
+        }
+      }).catch(() => {});
+    }
+  } finally {
+    activeAbortController = null;
+    currentJobId = null;
+  }
+}
+

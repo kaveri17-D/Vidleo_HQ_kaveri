@@ -6,3 +6,4 @@ export * from './flags';
 export * from './cache';
 export * from './consentManager';
 export * from './engine';
+export * from './extensionBridge';

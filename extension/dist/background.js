@@ -1,4 +1,4 @@
-// src/background/service-worker.ts
+// extension/src/background/service-worker.ts
 var DEFAULT_API_BASE_URL = "http://127.0.0.1:8000";
 var OFFSCREEN_DOCUMENT_PATH = "offscreen.html";
 console.log("[NEXUS Service Worker] Background Service Worker initialized");
@@ -101,6 +101,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     });
     return true;
   }
+  if (message.type === "START_DIRECT_ACQUISITION") {
+    const payload = message.payload;
+    ensureOffscreenDocument().then(() => {
+      chrome.runtime.sendMessage(message).catch((err) => {
+        console.error("[NEXUS Service Worker] Failed to dispatch START_DIRECT_ACQUISITION to offscreen:", err);
+      });
+      sendResponse({ status: "dispatched_to_offscreen", sessionId: payload.sessionId });
+    }).catch((err) => {
+      sendResponse({ status: "error", error: err.message });
+    });
+    return true;
+  }
   if (message.type === "DOWNLOAD_COMPLETE") {
     const payload = message.payload;
     console.log(`[NEXUS Service Worker] Download complete for job ${payload.jobId}, initiating chrome.downloads...`);
@@ -125,6 +137,29 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     );
     return false;
   }
+  if (message.type === "ACQUISITION_COMPLETE") {
+    const payload = message.payload;
+    console.log(`[NEXUS Service Worker] Direct acquisition complete for session ${payload.sessionId}: ${payload.filename}`);
+    if (payload.blobUrl && chrome.downloads) {
+      chrome.downloads.download({
+        url: payload.blobUrl,
+        filename: payload.filename,
+        saveAs: false
+      }, (downloadId) => {
+        if (chrome.runtime.lastError) {
+          console.warn("[NEXUS Service Worker] chrome.downloads error:", chrome.runtime.lastError.message);
+        } else {
+          console.log(`[NEXUS Service Worker] Acquisition download started with ID: ${downloadId}`);
+        }
+      });
+    }
+    broadcastToTabs(message);
+    return false;
+  }
+  if (message.type === "ACQUISITION_PROGRESS" || message.type === "ACQUISITION_STARTED" || message.type === "ACQUISITION_FAILED" || message.type === "DOWNLOAD_PROGRESS" || message.type === "DOWNLOAD_FAILED") {
+    broadcastToTabs(message);
+    return false;
+  }
   if (message.type === "DOWNLOAD_CANCEL") {
     chrome.runtime.sendMessage(message).catch(() => {
     });
@@ -132,4 +167,55 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   return false;
 });
+function broadcastToTabs(message) {
+  if (chrome.tabs && chrome.tabs.query) {
+    chrome.tabs.query({}, (tabs) => {
+      for (const tab of tabs) {
+        if (tab.id) {
+          chrome.tabs.sendMessage(tab.id, message).catch(() => {
+          });
+        }
+      }
+    });
+  }
+}
+if (chrome.runtime.onMessageExternal) {
+  chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
+    const senderUrl = sender.url || "";
+    const isAllowedOrigin = senderUrl.includes("frontend-kaveri-d.vercel.app") || senderUrl.includes("localhost:3000") || senderUrl.includes("127.0.0.1:3000") || senderUrl.includes("localhost:8092");
+    if (!isAllowedOrigin) {
+      sendResponse({ error: "Origin unauthorized" });
+      return false;
+    }
+    if (message.type === "PING") {
+      sendResponse({ type: "PONG", version: "1.0.0", role: "nexus_extension" });
+      return false;
+    }
+    if (message.type === "START_DIRECT_ACQUISITION") {
+      const payload = message.payload;
+      ensureOffscreenDocument().then(() => {
+        chrome.runtime.sendMessage(message).catch((err) => {
+          console.error("[NEXUS Service Worker] Failed to dispatch START_DIRECT_ACQUISITION:", err);
+        });
+        sendResponse({ status: "dispatched_to_offscreen", sessionId: payload.sessionId });
+      }).catch((err) => {
+        sendResponse({ status: "error", error: err.message });
+      });
+      return true;
+    }
+    if (message.type === "START_DOWNLOAD") {
+      const payload = message.payload;
+      ensureOffscreenDocument().then(() => {
+        chrome.runtime.sendMessage(message).catch((err) => {
+          console.error("[NEXUS Service Worker] Failed to dispatch START_DOWNLOAD to offscreen:", err);
+        });
+        sendResponse({ status: "dispatched_to_offscreen", jobId: payload.jobId });
+      }).catch((err) => {
+        sendResponse({ status: "error", error: err.message });
+      });
+      return true;
+    }
+    return false;
+  });
+}
 //# sourceMappingURL=background.js.map

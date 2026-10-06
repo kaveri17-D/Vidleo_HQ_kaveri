@@ -10,7 +10,38 @@ export type NexusMessageType =
   | 'DOWNLOAD_PROGRESS'
   | 'DOWNLOAD_COMPLETE'
   | 'DOWNLOAD_CANCEL'
-  | 'DOWNLOAD_FAILED';
+  | 'DOWNLOAD_FAILED'
+  | 'START_DIRECT_ACQUISITION'
+  | 'ACQUISITION_STARTED'
+  | 'ACQUISITION_PROGRESS'
+  | 'ACQUISITION_COMPLETE'
+  | 'ACQUISITION_FAILED';
+
+export interface StartDirectAcquisitionPayload {
+  sessionId: string;
+  streamUrl: string;
+  targetFilename: string;
+  expectedBytes?: number;
+  mimeType?: string;
+  targetContainer?: string;
+}
+
+export interface DirectAcquisitionProgressPayload {
+  sessionId: string;
+  percent: number;
+  bytesReceived: number;
+  totalBytes: number;
+  speedFormatted?: string;
+  etaFormatted?: string;
+}
+
+export interface DirectAcquisitionCompletePayload {
+  sessionId: string;
+  filename: string;
+  totalBytes: number;
+  mimeType: string;
+  blobUrl?: string;
+}
 
 export interface StartDownloadPayload {
   jobId: string;

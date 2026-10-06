@@ -1,0 +1,170 @@
+/**
+ * Extension Bridge for Vidleo NEXUS
+ * Communicates with the Vidleo Companion Extension (MV3) to perform direct,
+ * zero-transit media byte acquisition when web origin JavaScript is restricted by CORS.
+ */
+
+export interface ExtensionStatus {
+  installed: boolean;
+  version?: string;
+  source: 'content_script' | 'runtime' | 'none';
+}
+
+export interface ExtensionAcquisitionOptions {
+  streamUrl: string;
+  targetFilename: string;
+  expectedBytes?: number;
+  mimeType?: string;
+  signal?: AbortSignal;
+  onProgress?: (progress: {
+    percent: number;
+    bytesReceived: number;
+    totalBytes: number;
+    speedFormatted?: string;
+  }) => void;
+}
+
+export interface ExtensionAcquisitionResult {
+  success: boolean;
+  sessionId: string;
+  filename: string;
+  totalBytes: number;
+  mimeType: string;
+  blobUrl?: string;
+  acquisitionSource: 'BROWSER_NETWORK';
+}
+
+// Timeout to detect extension via postMessage ping
+export async function detectExtension(timeoutMs: number = 300): Promise<ExtensionStatus> {
+  if (typeof window === 'undefined') {
+    return { installed: false, source: 'none' };
+  }
+
+  // Check window flag injected by content script
+  if ((window as any).__NEXUS_EXTENSION_INSTALLED__) {
+    return {
+      installed: true,
+      version: (window as any).__NEXUS_EXTENSION_VERSION__ || '1.0.0',
+      source: 'content_script',
+    };
+  }
+
+  return new Promise((resolve) => {
+    let resolved = false;
+
+    const timer = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        window.removeEventListener('message', handleMessage);
+        resolve({ installed: false, source: 'none' });
+      }
+    }, timeoutMs);
+
+    function handleMessage(event: MessageEvent) {
+      if (event.data?.source === 'nexus-extension' && event.data?.type === 'PONG') {
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(timer);
+          window.removeEventListener('message', handleMessage);
+          (window as any).__NEXUS_EXTENSION_INSTALLED__ = true;
+          resolve({
+            installed: true,
+            version: event.data.version || '1.0.0',
+            source: 'content_script',
+          });
+        }
+      }
+    }
+
+    window.addEventListener('message', handleMessage);
+    window.postMessage({ source: 'nexus-webpage', type: 'PING' }, '*');
+  });
+}
+
+/**
+ * Executes direct media byte acquisition via the Vidleo MV3 extension offscreen document.
+ */
+export async function acquireViaExtension(
+  options: ExtensionAcquisitionOptions
+): Promise<ExtensionAcquisitionResult> {
+  const { streamUrl, targetFilename, expectedBytes = 0, mimeType = 'video/mp4', signal, onProgress } = options;
+  const sessionId = `ext-acq-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+
+    const cleanup = () => {
+      window.removeEventListener('message', handleMessage);
+      if (signal) {
+        signal.removeEventListener('abort', handleAbort);
+      }
+    };
+
+    const handleAbort = () => {
+      if (!settled) {
+        settled = true;
+        cleanup();
+        reject(new Error('Acquisition aborted by user.'));
+      }
+    };
+
+    if (signal?.aborted) {
+      return handleAbort();
+    }
+    if (signal) {
+      signal.addEventListener('abort', handleAbort);
+    }
+
+    function handleMessage(event: MessageEvent) {
+      if (!event.data || event.data.source !== 'nexus-extension') return;
+
+      const { type, payload } = event.data;
+
+      if (type === 'ACQUISITION_PROGRESS' && payload?.sessionId === sessionId) {
+        if (onProgress) {
+          onProgress({
+            percent: payload.percent ?? 0,
+            bytesReceived: payload.bytesReceived ?? 0,
+            totalBytes: payload.totalBytes ?? expectedBytes,
+            speedFormatted: payload.speedFormatted,
+          });
+        }
+      } else if (type === 'ACQUISITION_COMPLETE' && payload?.sessionId === sessionId) {
+        if (!settled) {
+          settled = true;
+          cleanup();
+          resolve({
+            success: true,
+            sessionId,
+            filename: payload.filename || targetFilename,
+            totalBytes: payload.totalBytes,
+            mimeType: payload.mimeType || mimeType,
+            blobUrl: payload.blobUrl,
+            acquisitionSource: 'BROWSER_NETWORK',
+          });
+        }
+      } else if (type === 'ACQUISITION_FAILED' && payload?.sessionId === sessionId) {
+        if (!settled) {
+          settled = true;
+          cleanup();
+          reject(new Error(payload.error || 'Extension acquisition failed.'));
+        }
+      }
+    }
+
+    window.addEventListener('message', handleMessage);
+
+    // Dispatch start acquisition request to content script
+    window.postMessage({
+      source: 'nexus-webpage',
+      type: 'START_DIRECT_ACQUISITION',
+      payload: {
+        sessionId,
+        streamUrl,
+        targetFilename,
+        expectedBytes,
+        mimeType,
+      },
+    }, '*');
+  });
+}

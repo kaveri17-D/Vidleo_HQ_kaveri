@@ -17,6 +17,7 @@ import { FeatureFlagManager } from './flags';
 import { DomainCapabilityCache } from './cache';
 import { detectBrowserCapabilities } from '../browser-media/capabilities';
 import { executeBrowserPipeline } from '../browser-media/pipeline';
+import { detectExtension, acquireViaExtension } from './extensionBridge';
 
 export class BrowserAcquisitionEngine {
   private activeAbortController: AbortController | null = null;
@@ -83,6 +84,9 @@ export class BrowserAcquisitionEngine {
     // Check domain capability cache
     const cached = DomainCapabilityCache.get(hostname);
     if (cached && !cached.canDirectAcquire) {
+      if (typeof window !== 'undefined' && Boolean((window as any).__NEXUS_EXTENSION_INSTALLED__)) {
+        return { canAcquire: true, status: 'SUPPORTED', reason: 'Vidleo Companion Extension enables client-side acquisition.' };
+      }
       return {
         canAcquire: false,
         status: cached.corsAllowed ? 'SOURCE_RESTRICTED' : 'CORS_BLOCKED',
@@ -173,6 +177,86 @@ export class BrowserAcquisitionEngine {
         source: 'BROWSER_NETWORK',
       });
 
+      // Check if Companion Extension is available (enables client-network acquisition for CORS-restricted domains)
+      const isYoutubeDomain = domain.includes('googlevideo.com') || domain.includes('youtube.com');
+      let extStatus = await detectExtension(120);
+
+      if (isYoutubeDomain && extStatus.installed) {
+        updateProgress({
+          stage: 'acquiring',
+          percent: 5,
+          bytesReceived: 0,
+          totalBytes: expectedBytes,
+          message: 'Acquiring stream via Vidleo Companion Extension (Client Network)...',
+          source: 'BROWSER_NETWORK',
+        });
+
+        try {
+          const extResult = await acquireViaExtension({
+            streamUrl: sourceUrl,
+            targetFilename,
+            expectedBytes,
+            mimeType,
+            signal: internalSignal,
+            onProgress: (p) => {
+              updateProgress({
+                stage: 'acquiring',
+                percent: p.percent,
+                bytesReceived: p.bytesReceived,
+                totalBytes: p.totalBytes,
+                speedFormatted: p.speedFormatted,
+                message: `Receiving media chunks directly on device: ${(p.bytesReceived / (1024 * 1024)).toFixed(1)} MB (${p.percent.toFixed(1)}%)`,
+                source: 'BROWSER_NETWORK',
+              });
+            },
+          });
+
+          this.latestDiagnostics = {
+            sessionId: extResult.sessionId,
+            route: 'browser',
+            acquisitionSource: 'BROWSER_NETWORK',
+            acquisitionStatus: 'SUPPORTED',
+            sourceDomain: domain,
+            bytesReceived: extResult.totalBytes,
+            totalExpectedBytes: expectedBytes || extResult.totalBytes,
+            chunksCount: 1,
+            rangeSupported: true,
+            mimeType: extResult.mimeType,
+            durationMs: Date.now() - startTime,
+            deviceClass: caps.isMobileDevice ? 'mobile' : 'desktop',
+            ffmpegProcessingApplied: false,
+            mediaIntegrityVerified: true,
+            playbackVerified: true,
+          };
+
+          updateProgress({
+            stage: 'complete',
+            percent: 100,
+            bytesReceived: extResult.totalBytes,
+            totalBytes: extResult.totalBytes,
+            message: 'Direct client-network acquisition complete.',
+            source: 'BROWSER_NETWORK',
+          });
+
+          return {
+            success: true,
+            sessionId: extResult.sessionId,
+            acquisitionSource: 'BROWSER_NETWORK',
+            mediaUrl: extResult.blobUrl,
+            filename: extResult.filename,
+            mimeType: extResult.mimeType,
+            totalBytes: extResult.totalBytes,
+            diagnostics: this.latestDiagnostics,
+          };
+        } catch (extErr: any) {
+          if (internalSignal.aborted) {
+            acquisitionStatus = 'ABORTED';
+            throw new Error('Browser acquisition cancelled by user.');
+          }
+          console.warn('[BrowserAcquisitionEngine] Extension acquisition attempt failed:', extErr);
+        }
+      }
+
       // 1. Direct browser fetch
       // Browser uses its own network interface. No Vidleo proxying of media payload.
       let response: Response;
@@ -195,9 +279,78 @@ export class BrowserAcquisitionEngine {
         // Detect CORS or Network Security Blocks
         const errMessage = fetchErr?.message || '';
         if (errMessage.includes('Failed to fetch') || errMessage.includes('NetworkError') || errMessage.includes('CORS')) {
+          if (!extStatus.installed) {
+            extStatus = await detectExtension(200);
+            if (extStatus.installed) {
+              try {
+                const extResult = await acquireViaExtension({
+                  streamUrl: sourceUrl,
+                  targetFilename,
+                  expectedBytes,
+                  mimeType,
+                  signal: internalSignal,
+                  onProgress: (p) => {
+                    updateProgress({
+                      stage: 'acquiring',
+                      percent: p.percent,
+                      bytesReceived: p.bytesReceived,
+                      totalBytes: p.totalBytes,
+                      speedFormatted: p.speedFormatted,
+                      message: `Receiving media chunks directly on device: ${(p.bytesReceived / (1024 * 1024)).toFixed(1)} MB (${p.percent.toFixed(1)}%)`,
+                      source: 'BROWSER_NETWORK',
+                    });
+                  },
+                });
+
+                this.latestDiagnostics = {
+                  sessionId: extResult.sessionId,
+                  route: 'browser',
+                  acquisitionSource: 'BROWSER_NETWORK',
+                  acquisitionStatus: 'SUPPORTED',
+                  sourceDomain: domain,
+                  bytesReceived: extResult.totalBytes,
+                  totalExpectedBytes: expectedBytes || extResult.totalBytes,
+                  chunksCount: 1,
+                  rangeSupported: true,
+                  mimeType: extResult.mimeType,
+                  durationMs: Date.now() - startTime,
+                  deviceClass: caps.isMobileDevice ? 'mobile' : 'desktop',
+                  ffmpegProcessingApplied: false,
+                  mediaIntegrityVerified: true,
+                  playbackVerified: true,
+                };
+
+                updateProgress({
+                  stage: 'complete',
+                  percent: 100,
+                  bytesReceived: extResult.totalBytes,
+                  totalBytes: extResult.totalBytes,
+                  message: 'Direct client-network acquisition complete.',
+                  source: 'BROWSER_NETWORK',
+                });
+
+                return {
+                  success: true,
+                  sessionId: extResult.sessionId,
+                  acquisitionSource: 'BROWSER_NETWORK',
+                  mediaUrl: extResult.blobUrl,
+                  filename: extResult.filename,
+                  mimeType: extResult.mimeType,
+                  totalBytes: extResult.totalBytes,
+                  diagnostics: this.latestDiagnostics,
+                };
+              } catch (extRetryErr: any) {
+                if (internalSignal.aborted) {
+                  acquisitionStatus = 'ABORTED';
+                  throw new Error('Browser acquisition cancelled by user.');
+                }
+              }
+            }
+          }
+
           acquisitionStatus = 'CORS_BLOCKED';
-          DomainCapabilityCache.set(domain, false, false, 'Direct browser fetch blocked by upstream Cross-Origin Resource Sharing (CORS) policy.');
-          throw new Error('CORS_BLOCKED: Upstream media source does not allow direct browser-side JavaScript access.');
+          DomainCapabilityCache.set(domain, false, false, 'Direct browser fetch blocked by upstream Cross-Origin Resource Sharing (CORS) policy. Install Vidleo Companion Extension for direct browser downloads.');
+          throw new Error('CORS_BLOCKED: Upstream media source does not allow direct browser-side JavaScript access without the Vidleo Companion Extension.');
         }
 
         acquisitionStatus = 'NETWORK_ERROR';

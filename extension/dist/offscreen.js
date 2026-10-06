@@ -4,7 +4,7 @@ var __export = (target, all) => {
     __defProp(target, name, { get: all[name], enumerable: true });
 };
 
-// ../frontend/src/packages/media-engine/capability.ts
+// frontend/src/packages/media-engine/capability.ts
 var cachedCapabilities = null;
 function detectCapabilities() {
   if (cachedCapabilities) {
@@ -35,7 +35,7 @@ function detectCapabilities() {
   return cachedCapabilities;
 }
 
-// ../frontend/src/packages/media-engine/strategy.ts
+// frontend/src/packages/media-engine/strategy.ts
 function evaluateClientStrategy(manifest, targetFormatId, targetFormatType = "video", customCapabilities) {
   const caps = customCapabilities || detectCapabilities();
   const targetFid = String(targetFormatId).trim();
@@ -255,7 +255,7 @@ function evaluateClientStrategy(manifest, targetFormatId, targetFormatType = "vi
   };
 }
 
-// ../frontend/src/packages/media-engine/fetcher.ts
+// frontend/src/packages/media-engine/fetcher.ts
 function formatSpeed(bytesPerSec) {
   if (bytesPerSec >= 1024 * 1024) {
     return `${(bytesPerSec / (1024 * 1024)).toFixed(1)} MB/s`;
@@ -495,7 +495,7 @@ async function fetchStreamWithRange(options) {
   return downloadedBytes;
 }
 
-// ../frontend/src/packages/media-engine/sink/sink.ts
+// frontend/src/packages/media-engine/sink/sink.ts
 var FileSystemAccessSink = class {
   constructor() {
     this.writable = null;
@@ -683,7 +683,7 @@ var BlobSink = class {
   }
 };
 
-// ../frontend/node_modules/mp4box/dist/mp4box.all.mjs
+// frontend/node_modules/mp4box/dist/mp4box.all.mjs
 var mp4box_all_exports = {};
 __export(mp4box_all_exports, {
   AudioSampleEntry: () => AudioSampleEntry,
@@ -723,7 +723,7 @@ __export(mp4box_all_exports, {
   createFile: () => createFile
 });
 
-// ../frontend/node_modules/mp4box/dist/rolldown-runtime-w6R9maHv.mjs
+// frontend/node_modules/mp4box/dist/rolldown-runtime-w6R9maHv.mjs
 var __defProp2 = Object.defineProperty;
 var __exportAll = (all, no_symbols) => {
   let target = {};
@@ -739,7 +739,7 @@ var __exportAll = (all, no_symbols) => {
   return target;
 };
 
-// ../frontend/node_modules/mp4box/dist/styp-9TIZZDLN.mjs
+// frontend/node_modules/mp4box/dist/styp-9TIZZDLN.mjs
 var MAX_SIZE = Math.pow(2, 32);
 var MAX_UINT32 = Math.pow(2, 32) - 1;
 var TFHD_FLAG_DEFAULT_BASE_IS_MOOF = 131072;
@@ -7756,7 +7756,7 @@ var stypBox = class extends Box {
   }
 };
 
-// ../frontend/node_modules/mp4box/dist/mp4box.all.mjs
+// frontend/node_modules/mp4box/dist/mp4box.all.mjs
 var descriptor_exports = /* @__PURE__ */ __exportAll({
   Descriptor: () => Descriptor,
   ES_Descriptor: () => ES_Descriptor,
@@ -10805,7 +10805,7 @@ var all_boxes_exports = /* @__PURE__ */ __exportAll({
 var BoxParser = registerBoxes(all_boxes_exports);
 registerDescriptors(descriptor_exports);
 
-// ../frontend/node_modules/mp4-muxer/build/mp4-muxer.mjs
+// frontend/node_modules/mp4-muxer/build/mp4-muxer.mjs
 var __accessCheck = (obj, member, msg) => {
   if (!member.has(obj))
     throw TypeError("Cannot " + msg);
@@ -12711,7 +12711,7 @@ ensureNotFinalized_fn = function() {
   }
 };
 
-// ../frontend/src/packages/media-engine/muxer/mp4Muxer.ts
+// frontend/src/packages/media-engine/muxer/mp4Muxer.ts
 var MP4Box = void 0 || mp4box_all_exports;
 var StreamingMP4Muxer = class {
   static async remux(options) {
@@ -12986,7 +12986,7 @@ var StreamingMP4Muxer = class {
   }
 };
 
-// ../frontend/node_modules/webm-muxer/build/webm-muxer.mjs
+// frontend/node_modules/webm-muxer/build/webm-muxer.mjs
 var __accessCheck2 = (obj, member, msg) => {
   if (!member.has(obj))
     throw TypeError("Cannot " + msg);
@@ -14438,7 +14438,7 @@ formatTimestamp_fn = function(timestamp) {
   return hours.toString().padStart(2, "0") + ":" + minutes.toString().padStart(2, "0") + ":" + seconds.toString().padStart(2, "0") + "." + milliseconds.toString().padStart(3, "0");
 };
 
-// ../frontend/src/packages/media-engine/muxer/webmMuxer.ts
+// frontend/src/packages/media-engine/muxer/webmMuxer.ts
 var StreamingWebMDemuxer = class {
   constructor(type) {
     this.buffer = new Uint8Array(0);
@@ -14820,7 +14820,7 @@ var StreamingWebMMuxer = class {
   }
 };
 
-// ../frontend/src/packages/media-engine/hls/constants.ts
+// frontend/src/packages/media-engine/hls/constants.ts
 var MAX_HLS_PLAYLIST_BYTES = 2 * 1024 * 1024;
 var MAX_HLS_SEGMENTS = 5e3;
 var MAX_HLS_SEGMENT_BYTES = 50 * 1024 * 1024;
@@ -14831,7 +14831,7 @@ var MAX_HLS_CONCURRENT_SEGMENTS = 2;
 var MAX_HLS_RETRIES = 3;
 var HLS_RETRY_BACKOFF_MS = 500;
 
-// ../frontend/src/packages/media-engine/hls/playlist.ts
+// frontend/src/packages/media-engine/hls/playlist.ts
 var HLSParseError = class extends Error {
   constructor(message, code = "INVALID_PLAYLIST") {
     super(message);
@@ -15078,7 +15078,7 @@ function parseMediaPlaylist(lines, baseUrl) {
   };
 }
 
-// ../frontend/src/packages/media-engine/hls/variant.ts
+// frontend/src/packages/media-engine/hls/variant.ts
 var HLSVariantError = class extends Error {
   constructor(message, code = "UNSUPPORTED_CODEC") {
     super(message);
@@ -15144,7 +15144,7 @@ function selectHLSVariant(variants, options = {}) {
   return candidateVariants[0];
 }
 
-// ../frontend/src/packages/media-engine/hls/decryptor.ts
+// frontend/src/packages/media-engine/hls/decryptor.ts
 var HLSDecryptError = class extends Error {
   constructor(message, code = "UNSUPPORTED_ENCRYPTION") {
     super(message);
@@ -15230,7 +15230,7 @@ var AES128Decryptor = class {
   }
 };
 
-// ../frontend/src/packages/media-engine/hls/tsDemuxer.ts
+// frontend/src/packages/media-engine/hls/tsDemuxer.ts
 var HLSDemuxError = class extends Error {
   constructor(message, code = "INVALID_SEGMENT") {
     super(message);
@@ -15632,7 +15632,7 @@ var MPEGTSDemuxer = class {
   }
 };
 
-// ../frontend/src/packages/media-engine/hls/timeline.ts
+// frontend/src/packages/media-engine/hls/timeline.ts
 var MPEG_CLOCK_HZ = 9e4;
 var ROLLOVER_THRESHOLD_TICKS = 4294967296;
 var MAX_33BIT_TICKS = 8589934592;
@@ -15732,7 +15732,7 @@ var HLSTimelineManager = class {
   }
 };
 
-// ../frontend/src/packages/media-engine/hls/hlsEngine.ts
+// frontend/src/packages/media-engine/hls/hlsEngine.ts
 var HLSEngineError = class extends Error {
   constructor(message, code) {
     super(message);
@@ -16072,7 +16072,7 @@ var HLSEngine = class {
   }
 };
 
-// ../frontend/src/packages/media-engine/index.ts
+// frontend/src/packages/media-engine/index.ts
 var MediaEngine = class {
   /**
    * Evaluates strategy and executes client-first media download when possible.
@@ -16283,7 +16283,7 @@ var MediaEngine = class {
   }
 };
 
-// src/storage/extension-download-sink.ts
+// extension/src/storage/extension-download-sink.ts
 var ExtensionDownloadSink = class {
   fileHandle = null;
   writable = null;
@@ -16366,7 +16366,7 @@ var ExtensionDownloadSink = class {
   }
 };
 
-// src/offscreen/offscreen.ts
+// extension/src/offscreen/offscreen.ts
 console.log("[NEXUS Offscreen] Initialized and listening for media processing requests");
 var activeAbortController = null;
 var currentSink = null;
@@ -16379,6 +16379,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   if (message.type === "START_DOWNLOAD") {
     handleStartDownload(message.payload);
+    sendResponse({ status: "started" });
+    return false;
+  }
+  if (message.type === "START_DIRECT_ACQUISITION") {
+    handleStartDirectAcquisition(message.payload);
     sendResponse({ status: "started" });
     return false;
   }
@@ -16477,6 +16482,108 @@ async function handleCancelDownload(payload) {
       } catch {
       }
     }
+  }
+}
+async function handleStartDirectAcquisition(payload) {
+  const { sessionId, streamUrl, targetFilename, expectedBytes, mimeType } = payload;
+  currentJobId = sessionId;
+  activeAbortController = new AbortController();
+  console.log(`[NEXUS Offscreen] Starting direct client acquisition for session ${sessionId}: ${streamUrl.substring(0, 80)}...`);
+  chrome.runtime.sendMessage({
+    type: "ACQUISITION_STARTED",
+    payload: { sessionId, targetFilename }
+  }).catch(() => {
+  });
+  const startTime = Date.now();
+  let lastReportTime = startTime;
+  let lastReportBytes = 0;
+  try {
+    const res = await fetch(streamUrl, {
+      signal: activeAbortController.signal,
+      headers: {
+        "Accept": "*/*"
+      }
+    });
+    if (!res.ok) {
+      throw new Error(`Upstream acquisition failed with HTTP status ${res.status}: ${res.statusText}`);
+    }
+    const contentLengthHeader = res.headers.get("content-length");
+    const totalBytes = contentLengthHeader ? parseInt(contentLengthHeader, 10) : expectedBytes || 0;
+    const reader = res.body?.getReader();
+    if (!reader) {
+      throw new Error("ReadableStream not supported on response body");
+    }
+    const chunks = [];
+    let bytesReceived = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) {
+        chunks.push(value);
+        bytesReceived += value.byteLength;
+        const now = Date.now();
+        if (now - lastReportTime >= 250) {
+          const durationSec = (now - lastReportTime) / 1e3;
+          const bytesDelta = bytesReceived - lastReportBytes;
+          const speedBps = durationSec > 0 ? bytesDelta / durationSec : 0;
+          const speedMb = (speedBps / (1024 * 1024)).toFixed(2);
+          const percent = totalBytes > 0 ? Math.min(99.9, bytesReceived / totalBytes * 100) : 0;
+          chrome.runtime.sendMessage({
+            type: "ACQUISITION_PROGRESS",
+            payload: {
+              sessionId,
+              percent,
+              bytesReceived,
+              totalBytes,
+              speedFormatted: `${speedMb} MB/s`
+            }
+          }).catch(() => {
+          });
+          lastReportTime = now;
+          lastReportBytes = bytesReceived;
+        }
+      }
+    }
+    const contentType = res.headers.get("content-type") || mimeType || "video/mp4";
+    const blob = new Blob(chunks, { type: contentType });
+    const blobUrl = URL.createObjectURL(blob);
+    console.log(`[NEXUS Offscreen] Direct acquisition completed for ${sessionId}. Total: ${bytesReceived} bytes. Generated blob.`);
+    window.__LAST_ACQUISITION_RESULT__ = {
+      sessionId,
+      filename: targetFilename,
+      totalBytes: bytesReceived,
+      mimeType: contentType,
+      blobUrl,
+      blob
+    };
+    chrome.runtime.sendMessage({
+      type: "ACQUISITION_COMPLETE",
+      payload: {
+        sessionId,
+        filename: targetFilename,
+        totalBytes: bytesReceived,
+        mimeType: contentType,
+        blobUrl
+      }
+    }).catch(() => {
+    });
+  } catch (err) {
+    const isAbort = err.name === "AbortError" || err.message?.includes("aborted");
+    console.error(`[NEXUS Offscreen] Direct acquisition failed for ${sessionId}:`, err);
+    if (!isAbort) {
+      chrome.runtime.sendMessage({
+        type: "ACQUISITION_FAILED",
+        payload: {
+          sessionId,
+          error: err.message || "Direct browser acquisition failed",
+          code: "ACQUISITION_ERROR"
+        }
+      }).catch(() => {
+      });
+    }
+  } finally {
+    activeAbortController = null;
+    currentJobId = null;
   }
 }
 //# sourceMappingURL=offscreen.js.map

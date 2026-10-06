@@ -6,15 +6,40 @@
   "permissions": [
     "downloads",
     "storage",
-    "offscreen"
+    "offscreen",
+    "tabs"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://frontend-kaveri-d.vercel.app/*",
+        "http://localhost:3000/*",
+        "http://127.0.0.1:3000/*",
+        "http://localhost:8092/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_start"
+    }
   ],
   "host_permissions": [
     "*://*.vidleo.app/*",
+    "https://frontend-kaveri-d.vercel.app/*",
+    "https://*.googlevideo.com/*",
+    "https://www.youtube.com/*",
+    "https://youtube.com/*",
     "http://127.0.0.1:8000/*",
     "http://localhost:8000/*",
     "http://127.0.0.1:8089/*",
-    "https://nexus-media-relay.vidleo-relay.workers.dev/*"
+    "https://backend-production-2ff30.up.railway.app/*"
   ],
+  "externally_connectable": {
+    "matches": [
+      "https://frontend-kaveri-d.vercel.app/*",
+      "http://localhost:3000/*",
+      "http://127.0.0.1:3000/*",
+      "http://localhost:8092/*"
+    ]
+  },
   "background": {
     "service_worker": "background.js",
     "type": "module"

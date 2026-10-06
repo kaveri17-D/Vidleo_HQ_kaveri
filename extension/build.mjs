@@ -65,6 +65,21 @@ async function build() {
     logLevel: 'info',
   });
 
+  // Build Content Script Bridge
+  console.log('[NEXUS Extension Build] Bundling content script bridge...');
+  await esbuild.build({
+    entryPoints: [path.resolve(__dirname, 'src/content/content.ts')],
+    outfile: path.resolve(distDir, 'content.js'),
+    bundle: true,
+    format: 'iife',
+    target: ['chrome110'],
+    platform: 'browser',
+    sourcemap: true,
+    define: defines,
+    nodePaths: [frontendNodeModules],
+    logLevel: 'info',
+  });
+
   // Copy HTML and manifest files
   console.log('[NEXUS Extension Build] Copying assets...');
   fs.copyFileSync(
