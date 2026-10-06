@@ -4,7 +4,8 @@ import React, { useState } from 'react';
 import { 
   VideoMetadata, 
   QualityOption, 
-  MediaFormatType 
+  MediaFormatType,
+  FlowPipelineStatus
 } from '@/services/downloader/types';
 import { QualitySelector } from './QualitySelector';
 import { 
@@ -15,11 +16,72 @@ import {
   RotateCcw, 
   CheckCircle2, 
   Video, 
-  Music
+  Music,
+  AlertTriangle
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { BrowserConsentModal } from './BrowserConsentModal';
 import { browserAcquisitionEngine } from '@/lib/browser-acquisition';
+
+function getPipelineStatusBadge(status?: FlowPipelineStatus) {
+  switch (status) {
+    case 'METADATA_DETECTED':
+      return {
+        color: 'bg-amber-500',
+        label: 'METADATA DETECTED',
+      };
+    case 'STREAM_CANDIDATE_AVAILABLE':
+      return {
+        color: 'bg-blue-500',
+        label: 'STREAM CANDIDATE AVAILABLE',
+      };
+    case 'BROWSER_EXTENSION_READY':
+      return {
+        color: 'bg-indigo-500',
+        label: 'BROWSER EXTENSION READY',
+      };
+    case 'BROWSER_ACQUISITION_READY':
+      return {
+        color: 'bg-emerald-500',
+        label: 'BROWSER ACQUISITION READY',
+      };
+    case 'BROWSER_ACQUISITION_ACTIVE':
+      return {
+        color: 'bg-cyan-500',
+        label: 'BROWSER ACQUISITION ACTIVE',
+      };
+    case 'BROWSER_ACQUISITION_SUCCESS':
+      return {
+        color: 'bg-emerald-600',
+        label: 'STREAM VERIFIED (CLIENT ACQUIRED)',
+      };
+    case 'SERVER_FALLBACK':
+      return {
+        color: 'bg-amber-600',
+        label: 'SERVER FALLBACK ACTIVE',
+      };
+    case 'RATE_LIMITED':
+      return {
+        color: 'bg-rose-500',
+        label: 'SERVER RATE-LIMITED (HTTP 429)',
+      };
+    case 'BLOCKED':
+      return {
+        color: 'bg-rose-600',
+        label: 'UPSTREAM RESTRICTED (HTTP 403)',
+      };
+    case 'DOWNLOAD_READY':
+      return {
+        color: 'bg-emerald-500',
+        label: 'DOWNLOAD READY',
+      };
+    default:
+      return {
+        color: 'bg-blue-500',
+        label: 'STREAM CANDIDATE AVAILABLE',
+      };
+  }
+}
 
 interface VideoDetectedCardProps {
   metadata: VideoMetadata;
@@ -81,15 +143,16 @@ export function VideoDetectedCard({
   };
 
   const handleActionReset = onReset || onCancel || (() => {});
+  const badge = getPipelineStatusBadge(metadata.pipelineStatus);
 
   return (
     <div className="w-full bg-white border border-black/[0.12] rounded-[28px] overflow-hidden shadow-[0_16px_45px_rgba(0,0,0,0.08)] animate-in fade-in duration-200 text-[#0A0A0C]">
       {/* Top Banner Status */}
       <div className="bg-[#F8F8FA] px-6 py-3.5 border-b border-black/[0.06] flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-2xs" />
+          <span className={cn("w-2 h-2 rounded-full shadow-2xs", badge.color)} />
           <span className="text-xs font-mono uppercase tracking-wider text-[#7A7A82] font-bold">
-            STREAM DETECTED & VERIFIED
+            {badge.label}
           </span>
           <span className="text-xs font-mono text-[#C4C4CC]">·</span>
           <span className="text-xs font-mono text-[#0A0A0C] font-bold">
@@ -106,6 +169,35 @@ export function VideoDetectedCard({
           <span>New Link</span>
         </button>
       </div>
+
+      {/* Upstream Diagnostics / Rate-Limit Alert Banner */}
+      {metadata.pipelineStatus === 'RATE_LIMITED' && (
+        <div className="bg-amber-50/90 border-b border-amber-200/80 px-6 py-3 flex items-start gap-3 text-xs text-amber-900 animate-in fade-in">
+          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <p className="font-semibold text-amber-950">
+              Server extraction is currently rate-limited by YouTube (HTTP 429).
+            </p>
+            <p className="text-[11px] text-amber-800 leading-relaxed font-sans">
+              Direct browser acquisition is being attempted using the Vidleo Companion Extension. The server control plane will not transit raw video bytes.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {metadata.pipelineStatus === 'BLOCKED' && (
+        <div className="bg-rose-50/90 border-b border-rose-200/80 px-6 py-3 flex items-start gap-3 text-xs text-rose-900 animate-in fade-in">
+          <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <p className="font-semibold text-rose-950">
+              Upstream media stream restricted (HTTP 403).
+            </p>
+            <p className="text-[11px] text-rose-800 leading-relaxed font-sans">
+              Direct source requests are restricted by upstream policy. Client-side browser download requires active player session.
+            </p>
+          </div>
+        </div>
+      )}
 
       <div className="p-6 sm:p-7 space-y-6">
         {/* Media Preview & Metadata Header */}

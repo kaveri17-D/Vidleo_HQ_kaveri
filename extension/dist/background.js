@@ -34,7 +34,88 @@ async function ensureOffscreenDocument() {
     }
   }
 }
+async function resolveYouTubeDirect(url) {
+  const videoIdMatch = url.match(/(?:v=|\/embed\/|youtu\.be\/|\/v\/|\/shorts\/)([a-zA-Z0-9_-]{11})/);
+  const videoId = videoIdMatch ? videoIdMatch[1] : "";
+  let oembedData = null;
+  try {
+    const oembedRes = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`);
+    if (oembedRes.ok) {
+      oembedData = await oembedRes.json();
+    }
+  } catch {
+  }
+  let playerData = null;
+  try {
+    const pageRes = await fetch(url, {
+      headers: {
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9"
+      }
+    });
+    if (pageRes.ok) {
+      const html = await pageRes.text();
+      const match = html.match(/ytInitialPlayerResponse\s*=\s*(\{.+?\});/);
+      if (match) {
+        playerData = JSON.parse(match[1]);
+      }
+    }
+  } catch (e) {
+    console.warn("[NEXUS Extension] Direct watch page fetch error:", e);
+  }
+  const title = playerData?.videoDetails?.title || oembedData?.title || "YouTube Stream";
+  const author = playerData?.videoDetails?.author || oembedData?.author_name || "YouTube Creator";
+  const durationSec = parseInt(playerData?.videoDetails?.lengthSeconds || "0", 10);
+  const thumbnail = oembedData?.thumbnail_url || (videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : "");
+  const formats = playerData?.streamingData?.formats || [];
+  const adaptiveFormats = playerData?.streamingData?.adaptiveFormats || [];
+  const candidateStream = formats.find((f) => Boolean(f.url)) || adaptiveFormats.find((f) => Boolean(f.url));
+  const hasDirectUrl = Boolean(candidateStream?.url);
+  return {
+    job_id: `yt-ext-${Date.now()}`,
+    id: videoId || `yt-${Date.now()}`,
+    title,
+    uploader: author,
+    duration: durationSec,
+    thumbnail,
+    platform: "youtube",
+    pipeline_status: hasDirectUrl ? "STREAM_CANDIDATE_AVAILABLE" : "METADATA_DETECTED",
+    direct_stream_available: hasDirectUrl,
+    candidate_stream_url: candidateStream?.url || null,
+    video_formats: formats.map((f) => ({
+      format_id: String(f.itag),
+      format_note: f.qualityLabel || `${f.height || 360}p`,
+      ext: f.mimeType?.includes("webm") ? "webm" : "mp4",
+      filesize: f.contentLength ? parseInt(f.contentLength, 10) : 0,
+      vcodec: f.mimeType?.split("codecs=")[1]?.replace(/["']/g, "") || "h264",
+      acodec: "aac",
+      url: f.url || void 0,
+      is_ciphered: !f.url && (Boolean(f.signatureCipher) || Boolean(f.cipher))
+    })),
+    audio_formats: adaptiveFormats.filter((f) => f.mimeType?.startsWith("audio/")).map((f) => ({
+      format_id: String(f.itag),
+      format_note: `${Math.round((f.bitrate || 128e3) / 1e3)} kbps`,
+      ext: f.mimeType?.includes("webm") ? "webm" : "m4a",
+      filesize: f.contentLength ? parseInt(f.contentLength, 10) : 0,
+      acodec: f.mimeType?.includes("webm") ? "opus" : "aac",
+      url: f.url || void 0,
+      is_ciphered: !f.url && (Boolean(f.signatureCipher) || Boolean(f.cipher))
+    }))
+  };
+}
 async function resolveMedia(url, apiBaseUrl = DEFAULT_API_BASE_URL) {
+  const isYoutube = url.includes("youtube.com") || url.includes("youtu.be");
+  if (isYoutube) {
+    try {
+      const directData = await resolveYouTubeDirect(url);
+      if (directData && (directData.title !== "YouTube Stream" || directData.video_formats.length > 0)) {
+        console.log("[NEXUS Extension] YouTube media resolved directly via client network (0 Railway requests)");
+        return directData;
+      }
+    } catch (directErr) {
+      console.warn("[NEXUS Extension] Direct YouTube client resolution failed, attempting control plane fallback:", directErr);
+    }
+  }
   const endpoint = `${apiBaseUrl.replace(/\/+$/, "")}/api/resolve`;
   const res = await fetch(endpoint, {
     method: "POST",
@@ -212,6 +293,22 @@ if (chrome.runtime.onMessageExternal) {
         sendResponse({ status: "dispatched_to_offscreen", jobId: payload.jobId });
       }).catch((err) => {
         sendResponse({ status: "error", error: err.message });
+      });
+      return true;
+    }
+    if (message.type === "RESOLVE_MEDIA") {
+      const payload = message.payload;
+      const apiBaseUrl = payload.apiBaseUrl || DEFAULT_API_BASE_URL;
+      resolveMedia(payload.url, apiBaseUrl).then((data) => {
+        sendResponse({
+          type: "RESOLVE_MEDIA_SUCCESS",
+          payload: data
+        });
+      }).catch((err) => {
+        sendResponse({
+          type: "RESOLVE_MEDIA_ERROR",
+          payload: { error: err.message }
+        });
       });
       return true;
     }

@@ -29,6 +29,18 @@ export interface QualityOption {
   streamUrl?: string;
 }
 
+export type FlowPipelineStatus =
+  | 'METADATA_DETECTED'
+  | 'STREAM_CANDIDATE_AVAILABLE'
+  | 'BROWSER_EXTENSION_READY'
+  | 'BROWSER_ACQUISITION_READY'
+  | 'BROWSER_ACQUISITION_ACTIVE'
+  | 'BROWSER_ACQUISITION_SUCCESS'
+  | 'SERVER_FALLBACK'
+  | 'RATE_LIMITED'
+  | 'BLOCKED'
+  | 'DOWNLOAD_READY';
+
 export interface VideoMetadata {
   id: string;
   url: string;
@@ -52,6 +64,13 @@ export interface VideoMetadata {
   availableVideoQualities: QualityOption[];
   availableAudioQualities: QualityOption[];
   manifest?: any;
+  pipelineStatus?: FlowPipelineStatus;
+  upstreamDiagnostics?: {
+    statusCode?: number;
+    errorDetail?: string;
+    rateLimited?: boolean;
+    provider?: string;
+  };
 }
 
 export type AnalysisStep = 
@@ -68,6 +87,7 @@ export interface AnalysisStateData {
   progress: number; // 0 - 100
   message: string;
   error?: string;
+  pipelineStatus?: FlowPipelineStatus;
 }
 
 export interface DownloadSession {
@@ -85,6 +105,7 @@ export interface DownloadSession {
   errorMessage?: string;
   acquisitionSource?: 'BROWSER_NETWORK' | 'SERVER' | 'UNKNOWN';
   route?: 'browser' | 'server';
+  pipelineStatus?: FlowPipelineStatus;
 }
 
 export interface HistoryItem {

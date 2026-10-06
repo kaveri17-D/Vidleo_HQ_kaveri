@@ -53,8 +53,9 @@ window.addEventListener('message', (event) => {
     if (response) {
       window.postMessage({
         source: 'nexus-extension',
-        type: `${type}_ACK`,
+        type: response.type || `${type}_ACK`,
         messageId,
+        payload: response.payload || response,
         response,
       }, '*');
     }

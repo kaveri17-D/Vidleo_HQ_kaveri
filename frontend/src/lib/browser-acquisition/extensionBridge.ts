@@ -168,3 +168,59 @@ export async function acquireViaExtension(
     }, '*');
   });
 }
+
+/**
+ * Resolves media metadata directly via the Vidleo MV3 Extension using the user's browser network.
+ * Bypasses server-side datacenter IP rate limits (HTTP 429/403).
+ */
+export async function resolveMediaViaExtension(url: string, timeoutMs: number = 6000): Promise<any> {
+  const extStatus = await detectExtension(200);
+  if (!extStatus.installed) {
+    return null;
+  }
+
+  return new Promise((resolve) => {
+    let resolved = false;
+
+    const cleanup = () => {
+      window.removeEventListener('message', handleMessage);
+    };
+
+    const timer = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        cleanup();
+        resolve(null);
+      }
+    }, timeoutMs);
+
+    function handleMessage(event: MessageEvent) {
+      if (!event.data || event.data.source !== 'nexus-extension') return;
+
+      if (event.data.type === 'RESOLVE_MEDIA_SUCCESS') {
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(timer);
+          cleanup();
+          resolve(event.data.payload);
+        }
+      } else if (event.data.type === 'RESOLVE_MEDIA_ERROR') {
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(timer);
+          cleanup();
+          resolve(null);
+        }
+      }
+    }
+
+    window.addEventListener('message', handleMessage);
+
+    window.postMessage({
+      source: 'nexus-webpage',
+      type: 'RESOLVE_MEDIA',
+      payload: { url },
+    }, '*');
+  });
+}
+
