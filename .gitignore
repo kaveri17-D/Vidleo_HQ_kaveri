@@ -71,5 +71,9 @@ uploads/
 downloads/
 .railway_home/
 extension/dist/*.wasm
+extension/*.js
+extension/*.js.map
+extension/*.html
+extension/*.wasm
 
 .vercel

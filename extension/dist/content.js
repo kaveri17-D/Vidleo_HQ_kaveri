@@ -3,11 +3,11 @@
   try {
     if (document.documentElement) {
       document.documentElement.setAttribute("data-nexus-extension-installed", "true");
-      document.documentElement.setAttribute("data-nexus-extension-version", "1.0.0");
+      document.documentElement.setAttribute("data-nexus-extension-version", "1.0.1");
       document.documentElement.dataset.nexusExtensionInstalled = "true";
-      document.documentElement.dataset.nexusExtensionVersion = "1.0.0";
+      document.documentElement.dataset.nexusExtensionVersion = "1.0.1";
     }
-    window.dispatchEvent(new CustomEvent("nexus-extension-ready", { detail: { version: "1.0.0" } }));
+    window.dispatchEvent(new CustomEvent("nexus-extension-ready", { detail: { version: "1.0.1" } }));
   } catch (e) {
     console.warn("[NEXUS Content Bridge] Error setting DOM markers:", e);
   }
@@ -15,7 +15,7 @@
     window.postMessage({
       source: "nexus-extension",
       type: "PONG",
-      version: "1.0.0",
+      version: "1.0.1",
       capabilities: {
         playbackCapture: true,
         captureStream: true,
@@ -33,7 +33,7 @@
         source: "nexus-extension",
         type: "PONG",
         messageId,
-        version: "1.0.0",
+        version: "1.0.1",
         capabilities: {
           playbackCapture: true,
           captureStream: true,

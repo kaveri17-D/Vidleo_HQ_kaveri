@@ -138,6 +138,23 @@ async function build() {
   }
 
   console.log('[NEXUS Extension Build] Build completed successfully into extension/dist!');
+
+  // Also sync dist files into extension root so either path can be loaded in chrome://extensions
+  const rootFilesToSync = [
+    'background.js', 'background.js.map',
+    'offscreen.js', 'offscreen.js.map', 'offscreen.html',
+    'content.js', 'content.js.map',
+    'youtube-observer.js', 'youtube-observer.js.map',
+    'popup.js', 'popup.js.map', 'popup.html',
+    'ffmpeg-core.js', 'ffmpeg-core.wasm', 'ffmpeg-worker.js'
+  ];
+  for (const f of rootFilesToSync) {
+    const src = path.resolve(distDir, f);
+    const dest = path.resolve(__dirname, f);
+    if (fs.existsSync(src)) {
+      try { fs.copyFileSync(src, dest); } catch {}
+    }
+  }
 }
 
 build().catch((err) => {
