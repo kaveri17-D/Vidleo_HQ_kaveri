@@ -44,6 +44,8 @@
     "http://127.0.0.1:8089/*",
     "http://127.0.0.1:8092/*",
     "http://localhost:8092/*",
+    "http://127.0.0.1:8765/*",
+    "http://localhost:8765/*",
     "https://backend-production-2ff30.up.railway.app/*"
   ],
   "externally_connectable": {
@@ -64,7 +66,7 @@
     "default_title": "Vidleo NEXUS"
   },
   "content_security_policy": {
-    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; connect-src 'self' http://127.0.0.1:* http://localhost:* https://*.googlevideo.com https://backend-production-2ff30.up.railway.app; object-src 'self'"
   },
   "web_accessible_resources": [
     {

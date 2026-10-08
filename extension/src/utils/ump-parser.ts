@@ -78,27 +78,46 @@ export function parseUmpMediaStreams(rawUmp: Uint8Array): UmpDemuxResult {
     offset += partSize;
   }
 
-  // Audio: chunks from stream 0 (WebM header), stream 2 (cluster 1), stream 5 (cluster 2)
-  const audioChunks: Uint8Array[] = [];
-  for (const id of [0, 2, 5]) {
-    const chunks = streamTracks.get(id);
-    if (chunks) {
-      for (const c of chunks) audioChunks.push(c);
+  function isWebm(buf: Uint8Array): boolean {
+    if (buf.length < 4) return false;
+    return (buf[0] === 0x1A && buf[1] === 0x45 && buf[2] === 0xDF && buf[3] === 0xA3) ||
+           (buf[0] === 0x1F && buf[1] === 0x43 && buf[2] === 0xB6 && buf[3] === 0x75);
+  }
+
+  function isMp4(buf: Uint8Array): boolean {
+    if (buf.length < 8) return false;
+    const tag = String.fromCharCode(buf[4], buf[5], buf[6], buf[7]);
+    return tag === 'ftyp' || tag === 'moov' || tag === 'moof' || tag === 'sidx' || tag === 'styp' || tag === 'emsg';
+  }
+
+  const audioInitChunks: Uint8Array[] = [];
+  const audioClusters: Uint8Array[] = [];
+  const videoInitChunks: Uint8Array[] = [];
+  const videoFrags: Uint8Array[] = [];
+
+  const sortedTrackIds = Array.from(streamTracks.keys()).sort((a, b) => a - b);
+  for (const id of sortedTrackIds) {
+    const chunks = streamTracks.get(id) || [];
+    for (const chunk of chunks) {
+      if (isWebm(chunk)) {
+        if (chunk[0] === 0x1A && chunk[1] === 0x45 && chunk[2] === 0xDF && chunk[3] === 0xA3) {
+          audioInitChunks.push(chunk);
+        } else {
+          audioClusters.push(chunk);
+        }
+      } else if (isMp4(chunk)) {
+        const tag = String.fromCharCode(chunk[4], chunk[5], chunk[6], chunk[7]);
+        if (tag === 'ftyp' || tag === 'moov') {
+          videoInitChunks.push(chunk);
+        } else {
+          videoFrags.push(chunk);
+        }
+      }
     }
   }
 
-  // Video: stream 1 (init segment: strip non-contiguous sidx to 700 bytes), stream 3 (frag 1), stream 4 (frag 2), stream 6 (frag 3)
-  const videoChunks: Uint8Array[] = [];
-  const initChunks = streamTracks.get(1);
-  if (initChunks && initChunks.length > 0) {
-    videoChunks.push(initChunks[0].subarray(0, Math.min(700, initChunks[0].length)));
-  }
-  for (const id of [3, 4, 6]) {
-    const chunks = streamTracks.get(id);
-    if (chunks) {
-      for (const c of chunks) videoChunks.push(c);
-    }
-  }
+  const audioChunks = [...audioInitChunks, ...audioClusters];
+  const videoChunks = [...videoInitChunks, ...videoFrags];
 
   const audioWebm = audioChunks.length > 0 ? concatByteArrays(audioChunks) : null;
   const videoMp4 = videoChunks.length > 0 ? concatByteArrays(videoChunks) : null;

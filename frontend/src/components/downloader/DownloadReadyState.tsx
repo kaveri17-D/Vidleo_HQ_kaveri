@@ -36,9 +36,10 @@ export function DownloadReadyState({
     }
     const a = document.createElement('a');
     a.href = session.downloadUrl;
-    const ext = session.selectedQuality.container;
+    const ext = session.selectedQuality?.container || 'mp4';
     const sanitizedTitle = session.metadata.title.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 40);
-    a.download = `VIDLEO_${sanitizedTitle}_${session.selectedQuality.label}.${ext}`;
+    const label = session.selectedQuality?.label || 'download';
+    a.download = `VIDLEO_${sanitizedTitle}_${label}.${ext}`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -104,7 +105,7 @@ export function DownloadReadyState({
         <div className="space-y-4 py-3">
           <div className="flex items-center justify-between text-xs font-mono">
             <span className="text-[#7A7A82]">
-              {formatBytes(session.downloadedBytes)} / {session.selectedQuality.fileSizeApprox}
+              {formatBytes(session.downloadedBytes)} / {session.selectedQuality?.fileSizeApprox || 'calculating...'}
             </span>
             <span className="text-[#0A0A0C] font-bold">{session.progress}%</span>
           </div>
@@ -139,12 +140,12 @@ export function DownloadReadyState({
               </h4>
               <div className="flex flex-wrap items-center gap-2 text-xs font-mono text-[#7A7A82]">
                 <span className="px-2 py-0.5 rounded-full bg-white border border-black/[0.08] text-[#0A0A0C] font-bold">
-                  {session.selectedQuality.label}
+                  {session.selectedQuality?.label || 'Direct'}
                 </span>
                 <span>·</span>
-                <span>{session.selectedQuality.container.toUpperCase()}</span>
+                <span>{(session.selectedQuality?.container || 'mp4').toUpperCase()}</span>
                 <span>·</span>
-                <span>{session.selectedQuality.fileSizeApprox}</span>
+                <span>{session.selectedQuality?.fileSizeApprox || 'Dynamic'}</span>
               </div>
             </div>
           </div>
@@ -213,7 +214,7 @@ export function DownloadReadyState({
 
                   <BrowserMediaProcessor
                     mediaSource={session.downloadUrl}
-                    sourceFilename={`VIDLEO_${session.metadata.title.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 30)}.${session.selectedQuality.container}`}
+                    sourceFilename={`VIDLEO_${session.metadata.title.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 30)}.${session.selectedQuality?.container || 'mp4'}`}
                     operation="remux"
                     targetContainer="mp4"
                   />

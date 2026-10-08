@@ -423,6 +423,8 @@ export interface ExtensionCdpDownloadOptions {
   videoUrl: string;
   targetFilename?: string;
   durationSeconds?: number;
+  quality?: string;
+  targetItag?: string | number;
   onProgress?: (progress: {
     state: string;
     percent: number;
@@ -513,6 +515,8 @@ export async function startCdpMediaDownloadViaExtension(
         videoUrl: options.videoUrl,
         targetFilename: options.targetFilename,
         durationSeconds: options.durationSeconds,
+        quality: options.quality,
+        targetItag: options.targetItag,
       },
     }, '*');
   });

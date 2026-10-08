@@ -1,0 +1,189 @@
+{
+  "timestamp": "2026-10-06T22:52:06.681Z",
+  "productionUrl": "https://frontend-kaveri-d.vercel.app/",
+  "targetVideoUrl": "https://www.youtube.com/watch?v=jNQXAC9IVRw",
+  "tests": {
+    "mobileAndroid": {
+      "passed": true,
+      "userAgent": "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) ...",
+      "viewport": "393x852 (touch)",
+      "fullVideoBtnPresent": false,
+      "demoFallbackPresent": false,
+      "desktopExtensionErrorPresent": false,
+      "handoffCardPresent": true,
+      "handoffCardHeading": "Desktop Chrome Required for Direct Acquisition",
+      "copyLinkWorks": true,
+      "shareLinkWorks": true
+    },
+    "desktopWithoutExtension": {
+      "passed": true,
+      "extensionRequiredWarningPresent": true,
+      "directSourceUnavailableStatusPresent": true,
+      "recheckExtensionButtonPresent": true,
+      "mobileHandoffCardPresent": false
+    },
+    "desktopWithExtension": {
+      "passed": true,
+      "actualAcquisitionReady": true,
+      "extensionReadyBadge": false,
+      "targetTabIndicator": true,
+      "downloadFullVideoCtaPresent": true,
+      "demo10sFallbackPresent": true
+    },
+    "cleanProductionCdpAcquisition": {
+      "passed": true,
+      "result": {
+        "success": true,
+        "sessionId": "cdp-acq-1791327154368",
+        "filename": "Vidleo_YouTube_Me_at_the_zoo.mp4",
+        "totalBytes": 479220,
+        "rawUmpBytes": 480247,
+        "videoBytes": 223711,
+        "audioBytes": 255427,
+        "duration": 19.021,
+        "videoCodec": "av1",
+        "audioCodec": "opus",
+        "resolution": "320x240",
+        "sha256": "78e6af3faa1d2bfedb92428c39f2a7f3f3c342b7b4210b3e1d7247e8d0996d8f",
+        "blobUrl": "blob:chrome-extension://mbopgigkodhobbfjmdkcndkcpmkogjnd/5b6bb75c-111a-404a-8d2f-1efe031d5c69",
+        "downloadStarted": true,
+        "provenance": "CDP_ACTIVE_PLAYER_MEDIA_RESPONSE_BODY"
+      },
+      "stages": [
+        {
+          "state": "EXTENSION_READY",
+          "percent": 10,
+          "message": "Vidleo Companion Extension ready & active",
+          "timestamp": 1791327154511
+        },
+        {
+          "state": "YOUTUBE_TAB_READY",
+          "percent": 20,
+          "message": "Active YouTube playback tab connected (tab 1317150398)",
+          "timestamp": 1791327154527
+        },
+        {
+          "state": "CDP_ATTACHING",
+          "percent": 30,
+          "message": "Attaching Chrome DevTools Protocol to target playback tab...",
+          "timestamp": 1791327154529
+        },
+        {
+          "state": "NETWORK_LISTENING",
+          "percent": 40,
+          "message": "Listening for YouTube active player media response bodies...",
+          "timestamp": 1791327154536
+        },
+        {
+          "state": "MEDIA_DETECTED",
+          "percent": 50,
+          "message": "Original YouTube UMP media stream detected!",
+          "bytesAcquired": 480247,
+          "timestamp": 1791327156667
+        },
+        {
+          "state": "RESPONSE_BODY_ACQUIRING",
+          "percent": 60,
+          "message": "Acquiring response body (480247 bytes)...",
+          "bytesAcquired": 480247,
+          "timestamp": 1791327156668
+        },
+        {
+          "state": "MEDIA_BYTES_ACQUIRED",
+          "percent": 70,
+          "message": "Successfully acquired 480247 raw media bytes",
+          "bytesAcquired": 480247,
+          "timestamp": 1791327156669
+        },
+        {
+          "state": "UMP_DEMUXING",
+          "percent": 75,
+          "message": "Demuxing UMP packets into isolated audio & video streams...",
+          "bytesAcquired": 480247,
+          "timestamp": 1791327156670
+        },
+        {
+          "state": "VIDEO_ASSEMBLY",
+          "percent": 80,
+          "message": "Assembled video track (223711 bytes, itag 395 AV1)",
+          "videoBytes": 223711,
+          "audioBytes": 255427,
+          "timestamp": 1791327156671
+        },
+        {
+          "state": "AUDIO_ASSEMBLY",
+          "percent": 85,
+          "message": "Assembled audio track (255427 bytes, itag 251 Opus)",
+          "videoBytes": 223711,
+          "audioBytes": 255427,
+          "timestamp": 1791327156672
+        },
+        {
+          "state": "MUXING",
+          "percent": 90,
+          "message": "Remuxing into MP4 container via local FFmpeg (faststart)...",
+          "videoBytes": 223711,
+          "audioBytes": 255427,
+          "timestamp": 1791327156673
+        }
+      ],
+      "originalAcquiredFile": {
+        "filename": "5b6bb75c-111a-404a-8d2f-1efe031d5c69.mp4",
+        "path": "/downloads/5b6bb75c-111a-404a-8d2f-1efe031d5c69.mp4",
+        "size": 479220,
+        "sha256": "78e6af3faa1d2bfedb92428c39f2a7f3f3c342b7b4210b3e1d7247e8d0996d8f",
+        "mtime": "2026-10-06T22:52:37.008Z",
+        "manualCopy": false
+      },
+      "whatsappCompatibleFile": {
+        "filename": "Vidleo_YouTube_Me_at_the_zoo_WhatsApp_Compatible.mp4",
+        "path": "/downloads/Vidleo_YouTube_Me_at_the_zoo_WhatsApp_Compatible.mp4",
+        "size": 680322,
+        "sha256": "487b84349519c33f945a9acacbf52b91517f0cd411f66404a4c85e754e98fb30",
+        "format": "mov,mp4,m4a,3gp,3g2,mj2",
+        "videoCodec": "h264",
+        "audioCodec": "aac",
+        "duration": "19.021000",
+        "whatsappCompliance": {
+          "container_is_mp4": true,
+          "video_is_h264_avc": true,
+          "pixel_format_yuv420p": true,
+          "audio_is_aac_lc": true,
+          "audio_sample_rate_valid": true,
+          "audio_channels_stereo_or_mono": true,
+          "faststart_enabled": true,
+          "resolution_even_dimensions": true
+        }
+      },
+      "playback": {
+        "playable": true,
+        "duration": 19.021,
+        "videoWidth": 320,
+        "videoHeight": 240,
+        "readyState": 4,
+        "currentTime": 2
+      },
+      "backendAccounting": {
+        "initial": {
+          "control_plane_bytes_received": 7881,
+          "control_plane_bytes_sent": 2358576,
+          "backend_control_bytes": 2366457,
+          "backend_media_bytes_received": 0,
+          "backend_media_bytes_sent": 0,
+          "backend_media_bytes": 0,
+          "server_ffmpeg_processes": 0
+        },
+        "final": {
+          "control_plane_bytes_received": 7934,
+          "control_plane_bytes_sent": 2411342,
+          "backend_control_bytes": 2419276,
+          "backend_media_bytes_received": 0,
+          "backend_media_bytes_sent": 0,
+          "backend_media_bytes": 0,
+          "server_ffmpeg_processes": 0
+        },
+        "deltaTotalBytes": 0
+      }
+    }
+  }
+}

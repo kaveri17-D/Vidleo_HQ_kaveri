@@ -62,15 +62,23 @@ function mapBackendFormatsToQualities(
     const fileSizeBytes = Number(f.filesize || f.filesize_approx || (f.size_mb ? f.size_mb * 1024 * 1024 : 0));
     const fileSizeApprox = f.size_mb 
       ? `${f.size_mb} MB` 
-      : fileSizeBytes > 0 
+      : fileSizeBytes >= 1024 * 1024
       ? `${(fileSizeBytes / (1024 * 1024)).toFixed(1)} MB` 
-      : 'Variable size';
+      : fileSizeBytes > 0 
+      ? `${Math.round(fileSizeBytes / 1024)} KB`
+      : 'Size dynamic';
 
     const rawExt = String(f.ext || (type === 'video' ? 'mp4' : 'mp3')).toLowerCase();
     const validContainers = ['mp4', 'webm', 'mkv', 'mp3', 'm4a', 'wav'];
     const container = (validContainers.includes(rawExt) 
       ? rawExt 
       : (type === 'video' ? 'mp4' : 'mp3')) as VideoContainer | AudioContainer;
+
+    const availability = (f.availability as any) || (
+      fileSizeBytes > 0 || Boolean(f.format_note) || Boolean(f.height)
+        ? 'ACTUAL_MEDIA_AVAILABLE'
+        : 'METADATA_ONLY'
+    );
 
     return {
       id: formatId,
@@ -82,10 +90,14 @@ function mapBackendFormatsToQualities(
       fileSizeBytes: fileSizeBytes || 0,
       container,
       type,
-      isRecommended: index === 0 || height === 1080,
+      isRecommended: index === 0 || height === 1080 || height === 720,
       hasAudio: f.has_audio !== false,
       hdr: Boolean(f.hdr),
       streamUrl: f.url || undefined,
+      availability,
+      itag: f.itag || formatId,
+      vcodec: f.vcodec,
+      acodec: f.acodec,
     };
   });
 }
@@ -129,11 +141,12 @@ function adaptBackendExtractResponse(
 }
 
 export class DownloaderService {
-  private static getApiEndpoint(): string | null {
-    if (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_VIDLEO_API_URL) {
-      return process.env.NEXT_PUBLIC_VIDLEO_API_URL.replace(/\/+$/, '');
+  private static getApiEndpoint(): string {
+    const envUrl = typeof process !== 'undefined' ? process.env.NEXT_PUBLIC_VIDLEO_API_URL : undefined;
+    if (envUrl && !envUrl.includes('192.168') && !envUrl.includes('localhost')) {
+      return envUrl.replace(/\/+$/, '');
     }
-    return null;
+    return 'https://backend-production-2ff30.up.railway.app';
   }
 
   private static async getAuthHeaders(): Promise<Record<string, string>> {

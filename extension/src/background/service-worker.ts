@@ -15,38 +15,74 @@ const OFFSCREEN_DOCUMENT_PATH = 'offscreen.html';
 console.log('[NEXUS Service Worker] Background Service Worker initialized');
 
 /**
- * Ensures the offscreen document is loaded and running.
+ * Ensures the offscreen document is loaded and actively responding to messages.
  */
-async function ensureOffscreenDocument(): Promise<void> {
-  try {
-    if (chrome.offscreen && chrome.offscreen.hasDocument) {
-      const hasDoc = await chrome.offscreen.hasDocument();
-      if (hasDoc) {
+async function ensureOffscreenDocument(forceFresh: boolean = false): Promise<void> {
+  if (!chrome.offscreen) return;
+
+  // 1. If not forcing fresh document, check if existing offscreen document is alive
+  if (!forceFresh) {
+    try {
+      const pong = await new Promise<boolean>((resolve) => {
+        const timer = setTimeout(() => resolve(false), 300);
+        chrome.runtime.sendMessage({ type: 'OFFSCREEN_PING' }, (resp) => {
+          clearTimeout(timer);
+          if (!chrome.runtime.lastError && resp?.type === 'OFFSCREEN_PONG') {
+            resolve(true);
+          } else {
+            resolve(false);
+          }
+        });
+      });
+      if (pong) {
+        console.log('[NEXUS Service Worker] Existing offscreen document confirmed alive');
         return;
       }
-      await chrome.offscreen.createDocument({
-        url: chrome.runtime.getURL(OFFSCREEN_DOCUMENT_PATH),
-        reasons: ['BLOBS' as any],
-        justification: 'NEXUS client-first media demuxing and MP4 multiplexing',
-      });
-      console.log('[NEXUS Service Worker] Created offscreen document, awaiting liveness...');
-      // Wait for offscreen document to register its message listener
-      for (let i = 0; i < 30; i++) {
-        await new Promise(r => setTimeout(r, 50));
-        try {
-          const res = await chrome.runtime.sendMessage({ type: 'PING' });
-          if (res && res.type === 'PONG') {
-            console.log('[NEXUS Service Worker] Offscreen document confirmed ready via PONG');
-            break;
-          }
-        } catch {}
-      }
+    } catch {
+      // Proceed to recreation
     }
+  }
+
+  // 2. If offscreen document is dead, crashed, or missing, close any zombie document first
+  try {
+    if (chrome.offscreen.hasDocument && (await chrome.offscreen.hasDocument())) {
+      console.log('[NEXUS Service Worker] Closing unresponsive offscreen document...');
+      await chrome.offscreen.closeDocument();
+    }
+  } catch (closeErr) {
+    console.warn('[NEXUS Service Worker] Notice closing old offscreen document:', closeErr);
+  }
+
+  // 3. Create fresh offscreen document
+  try {
+    await chrome.offscreen.createDocument({
+      url: chrome.runtime.getURL(OFFSCREEN_DOCUMENT_PATH),
+      reasons: ['BLOBS' as any, 'AUDIO_PLAYBACK' as any],
+      justification: 'NEXUS client-first media demuxing and MP4 multiplexing',
+    });
+    console.log('[NEXUS Service Worker] Created fresh offscreen document, awaiting liveness...');
   } catch (err: any) {
-    if (!err.message?.includes('Only a single offscreen document may be created')) {
+    if (!err?.message?.includes('Only a single offscreen document may be created')) {
       console.error('[NEXUS Service Worker] Error creating offscreen document:', err);
       throw err;
     }
+  }
+
+  // 4. Wait for fresh offscreen document to respond to OFFSCREEN_PING
+  for (let i = 0; i < 30; i++) {
+    await new Promise((r) => setTimeout(r, 100));
+    try {
+      const res = await new Promise<any>((resolve) => {
+        chrome.runtime.sendMessage({ type: 'OFFSCREEN_PING' }, (r) => {
+          if (!chrome.runtime.lastError && r?.type === 'OFFSCREEN_PONG') resolve(r);
+          else resolve(null);
+        });
+      });
+      if (res && res.type === 'OFFSCREEN_PONG') {
+        console.log('[NEXUS Service Worker] Fresh offscreen document confirmed ready via OFFSCREEN_PONG');
+        return;
+      }
+    } catch {}
   }
 }
 
@@ -155,27 +191,50 @@ async function resolveYouTubeDirect(url: string): Promise<any> {
     pipeline_status: pipelineStatus,
     direct_stream_available: hasDirectUrl,
     candidate_stream_url: candidateStream?.url || null,
-    video_formats: formats.map((f: any) => ({
-      format_id: String(f.itag),
-      format_note: f.qualityLabel || `${f.height || 360}p`,
-      ext: f.mimeType?.includes('webm') ? 'webm' : 'mp4',
-      filesize: f.contentLength ? parseInt(f.contentLength, 10) : 0,
-      vcodec: f.mimeType?.split('codecs=')[1]?.replace(/["']/g, '') || 'h264',
-      acodec: 'aac',
-      url: f.url || (isObservedRecent && observed?.itag === String(f.itag) ? observed.url : undefined),
-      is_ciphered: !f.url && !(isObservedRecent && observed?.itag === String(f.itag)) && (Boolean(f.signatureCipher) || Boolean(f.cipher)),
-    })),
-    audio_formats: adaptiveFormats
-      .filter((f: any) => f.mimeType?.startsWith('audio/'))
-      .map((f: any) => ({
-        format_id: String(f.itag),
-        format_note: `${Math.round((f.bitrate || 128000) / 1000)} kbps`,
-        ext: f.mimeType?.includes('webm') ? 'webm' : 'm4a',
-        filesize: f.contentLength ? parseInt(f.contentLength, 10) : 0,
-        acodec: f.mimeType?.includes('webm') ? 'opus' : 'aac',
-        url: f.url || (isObservedRecent && observed?.itag === String(f.itag) ? observed.url : undefined),
-        is_ciphered: !f.url && !(isObservedRecent && observed?.itag === String(f.itag)) && (Boolean(f.signatureCipher) || Boolean(f.cipher)),
-      })),
+    video_formats: (() => {
+      const videoAdaptive = adaptiveFormats.filter((f: any) => f.mimeType?.startsWith('video/'));
+      const combinedVideo = [...formats, ...videoAdaptive];
+      const seenItags = new Set<string>();
+      const list: any[] = [];
+      for (const f of combinedVideo) {
+        const itagStr = String(f.itag);
+        if (!seenItags.has(itagStr)) {
+          seenItags.add(itagStr);
+          list.push({
+            format_id: itagStr,
+            format_note: f.qualityLabel || `${f.height || 360}p`,
+            ext: f.mimeType?.includes('webm') ? 'webm' : 'mp4',
+            filesize: f.contentLength ? parseInt(f.contentLength, 10) : (f.bitrate && durationSec ? Math.round((f.bitrate * durationSec) / 8) : 0),
+            vcodec: f.mimeType?.split('codecs=')[1]?.replace(/["']/g, '') || 'h264',
+            acodec: 'aac',
+            url: f.url || (isObservedRecent && observed?.itag === itagStr ? observed.url : undefined),
+            is_ciphered: !f.url && !(isObservedRecent && observed?.itag === itagStr) && (Boolean(f.signatureCipher) || Boolean(f.cipher)),
+          });
+        }
+      }
+      return list;
+    })(),
+    audio_formats: (() => {
+      const audioAdaptive = adaptiveFormats.filter((f: any) => f.mimeType?.startsWith('audio/'));
+      const seenAudioItags = new Set<string>();
+      const list: any[] = [];
+      for (const f of audioAdaptive) {
+        const itagStr = String(f.itag);
+        if (!seenAudioItags.has(itagStr)) {
+          seenAudioItags.add(itagStr);
+          list.push({
+            format_id: itagStr,
+            format_note: `${Math.round((f.bitrate || 128000) / 1000)} kbps`,
+            ext: f.mimeType?.includes('webm') ? 'webm' : 'm4a',
+            filesize: f.contentLength ? parseInt(f.contentLength, 10) : (f.bitrate && durationSec ? Math.round((f.bitrate * durationSec) / 8) : 0),
+            acodec: f.mimeType?.includes('webm') ? 'opus' : 'aac',
+            url: f.url || (isObservedRecent && observed?.itag === itagStr ? observed.url : undefined),
+            is_ciphered: !f.url && !(isObservedRecent && observed?.itag === itagStr) && (Boolean(f.signatureCipher) || Boolean(f.cipher)),
+          });
+        }
+      }
+      return list;
+    })(),
   };
 }
 
@@ -663,6 +722,33 @@ async function handleStartCdpMediaDownload(payload: StartCdpDownloadPayload): Pr
     });
   });
 
+  // Enable Page domain and add script to prefer AVC1 / H.264 over AV1 / VP9 for universal WhatsApp compatibility
+  await new Promise<void>((resolve) => {
+    chrome.debugger.sendCommand(debuggee, 'Page.enable', {}, () => {
+      chrome.debugger.sendCommand(debuggee, 'Page.addScriptToEvaluateOnNewDocument', {
+        source: `
+          (function() {
+            try {
+              const orig = window.MediaSource?.isTypeSupported?.bind(window.MediaSource);
+              if (orig) {
+                window.MediaSource.isTypeSupported = function(mime) {
+                  if (typeof mime === 'string') {
+                    const m = mime.toLowerCase();
+                    if (m.includes('av01') || m.includes('av1') || m.includes('vp9') || m.includes('vp09')) {
+                      return false;
+                    }
+                  }
+                  return orig(mime);
+                };
+              }
+            } catch(e) {}
+          })();
+        `
+      }, () => resolve());
+    });
+  });
+
+
   broadcastToTabs({
     type: 'NEXUS_CDP_PROGRESS',
     payload: {
@@ -835,8 +921,25 @@ async function handleStartCdpMediaDownload(payload: StartCdpDownloadPayload): Pr
     },
   });
 
+  // Ensure offscreen document is alive immediately before sending media message
+  console.log('[NEXUS SW] Ensuring offscreen document is alive before remux dispatch...');
+  await ensureOffscreenDocument();
+
   console.log('[NEXUS SW] Dispatching PROCESS_CDP_MEDIA_FFMPEG to offscreen document...');
   const ffmpegRes = await new Promise<any>((resolve, reject) => {
+    // Keep offscreen alive with a port connection during remux
+    let keepAlivePort: chrome.runtime.Port | null = null;
+    try {
+      keepAlivePort = chrome.runtime.connect({ name: `nexus-remux-${sessionId}` });
+    } catch {}
+
+    const cleanup = () => {
+      if (keepAlivePort) {
+        try { keepAlivePort.disconnect(); } catch {}
+        keepAlivePort = null;
+      }
+    };
+
     chrome.runtime.sendMessage({
       type: 'PROCESS_CDP_MEDIA_FFMPEG',
       payload: {
@@ -848,6 +951,7 @@ async function handleStartCdpMediaDownload(payload: StartCdpDownloadPayload): Pr
         audioBytesCount: demux.audioBytes,
       },
     }, (resp) => {
+      cleanup();
       if (chrome.runtime.lastError) {
         console.error('[NEXUS SW] chrome.runtime.sendMessage error:', chrome.runtime.lastError.message);
         reject(new Error(chrome.runtime.lastError.message));
@@ -855,7 +959,10 @@ async function handleStartCdpMediaDownload(payload: StartCdpDownloadPayload): Pr
         console.error('[NEXUS SW] offscreen returned error:', resp.error);
         reject(new Error(resp.error));
       } else {
-        console.log('[NEXUS SW] offscreen FFmpeg completed successfully:', resp?.result?.filename || 'done');
+        console.log('[NEXUS SW] offscreen FFmpeg completed successfully:', resp?.result?.filename || 'done', 'codecs:', resp?.result?.videoCodec, resp?.result?.audioCodec);
+        if (resp?.result?.ffmpegLogs) {
+          console.log('[NEXUS SW] Recent FFmpeg logs:\n' + resp.result.ffmpegLogs.join('\n'));
+        }
         resolve(resp?.result || resp);
       }
     });
@@ -872,6 +979,10 @@ async function handleStartCdpMediaDownload(payload: StartCdpDownloadPayload): Pr
   });
 
   if (ffmpegRes.blobUrl && chrome.downloads) {
+    chrome.downloads.onChanged.addListener((delta) => {
+      console.log(`[NEXUS SW] chrome.downloads onChanged for ID ${delta.id}: state=${delta.state?.current || 'unchanged'}, error=${delta.error?.current || 'none'}, filename=${delta.filename?.current || ''}`);
+    });
+
     chrome.downloads.download({
       url: ffmpegRes.blobUrl,
       filename: ffmpegRes.filename,

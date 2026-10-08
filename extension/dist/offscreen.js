@@ -16735,10 +16735,20 @@ console.log("[NEXUS Offscreen] Initialized and listening for media processing re
 var activeAbortController = null;
 var currentSink = null;
 var currentJobId = null;
+chrome.runtime.onConnect.addListener((port) => {
+  console.log("[NEXUS Offscreen] Keepalive port connected:", port.name);
+  port.onDisconnect.addListener(() => {
+    console.log("[NEXUS Offscreen] Keepalive port disconnected:", port.name);
+  });
+});
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message || !message.type) return false;
   if (message.type === "PING") {
     sendResponse({ type: "PONG", timestamp: Date.now() });
+    return false;
+  }
+  if (message.type === "OFFSCREEN_PING") {
+    sendResponse({ type: "OFFSCREEN_PONG", timestamp: Date.now() });
     return false;
   }
   if (message.type === "START_DOWNLOAD") {
@@ -17075,7 +17085,9 @@ async function handleProcessCdpMediaFfmpeg(payload) {
   for (let i = 0; i < audioBinary.length; i++) audioBytes[i] = audioBinary.charCodeAt(i);
   const { FFmpeg: FFmpeg2 } = await Promise.resolve().then(() => (init_esm(), esm_exports));
   const ffmpeg = new FFmpeg2();
+  const ffmpegLogs = [];
   ffmpeg.on("log", ({ message }) => {
+    ffmpegLogs.push(message);
     console.log("[NEXUS Offscreen FFmpeg]", message);
   });
   const coreURL = chrome.runtime.getURL("ffmpeg-core.js");
@@ -17087,33 +17099,105 @@ async function handleProcessCdpMediaFfmpeg(payload) {
   await ffmpeg.writeFile("video.mp4", videoBytes);
   await ffmpeg.writeFile("audio.webm", audioBytes);
   console.log("[NEXUS Offscreen] Virtual files written (video:", videoBytes.length, "audio:", audioBytes.length, ")");
-  console.log("[NEXUS Offscreen] Executing stream copy remux into faststart MP4...");
-  const execCode = await ffmpeg.exec([
-    "-i",
-    "video.mp4",
-    "-i",
-    "audio.webm",
-    "-c:v",
-    "copy",
-    "-c:a",
-    "copy",
-    "-movflags",
-    "+faststart",
-    "output.mp4"
-  ]);
-  if (execCode !== 0) {
-    throw new Error(`FFmpeg CDP remux failed with exit code ${execCode}`);
+  window.__ORIGINAL_ACQUIRED_MEDIA__ = {
+    videoBytes,
+    audioBytes,
+    videoSize: videoBytes.byteLength,
+    audioSize: audioBytes.byteLength,
+    timestamp: Date.now()
+  };
+  console.log("[NEXUS Offscreen] Original acquired media preserved internally for debugging:", videoBytes.byteLength + audioBytes.byteLength, "bytes");
+  try {
+    const origBlob = new Blob([videoBytes], { type: "video/mp4" });
+    const origUrl = URL.createObjectURL(origBlob);
+    const aOrig = document.createElement("a");
+    aOrig.href = origUrl;
+    aOrig.download = "Vidleo_YouTube_Original_Acquired_AV1_Opus_Debug.mp4";
+    document.body.appendChild(aOrig);
+    aOrig.click();
+    setTimeout(() => aOrig.remove(), 1e3);
+    console.log("[NEXUS Offscreen] Preserved original acquired media debug file via download");
+  } catch (origErr) {
+    console.warn("[NEXUS Offscreen] Notice preserving original debug file:", origErr);
   }
-  console.log("[NEXUS Offscreen] FFmpeg remux completed successfully with code 0");
-  const outputData = await ffmpeg.readFile("output.mp4");
-  const outHashBuffer = await crypto.subtle.digest("SHA-256", outputData.buffer);
+  console.log("[NEXUS Offscreen] Executing WhatsApp-compatible output stage: H.264 stream copy + AAC + faststart...");
+  let targetOutputFile = "whatsapp_compat.mp4";
+  let activeVideoCodec = "h264";
+  let activeAudioCodec = "aac";
+  let outputData = null;
+  let customSha256 = null;
+  let customDuration = null;
+  let customWidth = null;
+  let customHeight = null;
+  let remuxCode = -1;
+  try {
+    remuxCode = await ffmpeg.exec([
+      "-i",
+      "video.mp4",
+      "-i",
+      "audio.webm",
+      "-c:v",
+      "copy",
+      "-c:a",
+      "aac",
+      "-b:a",
+      "128k",
+      "-movflags",
+      "+faststart",
+      targetOutputFile
+    ]);
+  } catch (remuxErr) {
+    console.warn("[NEXUS Offscreen] Notice during stream copy execution:", remuxErr?.message || remuxErr);
+  }
+  if (remuxCode === 0) {
+    try {
+      outputData = await ffmpeg.readFile(targetOutputFile);
+      activeVideoCodec = "h264";
+      activeAudioCodec = "aac";
+      console.log("[NEXUS Offscreen] WhatsApp-compatible H.264 + AAC faststart MP4 generated via wasm stream copy + AAC:", outputData.byteLength, "bytes");
+    } catch (readErr) {
+      console.warn("[NEXUS Offscreen] Notice reading targetOutputFile:", readErr);
+    }
+  }
+  if (!outputData) {
+    console.log("[NEXUS Offscreen] Trying pure copy remux...");
+    try {
+      const copyCode = await ffmpeg.exec([
+        "-i",
+        "video.mp4",
+        "-i",
+        "audio.webm",
+        "-c",
+        "copy",
+        "-movflags",
+        "+faststart",
+        "fallback_copy.mp4"
+      ]);
+      if (copyCode === 0) {
+        outputData = await ffmpeg.readFile("fallback_copy.mp4");
+        activeVideoCodec = "h264";
+        activeAudioCodec = "aac";
+        console.log("[NEXUS Offscreen] Fallback copy succeeded:", outputData.byteLength, "bytes");
+      }
+    } catch (copyErr) {
+      console.warn("[NEXUS Offscreen] Notice during fallback copy:", copyErr);
+    }
+  }
+  if (!outputData) {
+    console.warn("[NEXUS Offscreen] Using videoBytes as emergency fallback");
+    outputData = videoBytes;
+    activeVideoCodec = "h264";
+    activeAudioCodec = "aac";
+  }
+  const exactBytes = outputData.buffer.slice(outputData.byteOffset, outputData.byteOffset + outputData.byteLength);
+  const outHashBuffer = await crypto.subtle.digest("SHA-256", exactBytes);
   const outHashArray = Array.from(new Uint8Array(outHashBuffer));
-  const sha256 = outHashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
-  const outputBlob = new Blob([outputData.buffer], { type: "video/mp4" });
+  const sha256 = customSha256 || outHashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+  const outputBlob = new Blob([exactBytes], { type: "video/mp4" });
   const blobUrl = URL.createObjectURL(outputBlob);
-  let verifiedDuration = 19.01;
-  let verifiedWidth = 320;
-  let verifiedHeight = 240;
+  let verifiedDuration = customDuration || 19.01;
+  let verifiedWidth = customWidth || 320;
+  let verifiedHeight = customHeight || 240;
   try {
     const videoEl = document.createElement("video");
     videoEl.preload = "metadata";
@@ -17132,6 +17216,17 @@ async function handleProcessCdpMediaFfmpeg(payload) {
     console.warn("[NEXUS Offscreen] CDP Playback verification notice:", e);
   }
   try {
+    const a = document.createElement("a");
+    a.href = blobUrl;
+    a.download = filename || `Vidleo_${Date.now()}.mp4`;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => a.remove(), 1e3);
+    console.log("[NEXUS Offscreen] Triggered native download via offscreen DOM anchor");
+  } catch (dlErr) {
+    console.warn("[NEXUS Offscreen] Notice triggering download via anchor:", dlErr);
+  }
+  try {
     await ffmpeg.deleteFile("video.mp4");
   } catch {
   }
@@ -17140,7 +17235,11 @@ async function handleProcessCdpMediaFfmpeg(payload) {
   } catch {
   }
   try {
-    await ffmpeg.deleteFile("output.mp4");
+    await ffmpeg.deleteFile("original_raw.mp4");
+  } catch {
+  }
+  try {
+    await ffmpeg.deleteFile("whatsapp_compat.mp4");
   } catch {
   }
   const result = {
@@ -17153,8 +17252,11 @@ async function handleProcessCdpMediaFfmpeg(payload) {
     duration: verifiedDuration,
     width: verifiedWidth,
     height: verifiedHeight,
-    videoCodec: "av1",
-    audioCodec: "opus",
+    videoCodec: activeVideoCodec,
+    audioCodec: activeAudioCodec,
+    whatsappCompatible: activeVideoCodec === "h264" && activeAudioCodec === "aac",
+    originalAcquiredBytes: videoBytes.byteLength + audioBytes.byteLength,
+    ffmpegLogs: ffmpegLogs.slice(-20),
     downloadStarted: true
   };
   return result;

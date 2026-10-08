@@ -160,6 +160,8 @@ export interface StartCdpDownloadPayload {
   videoUrl: string;
   targetFilename?: string;
   durationSeconds?: number;
+  quality?: string;
+  targetItag?: string | number;
 }
 
 export interface CdpDownloadProgressPayload {

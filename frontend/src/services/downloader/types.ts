@@ -13,6 +13,8 @@ export type MediaFormatType = 'video' | 'audio';
 export type VideoContainer = 'mp4' | 'webm' | 'mkv';
 export type AudioContainer = 'mp3' | 'm4a' | 'wav';
 
+export type QualityAvailability = 'ACTUAL_MEDIA_AVAILABLE' | 'METADATA_ONLY' | 'UNAVAILABLE';
+
 export interface QualityOption {
   id: string;
   label: string; // e.g., "4K 2160p", "1080p Full HD", "720p HD", "480p", "320 kbps"
@@ -27,6 +29,70 @@ export interface QualityOption {
   hasAudio: boolean;
   hdr?: boolean;
   streamUrl?: string;
+  availability?: QualityAvailability;
+  itag?: string | number;
+  vcodec?: string;
+  acodec?: string;
+}
+
+export type DownloadSessionState =
+  | 'CREATED'
+  | 'ANALYZING'
+  | 'CAPABILITY_CHECK'
+  | 'STREAM_DISCOVERY'
+  | 'QUALITY_SELECTED'
+  | 'ACQUIRING'
+  | 'BUFFERING'
+  | 'DEMUXING'
+  | 'TRANSCODING'
+  | 'PACKAGING'
+  | 'DOWNLOADING'
+  | 'COMPLETED';
+
+export type DownloadSessionFailure =
+  | 'CAPABILITY_UNAVAILABLE'
+  | 'STREAM_UNAVAILABLE'
+  | 'ACQUISITION_FAILED'
+  | 'PROCESSING_FAILED'
+  | 'OUTPUT_INVALID'
+  | 'STORAGE_FAILED'
+  | 'CANCELLED';
+
+export interface DownloadSession {
+  id: string;
+  sourceUrl?: string;
+  metadata: VideoMetadata;
+  selectedQuality?: QualityOption;
+  selectedFormat?: MediaFormatType;
+  selectedStream?: any;
+  selectedAudioStream?: any;
+  capabilitySnapshot?: any;
+  adapter?: 'cdp' | 'server';
+  state?: DownloadSessionState;
+  status: 'idle' | 'preparing' | 'downloading' | 'converting' | 'ready' | 'error';
+  progress: number;
+  downloadedBytes: number;
+  acquiredBytes?: number;
+  outputBytes?: number;
+  totalBytes?: number;
+  downloadUrl?: string;
+  errorMessage?: string;
+  pipelineStatus?: FlowPipelineStatus;
+  speedFormatted?: string;
+  timeRemainingFormatted?: string;
+  route?: 'browser' | 'server';
+  acquisitionSource?: 'BROWSER_NETWORK' | 'BROWSER_PLAYBACK' | 'SERVER' | 'UNKNOWN';
+  artifact?: {
+    filename: string;
+    blobUrl?: string;
+    sha256?: string;
+    mimeType: string;
+  };
+  error?: {
+    code?: DownloadSessionFailure | string;
+    message: string;
+    stage?: string;
+  };
 }
 
 export type FlowPipelineStatus =
@@ -104,24 +170,6 @@ export interface AnalysisStateData {
   progress: number; // 0 - 100
   message: string;
   error?: string;
-  pipelineStatus?: FlowPipelineStatus;
-}
-
-export interface DownloadSession {
-  id: string;
-  metadata: VideoMetadata;
-  selectedQuality: QualityOption;
-  selectedFormat: MediaFormatType;
-  status: 'idle' | 'preparing' | 'downloading' | 'converting' | 'ready' | 'error';
-  progress: number; // 0 - 100
-  downloadedBytes: number;
-  totalBytes: number;
-  speedFormatted?: string; // e.g. "14.2 MB/s"
-  timeRemainingFormatted?: string; // e.g. "4s"
-  downloadUrl?: string;
-  errorMessage?: string;
-  acquisitionSource?: 'BROWSER_NETWORK' | 'SERVER' | 'UNKNOWN';
-  route?: 'browser' | 'server';
   pipelineStatus?: FlowPipelineStatus;
 }
 

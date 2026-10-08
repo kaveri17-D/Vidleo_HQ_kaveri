@@ -72,3 +72,4 @@ downloads/
 .railway_home/
 extension/dist/*.wasm
 
+.vercel

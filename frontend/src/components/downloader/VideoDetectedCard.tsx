@@ -21,10 +21,14 @@ import {
   Play,
   Sparkles,
   Download,
-  Loader2
+  Loader2,
+  Copy,
+  Share2,
+  Laptop
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { BrowserConsentModal } from './BrowserConsentModal';
+import { useIsMobile } from '@/hooks/useIsMobile';
 import { 
   browserAcquisitionEngine, 
   startPlaybackCaptureViaExtension, 
@@ -187,10 +191,55 @@ export function VideoDetectedCard({
   onCancel,
   onReset,
 }: VideoDetectedCardProps) {
+  const { isMobile, isAndroid, isIOS } = useIsMobile();
+  const [linkCopied, setLinkCopied] = useState(false);
+  const [shareSuccess, setShareSuccess] = useState(false);
+
+  const handleCopyDesktopLink = async () => {
+    try {
+      const canonical = metadata.canonicalUrl || metadata.url;
+      const shareUrl = typeof window !== 'undefined'
+        ? `${window.location.origin}/?url=${encodeURIComponent(canonical)}`
+        : canonical;
+
+      if (typeof navigator !== 'undefined' && navigator.clipboard) {
+        await navigator.clipboard.writeText(shareUrl);
+      }
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 2500);
+    } catch {
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 2500);
+    }
+  };
+
+  const handleShareLink = async () => {
+    const canonical = metadata.canonicalUrl || metadata.url;
+    const shareUrl = typeof window !== 'undefined'
+      ? `${window.location.origin}/?url=${encodeURIComponent(canonical)}`
+      : canonical;
+
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      try {
+        await navigator.share({
+          title: `Download ${metadata.title} on Desktop - Vidleo`,
+          text: `Use Vidleo on Chrome Desktop to download this video:`,
+          url: shareUrl,
+        });
+        setShareSuccess(true);
+        setTimeout(() => setShareSuccess(false), 2000);
+      } catch {
+        // User dismissed share dialog
+      }
+    } else {
+      handleCopyDesktopLink();
+    }
+  };
+
   const [activeFormat, setActiveFormat] = useState<MediaFormatType>('video');
   const [showConsentModal, setShowConsentModal] = useState(false);
 
-  // Proactive extension detection state
+  // Proactive extension detection state (desktop only)
   const [extensionStatus, setExtensionStatus] = useState<{
     checked: boolean;
     installed: boolean;
@@ -199,6 +248,7 @@ export function VideoDetectedCard({
   const [checkingExtension, setCheckingExtension] = useState(false);
 
   const checkExtension = React.useCallback(async () => {
+    if (isMobile) return;
     setCheckingExtension(true);
     try {
       const status = await detectExtension(800);
@@ -208,17 +258,39 @@ export function VideoDetectedCard({
     } finally {
       setCheckingExtension(false);
     }
-  }, []);
+  }, [isMobile]);
 
   React.useEffect(() => {
     if (
-      metadata.pipelineStatus === 'STREAM_SOURCE_UNRESOLVED' || 
-      metadata.pipelineStatus === 'BROWSER_SOURCE_UNAVAILABLE' ||
-      metadata.pipelineStatus === 'ACTUAL_MEDIA_ACQUISITION_READY'
+      !isMobile && (
+        metadata.pipelineStatus === 'STREAM_SOURCE_UNRESOLVED' || 
+        metadata.pipelineStatus === 'BROWSER_SOURCE_UNAVAILABLE' ||
+        metadata.pipelineStatus === 'ACTUAL_MEDIA_ACQUISITION_READY'
+      )
     ) {
       checkExtension();
     }
-  }, [metadata.pipelineStatus, checkExtension]);
+  }, [isMobile, metadata.pipelineStatus, checkExtension]);
+
+  const videoOptions = metadata.availableVideoQualities || [];
+  const audioOptions = metadata.availableAudioQualities || [];
+  const currentOptions = activeFormat === 'video' ? videoOptions : audioOptions;
+
+  const [selectedQuality, setSelectedQuality] = useState<QualityOption>(() => {
+    return (
+      videoOptions.find((q) => q.isRecommended && q.availability !== 'UNAVAILABLE') ||
+      videoOptions.find((q) => q.availability === 'ACTUAL_MEDIA_AVAILABLE') ||
+      videoOptions[0] ||
+      audioOptions[0]
+    );
+  });
+
+  const handleFormatChange = (fmt: MediaFormatType) => {
+    setActiveFormat(fmt);
+    const targetList = fmt === 'video' ? videoOptions : audioOptions;
+    const recommended = targetList.find((q) => q.isRecommended) || targetList[0];
+    if (recommended) setSelectedQuality(recommended);
+  };
 
   const [cdpState, setCdpState] = useState<{
     active: boolean;
@@ -247,6 +319,8 @@ export function VideoDetectedCard({
         videoUrl: metadata.canonicalUrl || metadata.url,
         targetFilename,
         durationSeconds: metadata.durationSeconds,
+        quality: selectedQuality?.label,
+        targetItag: selectedQuality?.id,
         onProgress: (p) => {
           setCdpState({
             active: true,
@@ -351,26 +425,6 @@ export function VideoDetectedCard({
     }
   };
 
-  const videoOptions = metadata.availableVideoQualities || [];
-  const audioOptions = metadata.availableAudioQualities || [];
-
-  const currentOptions = activeFormat === 'video' ? videoOptions : audioOptions;
-
-  const [selectedQuality, setSelectedQuality] = useState<QualityOption>(() => {
-    return (
-      videoOptions.find((q) => q.isRecommended) ||
-      videoOptions[0] ||
-      audioOptions[0]
-    );
-  });
-
-  const handleFormatChange = (fmt: MediaFormatType) => {
-    setActiveFormat(fmt);
-    const targetList = fmt === 'video' ? videoOptions : audioOptions;
-    const recommended = targetList.find((q) => q.isRecommended) || targetList[0];
-    if (recommended) setSelectedQuality(recommended);
-  };
-
   const isSourceUnresolved = 
     metadata.pipelineStatus === 'STREAM_SOURCE_UNRESOLVED' || 
     metadata.pipelineStatus === 'BROWSER_SOURCE_UNAVAILABLE' ||
@@ -465,25 +519,43 @@ export function VideoDetectedCard({
         metadata.pipelineStatus === 'BROWSER_SOURCE_UNAVAILABLE') && (
         <div className={cn(
           "border-b px-6 py-3.5 flex items-start gap-3 text-xs animate-in fade-in",
-          extensionStatus.installed
-            ? "bg-emerald-50/90 border-emerald-200/80 text-emerald-950"
-            : "bg-amber-50/90 border-amber-200/80 text-amber-900"
+          isMobile
+            ? "bg-slate-50/90 border-slate-200/80 text-slate-800"
+            : extensionStatus.installed
+              ? "bg-emerald-50/90 border-emerald-200/80 text-emerald-950"
+              : "bg-amber-50/90 border-amber-200/80 text-amber-900"
         )}>
-          {extensionStatus.installed ? (
-            <Sparkles className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+          {isMobile ? (
+            <div className="flex items-start gap-2.5 w-full">
+              <Laptop className="w-4 h-4 text-slate-600 shrink-0 mt-0.5" />
+              <div className="space-y-0.5">
+                <p className="font-semibold text-slate-900">
+                  DESKTOP ACQUISITION REQUIRED
+                </p>
+                <p className="text-[11px] text-slate-600 leading-relaxed font-sans">
+                  Direct client-side media acquisition runs via the Vidleo Companion Extension (MV3 + CDP). Mobile browsers do not support extension-based network acquisition.
+                </p>
+              </div>
+            </div>
           ) : (
-            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+            <>
+              {extensionStatus.installed ? (
+                <Sparkles className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+              ) : (
+                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              )}
+              <div className="space-y-1">
+                <p className="font-semibold">
+                  {extensionStatus.installed ? "ACTUAL MEDIA ACQUISITION" : "DIRECT SOURCE UNAVAILABLE"}
+                </p>
+                <p className={cn("text-[11px] leading-relaxed font-sans", extensionStatus.installed ? "text-emerald-800" : "text-amber-800")}>
+                  {extensionStatus.installed
+                    ? "Browser-local DevTools acquisition active. Intercepts and demuxes genuine media response bodies from the player with zero server transit."
+                    : "Vidleo Companion Extension is required for browser media acquisition. Zero server media transit."}
+                </p>
+              </div>
+            </>
           )}
-          <div className="space-y-1">
-            <p className="font-semibold">
-              {extensionStatus.installed ? "ACTUAL MEDIA ACQUISITION" : "DIRECT SOURCE UNAVAILABLE"}
-            </p>
-            <p className={cn("text-[11px] leading-relaxed font-sans", extensionStatus.installed ? "text-emerald-800" : "text-amber-800")}>
-              {extensionStatus.installed
-                ? "Browser-local DevTools acquisition active. Intercepts and demuxes genuine media response bodies from the player with zero server transit."
-                : "Vidleo Companion Extension is required for browser media acquisition. Zero server media transit."}
-            </p>
-          </div>
         </div>
       )}
 
@@ -676,9 +748,9 @@ export function VideoDetectedCard({
 
               <div className="grid grid-cols-2 gap-2 text-[11px] font-mono text-emerald-900/80 pt-1 border-t border-emerald-200/60">
                 <div>Duration: {cdpState.result.duration?.toFixed(1) || '19.0'}s</div>
-                <div>Codecs: {cdpState.result.videoCodec?.toUpperCase()} + {cdpState.result.audioCodec?.toUpperCase()}</div>
-                <div>Raw UMP: {(cdpState.result.rawUmpBytes / 1024).toFixed(0)} KB</div>
-                <div>Format: {cdpState.result.resolution} MP4</div>
+                <div>Format: {cdpState.result.resolution} MP4 (WhatsApp Compatible)</div>
+                <div>Acquired: AV1 + Opus (Direct YouTube Stream)</div>
+                <div>Output: {cdpState.result.videoCodec?.toUpperCase()} + {cdpState.result.audioCodec?.toUpperCase()} (FastStart)</div>
               </div>
 
               <div className="pt-2 flex items-center gap-2">
@@ -783,127 +855,215 @@ export function VideoDetectedCard({
             </div>
           </div>
         ) : isSourceUnresolved ? (
-          <div className="pt-2 space-y-3">
-            <div className="p-4 bg-gradient-to-r from-emerald-50/80 via-blue-50/70 to-indigo-50/80 border border-emerald-200/70 rounded-2xl">
-              <div className="flex flex-wrap items-center justify-between gap-2 pb-2">
-                <span className="text-xs font-semibold text-emerald-950 flex items-center gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
-                  Browser Downloader — ACTUAL MEDIA ACQUISITION (Zero Server Transit)
-                </span>
-                <div className="flex items-center gap-1.5">
-                  {extensionStatus.checked && (
-                    extensionStatus.installed ? (
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                        EXTENSION READY (v{extensionStatus.version || '1.0.0'})
-                      </span>
+          isMobile ? (
+            /* ============================================================
+               Intentional Mobile Experience: Desktop Handoff Card
+               - No false "Download Full Video" CTA
+               - No "10s Demo" fallback
+               - Clean, non-error informative state
+               - Copy Link for Desktop / Share Link CTAs
+               ============================================================ */
+            <div className="pt-2 space-y-3" data-testid="mobile-handoff-card">
+              <div className="p-4 sm:p-5 bg-gradient-to-br from-slate-50 via-blue-50/40 to-indigo-50/50 border border-slate-200/90 rounded-2xl space-y-3.5 shadow-2xs">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Laptop className="w-4 h-4 text-blue-600" />
+                    <span className="text-xs font-semibold text-slate-900 font-sans">
+                      Desktop Chrome Required for Direct Acquisition
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-mono uppercase tracking-wider bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-bold">
+                    Desktop Only
+                  </span>
+                </div>
+
+                <p className="text-xs text-slate-600 leading-relaxed font-sans">
+                  Vidleo acquires genuine media response bodies directly within the browser using the Companion Extension (MV3 + CDP). Mobile browsers ({isAndroid ? 'Android' : isIOS ? 'iOS' : 'mobile'}) do not support extension-based network acquisition. Open this link on Chrome Desktop to download.
+                </p>
+
+                {/* Mobile Handoff CTAs */}
+                <div className="space-y-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={handleCopyDesktopLink}
+                    data-testid="copy-desktop-link-btn"
+                    className="w-full flex items-center justify-center gap-2 bg-[#0A0A0C] hover:bg-black text-white py-3 px-4 rounded-xl text-xs font-semibold tracking-wide transition-all shadow-sm cursor-pointer"
+                  >
+                    {linkCopied ? (
+                      <>
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>Link Copied! Open on Desktop</span>
+                      </>
                     ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5 text-blue-400" />
+                        <span>Copy Link for Desktop</span>
+                      </>
+                    )}
+                  </button>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={handleShareLink}
+                      data-testid="share-desktop-link-btn"
+                      className="flex items-center justify-center gap-1.5 py-2.5 px-3 bg-white hover:bg-slate-100/80 text-slate-800 border border-slate-200 rounded-xl text-xs font-medium transition-colors cursor-pointer shadow-2xs"
+                    >
+                      <Share2 className="w-3.5 h-3.5 text-slate-600" />
+                      <span>{shareSuccess ? 'Shared!' : 'Share Link'}</span>
+                    </button>
+
+                    <a
+                      href={metadata.canonicalUrl || metadata.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex items-center justify-center gap-1.5 py-2.5 px-3 bg-white hover:bg-slate-100/80 text-slate-800 border border-slate-200 rounded-xl text-xs font-medium transition-colors cursor-pointer shadow-2xs"
+                    >
+                      <span>Original Video</span>
+                      <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
+                    </a>
+                  </div>
+                </div>
+              </div>
+
+              {/* Optional Server Extraction Fallback */}
+              <button
+                type="button"
+                onClick={handleTriggerDownload}
+                disabled={!selectedQuality}
+                className="w-full flex items-center justify-center gap-2 py-2.5 text-xs text-[#7A7A82] hover:text-[#0A0A0C] transition-colors cursor-pointer"
+              >
+                <span>Or use Server Extraction Fallback</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ) : (
+            /* ============================================================
+               Desktop Experience: Actual Media Byte Acquisition via CDP
+               (100% UNTOUCHED VERIFIED FLOW)
+               ============================================================ */
+            <div className="pt-2 space-y-3">
+              <div className="p-4 bg-gradient-to-r from-emerald-50/80 via-blue-50/70 to-indigo-50/80 border border-emerald-200/70 rounded-2xl">
+                <div className="flex flex-wrap items-center justify-between gap-2 pb-2">
+                  <span className="text-xs font-semibold text-emerald-950 flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                    Browser Downloader — ACTUAL MEDIA ACQUISITION (Zero Server Transit)
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    {extensionStatus.checked && (
+                      extensionStatus.installed ? (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                          EXTENSION READY (v{extensionStatus.version || '1.0.0'})
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={checkExtension}
+                          disabled={checkingExtension}
+                          className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-mono bg-amber-100 text-amber-800 border border-amber-300 font-semibold hover:bg-amber-200 transition-colors cursor-pointer"
+                        >
+                          <AlertTriangle className="w-3 h-3 text-amber-600" />
+                          {checkingExtension ? 'CHECKING...' : 'RECHECK EXTENSION'}
+                        </button>
+                      )
+                    )}
+                    <span className="text-[10px] font-mono uppercase bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-bold">
+                      H.264 / AAC (WhatsApp Compatible)
+                    </span>
+                  </div>
+                </div>
+                <p className="text-[11.5px] text-emerald-900/80 pb-3 leading-relaxed">
+                  Acquires genuine media response bodies directly from the active YouTube player session (AV1 video + Opus audio), demuxes player streams, and generates a 100% WhatsApp-compatible H.264 + AAC MP4 with faststart locally on your machine.
+                </p>
+
+                {extensionStatus.checked && !extensionStatus.installed && (
+                  <div className="mb-2.5 p-3 bg-amber-50/90 border border-amber-200/90 rounded-xl space-y-1">
+                    <div className="flex items-center justify-between text-xs font-semibold text-amber-950">
+                      <span className="flex items-center gap-1.5">
+                        <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                        Vidleo Companion Extension Required
+                      </span>
                       <button
                         type="button"
                         onClick={checkExtension}
                         disabled={checkingExtension}
-                        className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-mono bg-amber-100 text-amber-800 border border-amber-300 font-semibold hover:bg-amber-200 transition-colors cursor-pointer"
+                        className="text-[11px] underline font-medium text-amber-800 hover:text-amber-950 cursor-pointer"
                       >
-                        <AlertTriangle className="w-3 h-3 text-amber-600" />
-                        {checkingExtension ? 'CHECKING...' : 'RECHECK EXTENSION'}
+                        {checkingExtension ? 'Checking...' : 'Check Connection'}
                       </button>
-                    )
-                  )}
-                  <span className="text-[10px] font-mono uppercase bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-bold">
-                    FFmpeg.wasm Local
-                  </span>
-                </div>
-              </div>
-              <p className="text-[11.5px] text-emerald-900/80 pb-3 leading-relaxed">
-                Acquires genuine media response bodies directly from the active YouTube player session. Intercepts player network streams, demuxes AV1 video and Opus audio, and remuxes into high-fidelity MP4 locally on your machine.
-              </p>
+                    </div>
+                    <p className="text-[11px] text-amber-800 leading-relaxed font-sans">
+                      Browser media acquisition runs client-locally via the Vidleo Companion Extension (MV3). Ensure the extension is loaded and active in your browser.
+                    </p>
+                  </div>
+                )}
 
-              {extensionStatus.checked && !extensionStatus.installed && (
-                <div className="mb-2.5 p-3 bg-amber-50/90 border border-amber-200/90 rounded-xl space-y-1">
-                  <div className="flex items-center justify-between text-xs font-semibold text-amber-950">
+                {/* In-Browser Active Playback Controls */}
+                <div className="space-y-2.5">
+                  <div className="flex items-center justify-between p-2.5 bg-white/70 rounded-xl border border-emerald-200/50 text-[11px] font-mono text-emerald-900">
                     <span className="flex items-center gap-1.5">
-                      <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
-                      Vidleo Companion Extension Required
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                      Target Video Tab
                     </span>
+                    <a
+                      href={metadata.canonicalUrl || metadata.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-emerald-700 hover:underline flex items-center gap-1 font-sans font-medium"
+                    >
+                      Open YouTube Tab <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {/* Primary Downloader: Actual Media Byte Acquisition via CDP */}
                     <button
                       type="button"
-                      onClick={checkExtension}
-                      disabled={checkingExtension}
-                      className="text-[11px] underline font-medium text-amber-800 hover:text-amber-950 cursor-pointer"
+                      onClick={handleStartCdpDownload}
+                      className="flex items-center justify-center gap-2 bg-[#0A0A0C] hover:bg-black text-white py-3 px-4 rounded-xl text-xs font-semibold tracking-wide transition-all shadow-sm cursor-pointer"
                     >
-                      {checkingExtension ? 'Checking...' : 'Check Connection'}
+                      <Download className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Download Full Video</span>
+                    </button>
+
+                    {/* Fallback Downloader: CaptureStream / MediaRecorder */}
+                    <button
+                      type="button"
+                      onClick={() => handleStartPlaybackCapture('demo_10s')}
+                      className="flex items-center justify-center gap-2 bg-white hover:bg-black/[0.04] text-[#0A0A0C] border border-black/15 py-3 px-4 rounded-xl text-xs font-semibold tracking-wide transition-all shadow-xs cursor-pointer"
+                    >
+                      <Play className="w-3.5 h-3.5 text-blue-600" />
+                      <span>Download 10s Demo (Fallback)</span>
                     </button>
                   </div>
-                  <p className="text-[11px] text-amber-800 leading-relaxed font-sans">
-                    Browser media acquisition runs client-locally via the Vidleo Companion Extension (MV3). Ensure the extension is loaded and active in your browser.
-                  </p>
+                </div>
+              </div>
+
+              {cdpState?.error && (
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800">
+                  {cdpState.error}
                 </div>
               )}
 
-              {/* In-Browser Active Playback Controls */}
-              <div className="space-y-2.5">
-                <div className="flex items-center justify-between p-2.5 bg-white/70 rounded-xl border border-emerald-200/50 text-[11px] font-mono text-emerald-900">
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                    Target Video Tab
-                  </span>
-                  <a
-                    href={metadata.canonicalUrl || metadata.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-emerald-700 hover:underline flex items-center gap-1 font-sans font-medium"
-                  >
-                    Open YouTube Tab <ExternalLink className="w-3 h-3" />
-                  </a>
+              {captureState?.error && (
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800">
+                  {captureState.error}
                 </div>
+              )}
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  {/* Primary Downloader: Actual Media Byte Acquisition via CDP */}
-                  <button
-                    type="button"
-                    onClick={handleStartCdpDownload}
-                    className="flex items-center justify-center gap-2 bg-[#0A0A0C] hover:bg-black text-white py-3 px-4 rounded-xl text-xs font-semibold tracking-wide transition-all shadow-sm cursor-pointer"
-                  >
-                    <Download className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>Download Full Video</span>
-                  </button>
-
-                  {/* Fallback Downloader: CaptureStream / MediaRecorder */}
-                  <button
-                    type="button"
-                    onClick={() => handleStartPlaybackCapture('demo_10s')}
-                    className="flex items-center justify-center gap-2 bg-white hover:bg-black/[0.04] text-[#0A0A0C] border border-black/15 py-3 px-4 rounded-xl text-xs font-semibold tracking-wide transition-all shadow-xs cursor-pointer"
-                  >
-                    <Play className="w-3.5 h-3.5 text-blue-600" />
-                    <span>Download 10s Demo (Fallback)</span>
-                  </button>
-                </div>
-              </div>
+              {/* Optional Server Extraction Fallback */}
+              <button
+                type="button"
+                onClick={handleTriggerDownload}
+                disabled={!selectedQuality}
+                className="w-full flex items-center justify-center gap-2 py-2.5 text-xs text-[#7A7A82] hover:text-[#0A0A0C] transition-colors cursor-pointer"
+              >
+                <span>Or use Server Extraction Fallback</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
             </div>
-
-            {cdpState?.error && (
-              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800">
-                {cdpState.error}
-              </div>
-            )}
-
-            {captureState?.error && (
-              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800">
-                {captureState.error}
-              </div>
-            )}
-
-            {/* Optional Server Extraction Fallback */}
-            <button
-              type="button"
-              onClick={handleTriggerDownload}
-              disabled={!selectedQuality}
-              className="w-full flex items-center justify-center gap-2 py-2.5 text-xs text-[#7A7A82] hover:text-[#0A0A0C] transition-colors cursor-pointer"
-            >
-              <span>Or use Server Extraction Fallback</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
+          )
         ) : (
           /* Standard Direct Stream Download Button */
           <div className="pt-2">
