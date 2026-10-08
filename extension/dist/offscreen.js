@@ -17277,9 +17277,13 @@ async function handleProcessCdpMediaFfmpeg(payload) {
   } catch (cErr) {
     instrument("FFMPEG_CORE_FETCH_STATUS", { status: -1, error: cErr?.message });
   }
+  let wasmBinary = null;
   try {
     const wResp = await fetch(wasmURL);
-    instrument("FFMPEG_WASM_FETCH_STATUS", { status: wResp.status });
+    if (wResp.ok) {
+      wasmBinary = await wResp.arrayBuffer();
+    }
+    instrument("FFMPEG_WASM_FETCH_STATUS", { status: wResp.status, bytes: wasmBinary?.byteLength || 0 });
   } catch (wErr) {
     instrument("FFMPEG_WASM_FETCH_STATUS", { status: -1, error: wErr?.message });
   }
@@ -17293,7 +17297,7 @@ async function handleProcessCdpMediaFfmpeg(payload) {
       console.log("[NEXUS Offscreen FFmpeg]", message);
     });
     console.log("[NEXUS-FINAL] Loading FFmpeg.wasm...");
-    await ffmpeg.load({ coreURL, wasmURL, classWorkerURL });
+    await ffmpeg.load({ coreURL, wasmURL, classWorkerURL, wasmBinary });
     forensics.ffmpegInitialized = true;
     forensics.offscreenStatus = "ffmpeg_loaded";
     console.log("[NEXUS-FINAL] FFmpeg initialized: YES");

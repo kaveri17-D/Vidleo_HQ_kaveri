@@ -4573,7 +4573,7 @@ var ERROR_IMPORT_FAILURE = new Error("failed to import ffmpeg-core.js");
 
 // extension/src/ffmpeg/worker.ts
 var ffmpeg;
-var load = async ({ coreURL: _coreURL, wasmURL: _wasmURL, workerURL: _workerURL } = {}) => {
+var load = async ({ coreURL: _coreURL, wasmURL: _wasmURL, workerURL: _workerURL, wasmBinary: _wasmBinary } = {}) => {
   const first = !ffmpeg;
   let coreFactory = ffmpeg_core_default?.default || ffmpeg_core_default;
   if (!coreFactory && self.createFFmpegCore) {
@@ -4605,14 +4605,29 @@ var load = async ({ coreURL: _coreURL, wasmURL: _wasmURL, workerURL: _workerURL 
   const coreURL = _coreURL || CORE_URL;
   const wasmURL = _wasmURL ? _wasmURL : coreURL.replace(/\.js$/g, ".wasm");
   const workerURL = _workerURL ? _workerURL : coreURL.replace(/\.js$/g, ".worker.js");
-  ffmpeg = await coreFactory({
+  let wasmBinary = _wasmBinary;
+  if (!wasmBinary && wasmURL) {
+    try {
+      const resp = await fetch(wasmURL);
+      if (resp.ok) {
+        wasmBinary = await resp.arrayBuffer();
+      }
+    } catch (e) {
+      console.warn("[FFMPEG Worker] Worker fetch(wasmURL) notice:", e);
+    }
+  }
+  const moduleConfig = {
     mainScriptUrlOrBlob: `${coreURL}#${btoa(JSON.stringify({ wasmURL, workerURL }))}`,
     locateFile: (path, prefix) => {
       if (path.endsWith(".wasm")) return wasmURL;
       if (path.endsWith(".worker.js")) return workerURL;
       return prefix + path;
     }
-  });
+  };
+  if (wasmBinary) {
+    moduleConfig.wasmBinary = wasmBinary;
+  }
+  ffmpeg = await coreFactory(moduleConfig);
   ffmpeg.setLogger((data) => self.postMessage({ type: FFMessageType.LOG, data }));
   ffmpeg.setProgress((data) => self.postMessage({
     type: FFMessageType.PROGRESS,
