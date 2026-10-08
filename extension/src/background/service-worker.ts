@@ -1009,7 +1009,7 @@ async function handleStartCdpMediaDownload(
   });
 
   // Wait for media response body
-  const rawUmpBytes = await new Promise<Uint8Array>((resolve, reject) => {
+  rawUmpBytes = await new Promise<Uint8Array>((resolve, reject) => {
     let settled = false;
 
     const timeout = setTimeout(() => {
@@ -1107,6 +1107,13 @@ async function handleStartCdpMediaDownload(
       bytesAcquired: rawUmpBytes.length,
     },
   });
+  } finally {
+    if (debuggerAttached) {
+      try { chrome.debugger.detach(debuggee, () => {}); } catch {}
+      debuggerAttached = false;
+      tabDebuggerOwners.delete(tabId);
+    }
+  }
 
   // Demux UMP packets
   console.log('[NEXUS-FINAL] stage: UMP, raw bytes:', rawUmpBytes.length);
@@ -1229,13 +1236,6 @@ async function handleStartCdpMediaDownload(
       }
     });
   });
-  } finally {
-    if (debuggerAttached) {
-      try { chrome.debugger.detach(debuggee, () => {}); } catch {}
-      debuggerAttached = false;
-      tabDebuggerOwners.delete(tabId);
-    }
-  }
 
   broadcastToTabs({
     type: 'NEXUS_CDP_PROGRESS',

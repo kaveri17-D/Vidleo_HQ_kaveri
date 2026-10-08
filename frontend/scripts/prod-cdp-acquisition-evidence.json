@@ -1,26 +1,26 @@
 {
-  "timestamp": "2026-10-08T09:30:49.374Z",
+  "timestamp": "2026-10-08T09:57:31.671Z",
   "pipeline": "CDP_ACTUAL_MEDIA_RESPONSE_BODY_ACQUISITION_VERCEL_PRODUCTION",
   "productionUrl": "https://frontend-kaveri-d.vercel.app/",
   "videoUrl": "https://www.youtube.com/watch?v=jNQXAC9IVRw",
   "result": {
     "type": "CDP_MEDIA_DOWNLOAD_SUCCESS",
-    "sessionId": "cdp-acq-1791451844515",
+    "sessionId": "cdp-acq-1791453446646",
     "filename": "Vidleo_YouTube_Me_at_the_zoo.mp4",
-    "bytes": 127457,
-    "totalBytes": 127457,
+    "bytes": 179448,
+    "totalBytes": 179448,
     "mimeType": "video/mp4",
     "outputPath": "Vidleo_YouTube_Me_at_the_zoo.mp4",
-    "blobUrl": "blob:chrome-extension://mbopgigkodhobbfjmdkcndkcpmkogjnd/3195114a-c58a-41dc-8ee7-941e4eb9cd72",
+    "blobUrl": "blob:chrome-extension://mbopgigkodhobbfjmdkcndkcpmkogjnd/34070873-9634-4cc7-b4bd-8bd1999de9a6",
     "ffmpegExitCode": 0,
-    "rawUmpBytes": 690555,
-    "videoBytes": 47700,
+    "rawUmpBytes": 689530,
+    "videoBytes": 99111,
     "audioBytes": 65829,
     "duration": 12.481,
     "videoCodec": "h264",
     "audioCodec": "aac",
     "resolution": "320x240",
-    "sha256": "ddc501abfe5e417ef0ab13fb740e6ca3bde38f8d07c8961a74afc152e9af1942",
+    "sha256": "170cedeffd2765758726a70c02475600b02966f0a4df85d65130e7023b75f375",
     "downloadStarted": true,
     "provenance": "CDP_ACTIVE_PLAYER_MEDIA_RESPONSE_BODY"
   },
@@ -29,91 +29,91 @@
       "state": "EXTENSION_READY",
       "percent": 10,
       "message": "Vidleo Companion Extension ready & active",
-      "timestamp": 1791451844731
+      "timestamp": 1791453446829
     },
     {
       "state": "YOUTUBE_TAB_READY",
       "percent": 20,
-      "message": "Active YouTube playback tab connected (tab 1216363214)",
-      "timestamp": 1791451844745
+      "message": "Active YouTube playback tab connected (tab 1636512862)",
+      "timestamp": 1791453446838
     },
     {
       "state": "CDP_ATTACHING",
       "percent": 30,
       "message": "Attaching Chrome DevTools Protocol to target playback tab...",
-      "timestamp": 1791451844749
+      "timestamp": 1791453446840
     },
     {
       "state": "NETWORK_LISTENING",
       "percent": 40,
       "message": "Listening for YouTube active player media response bodies...",
-      "timestamp": 1791451844791
+      "timestamp": 1791453446955
     },
     {
       "state": "MEDIA_DETECTED",
       "percent": 50,
       "message": "Original YouTube UMP media stream detected!",
-      "bytesAcquired": 690555,
-      "timestamp": 1791451846996
+      "bytesAcquired": 689530,
+      "timestamp": 1791453449376
     },
     {
       "state": "RESPONSE_BODY_ACQUIRING",
       "percent": 60,
-      "message": "Acquiring response body (690555 bytes)...",
-      "bytesAcquired": 690555,
-      "timestamp": 1791451847002
+      "message": "Acquiring response body (689530 bytes)...",
+      "bytesAcquired": 689530,
+      "timestamp": 1791453449379
     },
     {
       "state": "MEDIA_BYTES_ACQUIRED",
       "percent": 70,
-      "message": "Successfully acquired 690555 raw media bytes",
-      "bytesAcquired": 690555,
-      "timestamp": 1791451847002
+      "message": "Successfully acquired 689530 raw media bytes",
+      "bytesAcquired": 689530,
+      "timestamp": 1791453449379
     },
     {
       "state": "UMP_DEMUXING",
       "percent": 75,
       "message": "Demuxing UMP packets into isolated audio & video streams...",
-      "bytesAcquired": 690555,
-      "timestamp": 1791451847004
+      "bytesAcquired": 689530,
+      "timestamp": 1791453449381
     },
     {
       "state": "VIDEO_ASSEMBLY",
       "percent": 80,
-      "message": "Assembled video track (47700 bytes, itag 395 AV1)",
-      "videoBytes": 47700,
+      "message": "Assembled video track (99111 bytes, itag 395 AV1)",
+      "videoBytes": 99111,
       "audioBytes": 65829,
-      "timestamp": 1791451847005
+      "timestamp": 1791453449382
     },
     {
       "state": "AUDIO_ASSEMBLY",
       "percent": 85,
       "message": "Assembled audio track (65829 bytes, itag 251 Opus)",
-      "videoBytes": 47700,
+      "videoBytes": 99111,
       "audioBytes": 65829,
-      "timestamp": 1791451847005
+      "timestamp": 1791453449383
     },
     {
       "state": "MUXING",
       "percent": 90,
       "message": "Remuxing into MP4 container via local FFmpeg (faststart)...",
-      "videoBytes": 47700,
+      "videoBytes": 99111,
       "audioBytes": 65829,
-      "timestamp": 1791451847005
+      "timestamp": 1791453449385
     }
   ],
   "originalAcquiredMedia": {
-    "rawUmpBytes": 690555,
-    "videoBytes": 47700,
+    "rawUmpBytes": 689530,
+    "videoBytes": 99111,
     "audioBytes": 65829,
     "provenance": "CDP_ACTIVE_PLAYER_MEDIA_RESPONSE_BODY"
   },
   "chromeDownloadedCompatibleFile": {
-    "filename": "3195114a-c58a-41dc-8ee7-941e4eb9cd72.mp4",
-    "path": "/downloads/3195114a-c58a-41dc-8ee7-941e4eb9cd72.mp4",
-    "size": 127457,
-    "sha256": "ddc501abfe5e417ef0ab13fb740e6ca3bde38f8d07c8961a74afc152e9af1942",
-    "mtime": "2026-10-08T09:30:47.632Z",
+    "filename": "34070873-9634-4cc7-b4bd-8bd1999de9a6.mp4",
+    "path": "/downloads/34070873-9634-4cc7-b4bd-8bd1999de9a6.mp4",
+    "size": 179448,
+    "sha256": "170cedeffd2765758726a70c02475600b02966f0a4df85d65130e7023b75f375",
+    "mtime": "2026-10-08T09:57:29.996Z",
     "guid": null,
     "manualCopy": false,
     "format": "mov,mp4,m4a,3gp,3g2,mj2",
@@ -137,18 +137,18 @@
   },
   "backendAccounting": {
     "initial": {
-      "control_plane_bytes_received": 9757,
-      "control_plane_bytes_sent": 3215994,
-      "backend_control_bytes": 3225751,
+      "control_plane_bytes_received": 9837,
+      "control_plane_bytes_sent": 3217073,
+      "backend_control_bytes": 3226910,
       "backend_media_bytes_received": 0,
       "backend_media_bytes_sent": 0,
       "backend_media_bytes": 0,
       "server_ffmpeg_processes": 0
     },
     "final": {
-      "control_plane_bytes_received": 9757,
-      "control_plane_bytes_sent": 3216212,
-      "backend_control_bytes": 3225969,
+      "control_plane_bytes_received": 9837,
+      "control_plane_bytes_sent": 3217291,
+      "backend_control_bytes": 3227128,
       "backend_media_bytes_received": 0,
       "backend_media_bytes_sent": 0,
       "backend_media_bytes": 0,

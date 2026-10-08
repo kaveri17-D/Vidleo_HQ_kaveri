@@ -923,7 +923,7 @@ async function handleStartCdpMediaDownload(payload, onTabAssigned) {
         message: "Listening for YouTube active player media response bodies..."
       }
     });
-    const rawUmpBytes2 = await new Promise((resolve, reject) => {
+    rawUmpBytes = await new Promise((resolve, reject) => {
       let settled = false;
       const timeout = setTimeout(() => {
         if (!settled) {
@@ -999,7 +999,7 @@ async function handleStartCdpMediaDownload(payload, onTabAssigned) {
         state: "MEDIA_DETECTED",
         percent: 50,
         message: "Original YouTube UMP media stream detected!",
-        bytesAcquired: rawUmpBytes2.length
+        bytesAcquired: rawUmpBytes.length
       }
     });
     broadcastToTabs({
@@ -1008,8 +1008,8 @@ async function handleStartCdpMediaDownload(payload, onTabAssigned) {
         sessionId,
         state: "RESPONSE_BODY_ACQUIRING",
         percent: 60,
-        message: `Acquiring response body (${rawUmpBytes2.length} bytes)...`,
-        bytesAcquired: rawUmpBytes2.length
+        message: `Acquiring response body (${rawUmpBytes.length} bytes)...`,
+        bytesAcquired: rawUmpBytes.length
       }
     });
     broadcastToTabs({
@@ -1018,120 +1018,9 @@ async function handleStartCdpMediaDownload(payload, onTabAssigned) {
         sessionId,
         state: "MEDIA_BYTES_ACQUIRED",
         percent: 70,
-        message: `Successfully acquired ${rawUmpBytes2.length} raw media bytes`,
-        bytesAcquired: rawUmpBytes2.length
+        message: `Successfully acquired ${rawUmpBytes.length} raw media bytes`,
+        bytesAcquired: rawUmpBytes.length
       }
-    });
-    console.log("[NEXUS-FINAL] stage: UMP, raw bytes:", rawUmpBytes2.length);
-    broadcastToTabs({
-      type: "NEXUS_CDP_PROGRESS",
-      payload: {
-        sessionId,
-        state: "UMP_DEMUXING",
-        percent: 75,
-        message: "Demuxing UMP packets into isolated audio & video streams...",
-        bytesAcquired: rawUmpBytes2.length
-      }
-    });
-    console.log("[NEXUS SW] Demuxing UMP packets into isolated audio & video streams...");
-    const demux2 = parseUmpMediaStreams(rawUmpBytes2);
-    console.log(`[NEXUS SW] Demux complete: videoBytes=${demux2.videoBytes}, audioBytes=${demux2.audioBytes}, parts=${demux2.streamPartsCount}`);
-    if (!demux2.audioWebm || !demux2.videoMp4) {
-      throw new Error(`Failed to demux audio or video from acquired UMP media stream (audio: ${demux2.audioBytes}, video: ${demux2.videoBytes})`);
-    }
-    console.log("[NEXUS-FINAL] stage: VIDEO_ASSEMBLY");
-    console.log(`[NEXUS-FINAL] videoStream: bytes=${demux2.videoBytes}, itag=395, container=mp4`);
-    broadcastToTabs({
-      type: "NEXUS_CDP_PROGRESS",
-      payload: {
-        sessionId,
-        state: "VIDEO_ASSEMBLY",
-        percent: 80,
-        message: `Assembled video track (${demux2.videoBytes} bytes, itag 395 AV1)`,
-        videoBytes: demux2.videoBytes,
-        audioBytes: demux2.audioBytes
-      }
-    });
-    console.log("[NEXUS-FINAL] stage: AUDIO_ASSEMBLY");
-    console.log(`[NEXUS-FINAL] audioStream: bytes=${demux2.audioBytes}, itag=251, container=webm`);
-    broadcastToTabs({
-      type: "NEXUS_CDP_PROGRESS",
-      payload: {
-        sessionId,
-        state: "AUDIO_ASSEMBLY",
-        percent: 85,
-        message: `Assembled audio track (${demux2.audioBytes} bytes, itag 251 Opus)`,
-        videoBytes: demux2.videoBytes,
-        audioBytes: demux2.audioBytes
-      }
-    });
-    console.log("[NEXUS SW] Converting streams to base64 for offscreen FFmpeg...");
-    const videoBase64 = uint8ArrayToBase64(demux2.videoMp4);
-    const audioBase64 = uint8ArrayToBase64(demux2.audioWebm);
-    console.log(`[NEXUS SW] Converted base64: video=${videoBase64.length} chars, audio=${audioBase64.length} chars`);
-    broadcastToTabs({
-      type: "NEXUS_CDP_PROGRESS",
-      payload: {
-        sessionId,
-        state: "MUXING",
-        percent: 90,
-        message: "Remuxing into MP4 container via local FFmpeg (faststart)...",
-        videoBytes: demux2.videoBytes,
-        audioBytes: demux2.audioBytes
-      }
-    });
-    console.log("[NEXUS-FINAL] stage: OFFSCREEN dispatch");
-    console.log("[NEXUS SW] Ensuring offscreen document is alive before remux dispatch...");
-    await ensureOffscreenDocument();
-    console.log("[NEXUS SW] Dispatching PROCESS_CDP_MEDIA_FFMPEG to offscreen document...");
-    const ffmpegRes2 = await new Promise((resolve, reject) => {
-      let keepAlivePort = null;
-      try {
-        keepAlivePort = chrome.runtime.connect({ name: `nexus-remux-${sessionId}` });
-      } catch {
-      }
-      const cleanup = () => {
-        if (keepAlivePort) {
-          try {
-            keepAlivePort.disconnect();
-          } catch {
-          }
-          keepAlivePort = null;
-        }
-      };
-      chrome.runtime.sendMessage({
-        type: "PROCESS_CDP_MEDIA_FFMPEG",
-        payload: {
-          sessionId,
-          filename: targetFilename || `Vidleo_YouTube_${videoId || Date.now()}.mp4`,
-          videoBase64,
-          audioBase64,
-          videoBytesCount: demux2.videoBytes,
-          audioBytesCount: demux2.audioBytes,
-          selectedQuality: payload.quality,
-          quality: payload.quality,
-          targetItag: payload.targetItag,
-          videoItag: payload.targetItag || "395",
-          audioItag: "251",
-          videoCodec: demux2.videoCodec || "h264",
-          audioCodec: demux2.audioCodec || "opus"
-        }
-      }, (resp) => {
-        cleanup();
-        if (chrome.runtime.lastError) {
-          console.error("[NEXUS SW] chrome.runtime.sendMessage error:", chrome.runtime.lastError.message);
-          reject(new Error(chrome.runtime.lastError.message));
-        } else if (resp?.status === "error") {
-          console.error("[NEXUS SW] offscreen returned error:", resp.error);
-          reject(new Error(resp.error));
-        } else {
-          console.log("[NEXUS SW] offscreen FFmpeg completed successfully:", resp?.result?.filename || "done", "codecs:", resp?.result?.videoCodec, resp?.result?.audioCodec);
-          if (resp?.result?.ffmpegLogs) {
-            console.log("[NEXUS SW] Recent FFmpeg logs:\n" + resp.result.ffmpegLogs.join("\n"));
-          }
-          resolve(resp?.result || resp);
-        }
-      });
     });
   } finally {
     if (debuggerAttached) {
@@ -1144,6 +1033,117 @@ async function handleStartCdpMediaDownload(payload, onTabAssigned) {
       tabDebuggerOwners.delete(tabId);
     }
   }
+  console.log("[NEXUS-FINAL] stage: UMP, raw bytes:", rawUmpBytes.length);
+  broadcastToTabs({
+    type: "NEXUS_CDP_PROGRESS",
+    payload: {
+      sessionId,
+      state: "UMP_DEMUXING",
+      percent: 75,
+      message: "Demuxing UMP packets into isolated audio & video streams...",
+      bytesAcquired: rawUmpBytes.length
+    }
+  });
+  console.log("[NEXUS SW] Demuxing UMP packets into isolated audio & video streams...");
+  const demux = parseUmpMediaStreams(rawUmpBytes);
+  console.log(`[NEXUS SW] Demux complete: videoBytes=${demux.videoBytes}, audioBytes=${demux.audioBytes}, parts=${demux.streamPartsCount}`);
+  if (!demux.audioWebm || !demux.videoMp4) {
+    throw new Error(`Failed to demux audio or video from acquired UMP media stream (audio: ${demux.audioBytes}, video: ${demux.videoBytes})`);
+  }
+  console.log("[NEXUS-FINAL] stage: VIDEO_ASSEMBLY");
+  console.log(`[NEXUS-FINAL] videoStream: bytes=${demux.videoBytes}, itag=395, container=mp4`);
+  broadcastToTabs({
+    type: "NEXUS_CDP_PROGRESS",
+    payload: {
+      sessionId,
+      state: "VIDEO_ASSEMBLY",
+      percent: 80,
+      message: `Assembled video track (${demux.videoBytes} bytes, itag 395 AV1)`,
+      videoBytes: demux.videoBytes,
+      audioBytes: demux.audioBytes
+    }
+  });
+  console.log("[NEXUS-FINAL] stage: AUDIO_ASSEMBLY");
+  console.log(`[NEXUS-FINAL] audioStream: bytes=${demux.audioBytes}, itag=251, container=webm`);
+  broadcastToTabs({
+    type: "NEXUS_CDP_PROGRESS",
+    payload: {
+      sessionId,
+      state: "AUDIO_ASSEMBLY",
+      percent: 85,
+      message: `Assembled audio track (${demux.audioBytes} bytes, itag 251 Opus)`,
+      videoBytes: demux.videoBytes,
+      audioBytes: demux.audioBytes
+    }
+  });
+  console.log("[NEXUS SW] Converting streams to base64 for offscreen FFmpeg...");
+  const videoBase64 = uint8ArrayToBase64(demux.videoMp4);
+  const audioBase64 = uint8ArrayToBase64(demux.audioWebm);
+  console.log(`[NEXUS SW] Converted base64: video=${videoBase64.length} chars, audio=${audioBase64.length} chars`);
+  broadcastToTabs({
+    type: "NEXUS_CDP_PROGRESS",
+    payload: {
+      sessionId,
+      state: "MUXING",
+      percent: 90,
+      message: "Remuxing into MP4 container via local FFmpeg (faststart)...",
+      videoBytes: demux.videoBytes,
+      audioBytes: demux.audioBytes
+    }
+  });
+  console.log("[NEXUS-FINAL] stage: OFFSCREEN dispatch");
+  console.log("[NEXUS SW] Ensuring offscreen document is alive before remux dispatch...");
+  await ensureOffscreenDocument();
+  console.log("[NEXUS SW] Dispatching PROCESS_CDP_MEDIA_FFMPEG to offscreen document...");
+  const ffmpegRes = await new Promise((resolve, reject) => {
+    let keepAlivePort = null;
+    try {
+      keepAlivePort = chrome.runtime.connect({ name: `nexus-remux-${sessionId}` });
+    } catch {
+    }
+    const cleanup = () => {
+      if (keepAlivePort) {
+        try {
+          keepAlivePort.disconnect();
+        } catch {
+        }
+        keepAlivePort = null;
+      }
+    };
+    chrome.runtime.sendMessage({
+      type: "PROCESS_CDP_MEDIA_FFMPEG",
+      payload: {
+        sessionId,
+        filename: targetFilename || `Vidleo_YouTube_${videoId || Date.now()}.mp4`,
+        videoBase64,
+        audioBase64,
+        videoBytesCount: demux.videoBytes,
+        audioBytesCount: demux.audioBytes,
+        selectedQuality: payload.quality,
+        quality: payload.quality,
+        targetItag: payload.targetItag,
+        videoItag: payload.targetItag || "395",
+        audioItag: "251",
+        videoCodec: demux.videoCodec || "h264",
+        audioCodec: demux.audioCodec || "opus"
+      }
+    }, (resp) => {
+      cleanup();
+      if (chrome.runtime.lastError) {
+        console.error("[NEXUS SW] chrome.runtime.sendMessage error:", chrome.runtime.lastError.message);
+        reject(new Error(chrome.runtime.lastError.message));
+      } else if (resp?.status === "error") {
+        console.error("[NEXUS SW] offscreen returned error:", resp.error);
+        reject(new Error(resp.error));
+      } else {
+        console.log("[NEXUS SW] offscreen FFmpeg completed successfully:", resp?.result?.filename || "done", "codecs:", resp?.result?.videoCodec, resp?.result?.audioCodec);
+        if (resp?.result?.ffmpegLogs) {
+          console.log("[NEXUS SW] Recent FFmpeg logs:\n" + resp.result.ffmpegLogs.join("\n"));
+        }
+        resolve(resp?.result || resp);
+      }
+    });
+  });
   broadcastToTabs({
     type: "NEXUS_CDP_PROGRESS",
     payload: {
