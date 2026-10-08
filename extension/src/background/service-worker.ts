@@ -5,7 +5,9 @@ import type {
   ResolveMediaPayload,
   StartCdpDownloadPayload,
   CdpDownloadProgressPayload,
-  CdpDownloadResultPayload
+  CdpDownloadResultPayload,
+  CdpMediaDownloadSuccessPayload,
+  CdpMediaDownloadErrorPayload
 } from '../messaging/protocol';
 import { parseUmpMediaStreams } from '../utils/ump-parser';
 
@@ -390,6 +392,55 @@ async function notifyComplete(
   }
 }
 
+// Active in-flight CDP jobs map to prevent duplicate debugger attachments and race conditions
+const activeCdpJobs = new Map<string, Promise<CdpMediaDownloadSuccessPayload>>();
+
+async function dispatchCdpMediaDownload(payload: StartCdpDownloadPayload, sendResponse: (res: any) => void) {
+  const sessionId = payload.sessionId || `cdp-${Date.now()}`;
+  console.log('[NEXUS-FINAL] dispatchCdpMediaDownload invoked for session:', sessionId);
+
+  let jobPromise = activeCdpJobs.get(sessionId);
+  if (!jobPromise) {
+    jobPromise = handleStartCdpMediaDownload(payload)
+      .finally(() => {
+        activeCdpJobs.delete(sessionId);
+      });
+    activeCdpJobs.set(sessionId, jobPromise);
+  } else {
+    console.log('[NEXUS-FINAL] Deduplicating CDP download request, reusing active job for session:', sessionId);
+  }
+
+  try {
+    const result = await jobPromise;
+    sendResponse({
+      type: 'CDP_MEDIA_DOWNLOAD_SUCCESS',
+      payload: result,
+    });
+  } catch (err: any) {
+    const errMsg = err?.message || String(err);
+    console.error('[NEXUS-FINAL][SW] handleStartCdpMediaDownload failed:', errMsg, err?.stack);
+    const errorPayload: CdpMediaDownloadErrorPayload = {
+      type: 'CDP_MEDIA_DOWNLOAD_ERROR',
+      sessionId: payload.sessionId,
+      stage: 'ACQUISITION_FAILED',
+      code: 'CDP_DOWNLOAD_FAILED',
+      message: errMsg,
+      error: errMsg,
+      ffmpegExitCode: -1,
+      ffmpegStderr: '',
+    };
+    broadcastToTabs({
+      type: 'CDP_MEDIA_DOWNLOAD_ERROR',
+      payload: errorPayload,
+    });
+    broadcastToTabs({
+      type: 'NEXUS_CDP_ERROR',
+      payload: errorPayload,
+    });
+    sendResponse({ type: 'CDP_MEDIA_DOWNLOAD_ERROR', payload: errorPayload });
+  }
+}
+
 // Global Message Router
 chrome.runtime.onMessage.addListener((message: NexusMessage, sender, sendResponse) => {
   if (!message || !message.type) return false;
@@ -511,19 +562,7 @@ chrome.runtime.onMessage.addListener((message: NexusMessage, sender, sendRespons
   // Handle NEXUS_CDP_DOWNLOAD_START from Web Page or Extension Popup
   if (message.type === 'NEXUS_CDP_DOWNLOAD_START') {
     const payload = message.payload as StartCdpDownloadPayload;
-    handleStartCdpMediaDownload(payload)
-      .then((result) => {
-        sendResponse({ type: 'NEXUS_CDP_RESULT', payload: result });
-      })
-      .catch((err) => {
-        console.error('[NEXUS SW] CDP Download failed:', err);
-        broadcastToTabs({
-          type: 'NEXUS_CDP_ERROR',
-          payload: { sessionId: payload?.sessionId, error: err.message },
-        });
-        sendResponse({ type: 'NEXUS_CDP_ERROR', payload: { error: err.message } });
-      });
-
+    dispatchCdpMediaDownload(payload, sendResponse);
     return true; // Keep open for async response
   }
 
@@ -695,25 +734,7 @@ if (chrome.runtime.onMessageExternal) {
 
     if (message.type === 'NEXUS_CDP_DOWNLOAD_START') {
       const payload = message.payload as StartCdpDownloadPayload;
-      console.log('[NEXUS-FINAL] sessionId:', payload.sessionId);
-      console.log('[NEXUS-FINAL] selectedQuality:', payload.quality || 'unknown');
-      handleStartCdpMediaDownload(payload)
-        .then((result) => {
-          sendResponse({ type: 'NEXUS_CDP_RESULT', payload: result });
-        })
-        .catch((err) => {
-          const errMsg = err?.message || String(err);
-          console.error('[NEXUS-FINAL][SW] handleStartCdpMediaDownload failed:', errMsg, err?.stack);
-          sendResponse({ type: 'NEXUS_CDP_ERROR', payload: { error: errMsg, stack: err?.stack } });
-          broadcastToTabs({
-            type: 'NEXUS_CDP_ERROR',
-            payload: {
-              sessionId: payload.sessionId,
-              error: errMsg,
-              stack: err?.stack,
-            }
-          });
-        });
+      dispatchCdpMediaDownload(payload, sendResponse);
       return true;
     }
 
@@ -743,7 +764,7 @@ function containsMoof(u: Uint8Array): boolean {
  * Demuxes client-side with zero-dependency UMP parser, passes pure AV1 and Opus to offscreen FFmpeg,
  * and downloads the resulting high-fidelity MP4 directly to the user's laptop.
  */
-async function handleStartCdpMediaDownload(payload: StartCdpDownloadPayload): Promise<CdpDownloadResultPayload> {
+async function handleStartCdpMediaDownload(payload: StartCdpDownloadPayload): Promise<CdpMediaDownloadSuccessPayload> {
   const { sessionId, videoId, videoUrl, targetFilename, durationSeconds } = payload;
   console.log('[NEXUS-FINAL] sessionId:', sessionId);
   console.log('[NEXUS-FINAL] selectedQuality:', payload.quality || 'unknown');
@@ -1155,20 +1176,24 @@ async function handleStartCdpMediaDownload(payload: StartCdpDownloadPayload): Pr
     });
   }
 
-  const resultPayload: CdpDownloadResultPayload = {
-    success: true,
+  const resultPayload: CdpMediaDownloadSuccessPayload = {
+    type: 'CDP_MEDIA_DOWNLOAD_SUCCESS',
     sessionId,
     filename: ffmpegRes.filename,
+    bytes: ffmpegRes.outputBytes,
     totalBytes: ffmpegRes.outputBytes,
+    mimeType: ffmpegRes.mimeType || 'video/mp4',
+    outputPath: ffmpegRes.filename,
+    blobUrl: ffmpegRes.blobUrl,
+    ffmpegExitCode: 0,
     rawUmpBytes: demux.rawUmpBytes,
     videoBytes: demux.videoBytes,
     audioBytes: demux.audioBytes,
     duration: ffmpegRes.duration,
-    videoCodec: ffmpegRes.videoCodec || 'av1',
-    audioCodec: ffmpegRes.audioCodec || 'opus',
+    videoCodec: ffmpegRes.videoCodec || 'h264',
+    audioCodec: ffmpegRes.audioCodec || 'aac',
     resolution: `${ffmpegRes.width}x${ffmpegRes.height}`,
     sha256: ffmpegRes.sha256,
-    blobUrl: ffmpegRes.blobUrl,
     downloadStarted: true,
     provenance: 'CDP_ACTIVE_PLAYER_MEDIA_RESPONSE_BODY',
   };
@@ -1181,6 +1206,11 @@ async function handleStartCdpMediaDownload(payload: StartCdpDownloadPayload): Pr
       percent: 100,
       message: 'Download complete · Playable media saved to laptop',
     },
+  });
+
+  broadcastToTabs({
+    type: 'CDP_MEDIA_DOWNLOAD_SUCCESS',
+    payload: resultPayload,
   });
 
   broadcastToTabs({

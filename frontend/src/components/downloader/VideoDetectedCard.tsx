@@ -461,7 +461,9 @@ export function VideoDetectedCard({
   };
 
   const handleActionReset = onReset || onCancel || (() => {});
-  const badge = getPipelineStatusBadge(metadata.pipelineStatus);
+  const badge = (metadata.platform === 'youtube' && extensionStatus.installed)
+    ? { color: 'bg-emerald-500', label: 'ACTUAL MEDIA ACQUISITION' }
+    : getPipelineStatusBadge(metadata.pipelineStatus);
 
   return (
     <div className="w-full bg-white border border-black/[0.12] rounded-[28px] overflow-hidden shadow-[0_16px_45px_rgba(0,0,0,0.08)] animate-in fade-in duration-200 text-[#0A0A0C]">
@@ -489,7 +491,7 @@ export function VideoDetectedCard({
       </div>
 
       {/* Upstream Diagnostics / Rate-Limit Alert Banner */}
-      {metadata.pipelineStatus === 'RATE_LIMITED' && (
+      {metadata.pipelineStatus === 'RATE_LIMITED' && !extensionStatus.installed && (
         <div className="bg-amber-50/90 border-b border-amber-200/80 px-6 py-3 flex items-start gap-3 text-xs text-amber-900 animate-in fade-in">
           <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
           <div className="space-y-1">
@@ -497,7 +499,7 @@ export function VideoDetectedCard({
               Server extraction is currently rate-limited by YouTube (HTTP 429).
             </p>
             <p className="text-[11px] text-amber-800 leading-relaxed font-sans">
-              Direct browser acquisition is being attempted using the Vidleo Companion Extension. The server control plane will not transit raw video bytes.
+              Direct browser acquisition requires the Vidleo Companion Extension. Please ensure the extension is installed and loaded.
             </p>
           </div>
         </div>

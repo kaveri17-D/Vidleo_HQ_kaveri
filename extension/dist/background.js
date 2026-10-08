@@ -429,6 +429,49 @@ async function notifyComplete(jobId, formatId, deliveryMode, bytesDownloaded, ap
     console.warn("[NEXUS Service Worker] Failed to report download completion:", err);
   }
 }
+var activeCdpJobs = /* @__PURE__ */ new Map();
+async function dispatchCdpMediaDownload(payload, sendResponse) {
+  const sessionId = payload.sessionId || `cdp-${Date.now()}`;
+  console.log("[NEXUS-FINAL] dispatchCdpMediaDownload invoked for session:", sessionId);
+  let jobPromise = activeCdpJobs.get(sessionId);
+  if (!jobPromise) {
+    jobPromise = handleStartCdpMediaDownload(payload).finally(() => {
+      activeCdpJobs.delete(sessionId);
+    });
+    activeCdpJobs.set(sessionId, jobPromise);
+  } else {
+    console.log("[NEXUS-FINAL] Deduplicating CDP download request, reusing active job for session:", sessionId);
+  }
+  try {
+    const result = await jobPromise;
+    sendResponse({
+      type: "CDP_MEDIA_DOWNLOAD_SUCCESS",
+      payload: result
+    });
+  } catch (err) {
+    const errMsg = err?.message || String(err);
+    console.error("[NEXUS-FINAL][SW] handleStartCdpMediaDownload failed:", errMsg, err?.stack);
+    const errorPayload = {
+      type: "CDP_MEDIA_DOWNLOAD_ERROR",
+      sessionId: payload.sessionId,
+      stage: "ACQUISITION_FAILED",
+      code: "CDP_DOWNLOAD_FAILED",
+      message: errMsg,
+      error: errMsg,
+      ffmpegExitCode: -1,
+      ffmpegStderr: ""
+    };
+    broadcastToTabs({
+      type: "CDP_MEDIA_DOWNLOAD_ERROR",
+      payload: errorPayload
+    });
+    broadcastToTabs({
+      type: "NEXUS_CDP_ERROR",
+      payload: errorPayload
+    });
+    sendResponse({ type: "CDP_MEDIA_DOWNLOAD_ERROR", payload: errorPayload });
+  }
+}
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message || !message.type) return false;
   if (message.type === "PING") {
@@ -519,16 +562,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   if (message.type === "NEXUS_CDP_DOWNLOAD_START") {
     const payload = message.payload;
-    handleStartCdpMediaDownload(payload).then((result) => {
-      sendResponse({ type: "NEXUS_CDP_RESULT", payload: result });
-    }).catch((err) => {
-      console.error("[NEXUS SW] CDP Download failed:", err);
-      broadcastToTabs({
-        type: "NEXUS_CDP_ERROR",
-        payload: { sessionId: payload?.sessionId, error: err.message }
-      });
-      sendResponse({ type: "NEXUS_CDP_ERROR", payload: { error: err.message } });
-    });
+    dispatchCdpMediaDownload(payload, sendResponse);
     return true;
   }
   if (message.type === "DOWNLOAD_COMPLETE") {
@@ -660,23 +694,7 @@ if (chrome.runtime.onMessageExternal) {
     }
     if (message.type === "NEXUS_CDP_DOWNLOAD_START") {
       const payload = message.payload;
-      console.log("[NEXUS-FINAL] sessionId:", payload.sessionId);
-      console.log("[NEXUS-FINAL] selectedQuality:", payload.quality || "unknown");
-      handleStartCdpMediaDownload(payload).then((result) => {
-        sendResponse({ type: "NEXUS_CDP_RESULT", payload: result });
-      }).catch((err) => {
-        const errMsg = err?.message || String(err);
-        console.error("[NEXUS-FINAL][SW] handleStartCdpMediaDownload failed:", errMsg, err?.stack);
-        sendResponse({ type: "NEXUS_CDP_ERROR", payload: { error: errMsg, stack: err?.stack } });
-        broadcastToTabs({
-          type: "NEXUS_CDP_ERROR",
-          payload: {
-            sessionId: payload.sessionId,
-            error: errMsg,
-            stack: err?.stack
-          }
-        });
-      });
+      dispatchCdpMediaDownload(payload, sendResponse);
       return true;
     }
     return false;
@@ -1075,19 +1093,23 @@ async function handleStartCdpMediaDownload(payload) {
     });
   }
   const resultPayload = {
-    success: true,
+    type: "CDP_MEDIA_DOWNLOAD_SUCCESS",
     sessionId,
     filename: ffmpegRes.filename,
+    bytes: ffmpegRes.outputBytes,
     totalBytes: ffmpegRes.outputBytes,
+    mimeType: ffmpegRes.mimeType || "video/mp4",
+    outputPath: ffmpegRes.filename,
+    blobUrl: ffmpegRes.blobUrl,
+    ffmpegExitCode: 0,
     rawUmpBytes: demux.rawUmpBytes,
     videoBytes: demux.videoBytes,
     audioBytes: demux.audioBytes,
     duration: ffmpegRes.duration,
-    videoCodec: ffmpegRes.videoCodec || "av1",
-    audioCodec: ffmpegRes.audioCodec || "opus",
+    videoCodec: ffmpegRes.videoCodec || "h264",
+    audioCodec: ffmpegRes.audioCodec || "aac",
     resolution: `${ffmpegRes.width}x${ffmpegRes.height}`,
     sha256: ffmpegRes.sha256,
-    blobUrl: ffmpegRes.blobUrl,
     downloadStarted: true,
     provenance: "CDP_ACTIVE_PLAYER_MEDIA_RESPONSE_BODY"
   };
@@ -1099,6 +1121,10 @@ async function handleStartCdpMediaDownload(payload) {
       percent: 100,
       message: "Download complete \xB7 Playable media saved to laptop"
     }
+  });
+  broadcastToTabs({
+    type: "CDP_MEDIA_DOWNLOAD_SUCCESS",
+    payload: resultPayload
   });
   broadcastToTabs({
     type: "NEXUS_CDP_RESULT",

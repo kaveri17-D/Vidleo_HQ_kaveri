@@ -311,15 +311,15 @@ function computeSha256(filePath) {
               audioBytes: payload.audioBytes,
               timestamp: Date.now(),
             });
-          } else if (type === 'NEXUS_CDP_RESULT') {
+          } else if (type === 'CDP_MEDIA_DOWNLOAD_SUCCESS' || type === 'NEXUS_CDP_RESULT') {
             clearTimeout(timer);
             resolve({
               result: payload,
               stages: recordedStages,
             });
-          } else if (type === 'NEXUS_CDP_ERROR' || type === 'NEXUS_CDP_DOWNLOAD_START_ERROR') {
+          } else if (type === 'CDP_MEDIA_DOWNLOAD_ERROR' || type === 'NEXUS_CDP_ERROR' || type === 'NEXUS_CDP_DOWNLOAD_START_ERROR') {
             clearTimeout(timer);
-            reject(new Error(payload?.error || event.data.error || 'CDP download error in production'));
+            reject(new Error(payload?.error || payload?.message || event.data.error || 'CDP download error in production'));
           }
         });
 

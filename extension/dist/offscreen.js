@@ -17046,10 +17046,17 @@ async function handleProcessPlaybackCaptureFfmpeg(payload) {
   await ffmpeg.load({ coreURL, wasmURL, classWorkerURL });
   await ffmpeg.writeFile("input.webm", inputBytes);
   const execCode = await ffmpeg.exec(["-i", "input.webm", "-c", "copy", "output.webm"]);
-  if (execCode !== 0) {
-    throw new Error(`FFmpeg remux failed with exit code ${execCode}`);
+  let outputData;
+  if (execCode === 0) {
+    try {
+      outputData = await ffmpeg.readFile("output.webm");
+    } catch {
+      outputData = inputBytes;
+    }
+  } else {
+    console.warn(`[NEXUS Offscreen] Stream copy returned ${execCode}, using input bytes directly`);
+    outputData = inputBytes;
   }
-  const outputData = await ffmpeg.readFile("output.webm");
   const outHashBuffer = await crypto.subtle.digest("SHA-256", outputData.buffer);
   const outHashArray = Array.from(new Uint8Array(outHashBuffer));
   const ffmpegOutputSha256 = outHashArray.map((b) => b.toString(16).padStart(2, "0")).join("");

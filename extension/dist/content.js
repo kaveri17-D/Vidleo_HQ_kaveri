@@ -67,6 +67,12 @@
         if (type === "NEXUS_CDP_DOWNLOAD_START") {
           window.postMessage({
             source: "nexus-extension",
+            type: "CDP_MEDIA_DOWNLOAD_ERROR",
+            messageId,
+            payload: { error: errMsg, message: errMsg }
+          }, "*");
+          window.postMessage({
+            source: "nexus-extension",
             type: "NEXUS_CDP_ERROR",
             messageId,
             payload: { error: errMsg }

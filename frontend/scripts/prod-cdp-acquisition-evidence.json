@@ -1,14 +1,14 @@
 {
-  "timestamp": "2026-10-08T08:55:45.739Z",
+  "timestamp": "2026-10-08T09:06:50.758Z",
   "pipeline": "CDP_ACTUAL_MEDIA_RESPONSE_BODY_ACQUISITION_VERCEL_PRODUCTION",
   "productionUrl": "https://frontend-kaveri-d.vercel.app/",
   "videoUrl": "https://www.youtube.com/watch?v=jNQXAC9IVRw",
   "result": {
     "success": true,
-    "sessionId": "cdp-acq-1791449740791",
+    "sessionId": "cdp-acq-1791450405810",
     "filename": "Vidleo_YouTube_Me_at_the_zoo.mp4",
     "totalBytes": 127457,
-    "rawUmpBytes": 690554,
+    "rawUmpBytes": 690555,
     "videoBytes": 47700,
     "audioBytes": 65829,
     "duration": 12.481,
@@ -16,7 +16,7 @@
     "audioCodec": "aac",
     "resolution": "320x240",
     "sha256": "ddc501abfe5e417ef0ab13fb740e6ca3bde38f8d07c8961a74afc152e9af1942",
-    "blobUrl": "blob:chrome-extension://mbopgigkodhobbfjmdkcndkcpmkogjnd/dcc59010-ba0f-4785-850a-4a270e99d01b",
+    "blobUrl": "blob:chrome-extension://mbopgigkodhobbfjmdkcndkcpmkogjnd/7e77ad6f-1f9f-4b97-aeec-45702463cce6",
     "downloadStarted": true,
     "provenance": "CDP_ACTIVE_PLAYER_MEDIA_RESPONSE_BODY"
   },
@@ -25,53 +25,53 @@
       "state": "EXTENSION_READY",
       "percent": 10,
       "message": "Vidleo Companion Extension ready & active",
-      "timestamp": 1791449740971
+      "timestamp": 1791450406021
     },
     {
       "state": "YOUTUBE_TAB_READY",
       "percent": 20,
-      "message": "Active YouTube playback tab connected (tab 1023132371)",
-      "timestamp": 1791449740979
+      "message": "Active YouTube playback tab connected (tab 1236536026)",
+      "timestamp": 1791450406032
     },
     {
       "state": "CDP_ATTACHING",
       "percent": 30,
       "message": "Attaching Chrome DevTools Protocol to target playback tab...",
-      "timestamp": 1791449740981
+      "timestamp": 1791450406034
     },
     {
       "state": "NETWORK_LISTENING",
       "percent": 40,
       "message": "Listening for YouTube active player media response bodies...",
-      "timestamp": 1791449740996
+      "timestamp": 1791450406049
     },
     {
       "state": "MEDIA_DETECTED",
       "percent": 50,
       "message": "Original YouTube UMP media stream detected!",
-      "bytesAcquired": 690554,
-      "timestamp": 1791449743529
+      "bytesAcquired": 690555,
+      "timestamp": 1791450408303
     },
     {
       "state": "RESPONSE_BODY_ACQUIRING",
       "percent": 60,
-      "message": "Acquiring response body (690554 bytes)...",
-      "bytesAcquired": 690554,
-      "timestamp": 1791449743531
+      "message": "Acquiring response body (690555 bytes)...",
+      "bytesAcquired": 690555,
+      "timestamp": 1791450408311
     },
     {
       "state": "MEDIA_BYTES_ACQUIRED",
       "percent": 70,
-      "message": "Successfully acquired 690554 raw media bytes",
-      "bytesAcquired": 690554,
-      "timestamp": 1791449743544
+      "message": "Successfully acquired 690555 raw media bytes",
+      "bytesAcquired": 690555,
+      "timestamp": 1791450408311
     },
     {
       "state": "UMP_DEMUXING",
       "percent": 75,
       "message": "Demuxing UMP packets into isolated audio & video streams...",
-      "bytesAcquired": 690554,
-      "timestamp": 1791449743544
+      "bytesAcquired": 690555,
+      "timestamp": 1791450408313
     },
     {
       "state": "VIDEO_ASSEMBLY",
@@ -79,7 +79,7 @@
       "message": "Assembled video track (47700 bytes, itag 395 AV1)",
       "videoBytes": 47700,
       "audioBytes": 65829,
-      "timestamp": 1791449743545
+      "timestamp": 1791450408313
     },
     {
       "state": "AUDIO_ASSEMBLY",
@@ -87,7 +87,7 @@
       "message": "Assembled audio track (65829 bytes, itag 251 Opus)",
       "videoBytes": 47700,
       "audioBytes": 65829,
-      "timestamp": 1791449743545
+      "timestamp": 1791450408313
     },
     {
       "state": "MUXING",
@@ -95,21 +95,21 @@
       "message": "Remuxing into MP4 container via local FFmpeg (faststart)...",
       "videoBytes": 47700,
       "audioBytes": 65829,
-      "timestamp": 1791449743545
+      "timestamp": 1791450408314
     }
   ],
   "originalAcquiredMedia": {
-    "rawUmpBytes": 690554,
+    "rawUmpBytes": 690555,
     "videoBytes": 47700,
     "audioBytes": 65829,
     "provenance": "CDP_ACTIVE_PLAYER_MEDIA_RESPONSE_BODY"
   },
   "chromeDownloadedCompatibleFile": {
-    "filename": "dcc59010-ba0f-4785-850a-4a270e99d01b.mp4",
-    "path": "/downloads/dcc59010-ba0f-4785-850a-4a270e99d01b.mp4",
+    "filename": "7e77ad6f-1f9f-4b97-aeec-45702463cce6.mp4",
+    "path": "/downloads/7e77ad6f-1f9f-4b97-aeec-45702463cce6.mp4",
     "size": 127457,
     "sha256": "ddc501abfe5e417ef0ab13fb740e6ca3bde38f8d07c8961a74afc152e9af1942",
-    "mtime": "2026-10-08T08:55:44.171Z",
+    "mtime": "2026-10-08T09:06:49.016Z",
     "guid": null,
     "manualCopy": false,
     "format": "mov,mp4,m4a,3gp,3g2,mj2",
@@ -133,18 +133,18 @@
   },
   "backendAccounting": {
     "initial": {
-      "control_plane_bytes_received": 9565,
-      "control_plane_bytes_sent": 3209539,
-      "backend_control_bytes": 3219104,
+      "control_plane_bytes_received": 9671,
+      "control_plane_bytes_sent": 3215351,
+      "backend_control_bytes": 3225022,
       "backend_media_bytes_received": 0,
       "backend_media_bytes_sent": 0,
       "backend_media_bytes": 0,
       "server_ffmpeg_processes": 0
     },
     "final": {
-      "control_plane_bytes_received": 9618,
-      "control_plane_bytes_sent": 3214490,
-      "backend_control_bytes": 3224108,
+      "control_plane_bytes_received": 9671,
+      "control_plane_bytes_sent": 3215569,
+      "backend_control_bytes": 3225240,
       "backend_media_bytes_received": 0,
       "backend_media_bytes_sent": 0,
       "backend_media_bytes": 0,

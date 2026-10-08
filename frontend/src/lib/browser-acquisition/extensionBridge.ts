@@ -489,17 +489,17 @@ export async function startCdpMediaDownloadViaExtension(
             audioBytes: payload.audioBytes,
           });
         }
-      } else if (type === 'NEXUS_CDP_RESULT') {
+      } else if (type === 'CDP_MEDIA_DOWNLOAD_SUCCESS' || type === 'NEXUS_CDP_RESULT') {
         if (!settled && (payload?.sessionId === sessionId || !payload?.sessionId)) {
           settled = true;
           cleanup();
           resolve(payload);
         }
-      } else if (type === 'NEXUS_CDP_ERROR') {
+      } else if (type === 'CDP_MEDIA_DOWNLOAD_ERROR' || type === 'NEXUS_CDP_ERROR') {
         if (!settled && (payload?.sessionId === sessionId || !payload?.sessionId)) {
           settled = true;
           cleanup();
-          reject(new Error(payload.error || 'CDP media acquisition failed in extension'));
+          reject(new Error(payload?.message || payload?.error || 'CDP media acquisition failed in extension'));
         }
       }
     }

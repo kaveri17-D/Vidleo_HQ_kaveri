@@ -30,6 +30,8 @@ export type NexusMessageType =
   | 'NEXUS_CDP_RESULT'
   | 'NEXUS_CDP_ERROR'
   | 'NEXUS_CDP_CANCEL'
+  | 'CDP_MEDIA_DOWNLOAD_SUCCESS'
+  | 'CDP_MEDIA_DOWNLOAD_ERROR'
   | 'PROCESS_CDP_MEDIA_FFMPEG';
 
 export interface StartDirectAcquisitionPayload {
@@ -205,6 +207,39 @@ export interface CdpDownloadResultPayload {
   blobUrl?: string;
   downloadStarted: boolean;
   provenance: 'CDP_ACTIVE_PLAYER_MEDIA_RESPONSE_BODY';
+}
+
+export interface CdpMediaDownloadSuccessPayload {
+  type: 'CDP_MEDIA_DOWNLOAD_SUCCESS';
+  sessionId: string;
+  filename: string;
+  bytes: number;
+  totalBytes: number;
+  mimeType: string;
+  outputPath?: string;
+  blobUrl?: string;
+  ffmpegExitCode: number;
+  rawUmpBytes?: number;
+  videoBytes?: number;
+  audioBytes?: number;
+  duration?: number;
+  videoCodec?: string;
+  audioCodec?: string;
+  resolution?: string;
+  sha256?: string;
+  downloadStarted?: boolean;
+  provenance: 'CDP_ACTIVE_PLAYER_MEDIA_RESPONSE_BODY';
+}
+
+export interface CdpMediaDownloadErrorPayload {
+  type: 'CDP_MEDIA_DOWNLOAD_ERROR';
+  sessionId: string;
+  stage: string;
+  code: string;
+  message: string;
+  error?: string;
+  ffmpegExitCode?: number;
+  ffmpegStderr?: string;
 }
 
 export interface ProcessCdpMediaFfmpegPayload {
