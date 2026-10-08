@@ -95,13 +95,25 @@ function parseUmpMediaStreams(rawUmp) {
   const videoChunks = [...videoInitChunks, ...videoFrags];
   const audioWebm = audioChunks.length > 0 ? concatByteArrays(audioChunks) : null;
   const videoMp4 = videoChunks.length > 0 ? concatByteArrays(videoChunks) : null;
+  let videoCodec = "h264";
+  if (videoMp4) {
+    const headerStr = String.fromCharCode(...videoMp4.subarray(0, Math.min(256, videoMp4.length)));
+    if (headerStr.includes("av01")) videoCodec = "av1";
+    else if (headerStr.includes("vp09") || headerStr.includes("vp9")) videoCodec = "vp9";
+  }
+  let audioCodec = "opus";
+  if (audioWebm && audioInitChunks.length > 0) {
+    audioCodec = "opus";
+  }
   return {
     audioWebm,
     videoMp4,
     rawUmpBytes: rawUmp.length,
     audioBytes: audioWebm ? audioWebm.length : 0,
     videoBytes: videoMp4 ? videoMp4.length : 0,
-    streamPartsCount: streamTracks.size
+    streamPartsCount: streamTracks.size,
+    videoCodec,
+    audioCodec
   };
 }
 
@@ -170,6 +182,7 @@ async function ensureOffscreenDocument(forceFresh = false) {
   }
 }
 var observedYouTubeStreams = /* @__PURE__ */ new Map();
+var videoStreamInventories = /* @__PURE__ */ new Map();
 if (chrome.webRequest && chrome.webRequest.onBeforeRequest) {
   chrome.webRequest.onBeforeRequest.addListener(
     (details) => {
@@ -199,6 +212,85 @@ if (chrome.webRequest && chrome.webRequest.onBeforeRequest) {
 async function resolveYouTubeDirect(url) {
   const videoIdMatch = url.match(/(?:v=|\/embed\/|youtu\.be\/|\/v\/|\/shorts\/)([a-zA-Z0-9_-]{11})/);
   const videoId = videoIdMatch ? videoIdMatch[1] : "";
+  let tabInventory = null;
+  if (chrome.tabs && chrome.tabs.query) {
+    try {
+      const ytTabs = await new Promise((resolve) => {
+        chrome.tabs.query({ url: ["*://*.youtube.com/*", "*://youtube.com/*"] }, (tabs) => resolve(tabs || []));
+      });
+      const targetTab = ytTabs.find((t) => videoId && t.url?.includes(videoId)) || ytTabs[0];
+      if (targetTab?.id) {
+        tabInventory = await new Promise((resolve) => {
+          chrome.tabs.sendMessage(targetTab.id, { type: "GET_YOUTUBE_STREAM_INVENTORY", videoId }, (resp) => {
+            if (!chrome.runtime.lastError && resp?.status === "success" && resp.data) {
+              resolve(resp.data);
+            } else {
+              resolve(null);
+            }
+          });
+          setTimeout(() => resolve(null), 1500);
+        });
+      }
+    } catch (tabErr) {
+      console.warn("[NEXUS Extension] Error querying active YouTube tab inventory:", tabErr);
+    }
+  }
+  if (!tabInventory && videoId && videoStreamInventories.has(videoId)) {
+    tabInventory = videoStreamInventories.get(videoId);
+  }
+  if (tabInventory && tabInventory.streams?.length > 0) {
+    console.log(`[NEXUS Extension] [BUG A RESOLVED] Discovered ${tabInventory.streams.length} genuine streams from YouTube player for ${videoId}`);
+    const streams = tabInventory.streams;
+    const videoStreams = streams.filter((s) => s.hasVideo);
+    const audioStreams = streams.filter((s) => s.hasAudio && !s.hasVideo);
+    const videoFormats = videoStreams.map((s) => ({
+      format_id: s.itag,
+      itag: s.itag,
+      qualityLabel: s.qualityLabel,
+      format_note: s.qualityLabel || `${s.height || 360}p`,
+      width: s.width,
+      height: s.height,
+      fps: s.fps,
+      mimeType: s.mimeType,
+      vcodec: s.videoCodec,
+      acodec: s.audioCodec || "aac",
+      bitrate: s.bitrate,
+      filesize: s.contentLength,
+      ext: s.mimeType?.includes("webm") ? "webm" : "mp4",
+      availability: "ACTUAL_MEDIA_AVAILABLE",
+      is_ciphered: false,
+      url: s.url,
+      hasVideo: true,
+      hasAudio: s.hasAudio
+    }));
+    const audioFormats = audioStreams.map((s) => ({
+      format_id: s.itag,
+      itag: s.itag,
+      format_note: `${Math.round((Number(s.bitrate) || 128e3) / 1e3)} kbps`,
+      bitrate: s.bitrate,
+      filesize: s.contentLength,
+      acodec: s.audioCodec || "opus",
+      ext: s.mimeType?.includes("webm") ? "webm" : "m4a",
+      availability: "ACTUAL_MEDIA_AVAILABLE",
+      is_ciphered: false,
+      url: s.url,
+      hasVideo: false,
+      hasAudio: true
+    }));
+    return {
+      job_id: `yt-inv-${Date.now()}`,
+      id: videoId || `yt-${Date.now()}`,
+      title: tabInventory.title || "YouTube Stream",
+      uploader: tabInventory.author || "YouTube Creator",
+      duration: tabInventory.duration || 0,
+      thumbnail: tabInventory.thumbnail || (videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : ""),
+      platform: "youtube",
+      pipeline_status: "ACTUAL_MEDIA_ACQUISITION_READY",
+      direct_stream_available: true,
+      video_formats: videoFormats,
+      audio_formats: audioFormats
+    };
+  }
   let oembedData = null;
   try {
     const oembedRes = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`);
@@ -258,6 +350,7 @@ async function resolveYouTubeDirect(url) {
           seenItags.add(itagStr);
           list.push({
             format_id: itagStr,
+            itag: itagStr,
             format_note: f.qualityLabel || `${f.height || 360}p`,
             ext: f.mimeType?.includes("webm") ? "webm" : "mp4",
             filesize: f.contentLength ? parseInt(f.contentLength, 10) : f.bitrate && durationSec ? Math.round(f.bitrate * durationSec / 8) : 0,
@@ -280,6 +373,7 @@ async function resolveYouTubeDirect(url) {
           seenAudioItags.add(itagStr);
           list.push({
             format_id: itagStr,
+            itag: itagStr,
             format_note: `${Math.round((f.bitrate || 128e3) / 1e3)} kbps`,
             ext: f.mimeType?.includes("webm") ? "webm" : "m4a",
             filesize: f.contentLength ? parseInt(f.contentLength, 10) : f.bitrate && durationSec ? Math.round(f.bitrate * durationSec / 8) : 0,
@@ -354,6 +448,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
     }
     sendResponse({ status: "recorded" });
+    return false;
+  }
+  if (message.type === "YOUTUBE_STREAM_INVENTORY_BROADCAST") {
+    const payload = message.payload;
+    if (payload?.videoId) {
+      videoStreamInventories.set(payload.videoId, payload);
+      console.log(`[NEXUS SW] Stream inventory cached for ${payload.videoId}: ${payload.streams?.length} streams`);
+    }
+    sendResponse({ status: "cached" });
     return false;
   }
   if (message.type === "RESOLVE_MEDIA") {
@@ -699,6 +802,32 @@ async function handleStartCdpMediaDownload(payload) {
       }, () => resolve());
     });
   });
+  try {
+    const qLabel = String(payload.quality || "");
+    let qParam = "medium";
+    if (qLabel.includes("1080")) qParam = "hd1080";
+    else if (qLabel.includes("720")) qParam = "hd720";
+    else if (qLabel.includes("480")) qParam = "large";
+    else if (qLabel.includes("360")) qParam = "medium";
+    else if (qLabel.includes("240")) qParam = "small";
+    else if (qLabel.includes("144")) qParam = "tiny";
+    await new Promise((r) => {
+      chrome.debugger.sendCommand(debuggee, "Runtime.evaluate", {
+        expression: `
+          (function() {
+            try {
+              const p = document.getElementById('movie_player') || document.querySelector('ytd-player')?.getPlayer?.();
+              if (p) {
+                p.setPlaybackQualityRange?.('${qParam}', '${qParam}');
+                p.setPlaybackQuality?.('${qParam}');
+              }
+            } catch(e) {}
+          })();
+        `
+      }, () => r());
+    });
+  } catch {
+  }
   console.log("[NEXUS-FINAL] stage: NETWORK");
   broadcastToTabs({
     type: "NEXUS_CDP_PROGRESS",
@@ -893,7 +1022,14 @@ async function handleStartCdpMediaDownload(payload) {
         videoBase64,
         audioBase64,
         videoBytesCount: demux.videoBytes,
-        audioBytesCount: demux.audioBytes
+        audioBytesCount: demux.audioBytes,
+        selectedQuality: payload.quality,
+        quality: payload.quality,
+        targetItag: payload.targetItag,
+        videoItag: payload.targetItag || "395",
+        audioItag: "251",
+        videoCodec: demux.videoCodec || "h264",
+        audioCodec: demux.audioCodec || "opus"
       }
     }, (resp) => {
       cleanup();

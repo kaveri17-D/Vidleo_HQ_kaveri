@@ -61,9 +61,161 @@
       }
     }
     checkVideoElement();
-    document.addEventListener("play", checkVideoElement, true);
+    document.addEventListener("play", () => {
+      checkVideoElement();
+      extractAndBroadcastInventory();
+    }, true);
     document.addEventListener("timeupdate", checkVideoElement, true);
+    function parseStreamRecord(f, durationSec = 0) {
+      const itag = String(f.itag || "");
+      const mimeType = f.mimeType || "";
+      const isVideo = mimeType.startsWith("video/") || Boolean(f.height);
+      const isAudio = mimeType.startsWith("audio/") || Boolean(f.audioQuality);
+      let videoCodec = "unknown";
+      let audioCodec = void 0;
+      const codecsMatch = mimeType.match(/codecs="([^"]+)"/);
+      if (codecsMatch) {
+        const codecs = codecsMatch[1].split(",").map((c) => c.trim().toLowerCase());
+        for (const c of codecs) {
+          if (c.startsWith("avc1") || c.startsWith("h264") || c.startsWith("mp4v")) videoCodec = "h264";
+          else if (c.startsWith("av01") || c.startsWith("av1")) videoCodec = "av1";
+          else if (c.startsWith("vp9") || c.startsWith("vp09")) videoCodec = "vp9";
+          else if (c.startsWith("mp4a") || c.startsWith("aac")) audioCodec = "aac";
+          else if (c.startsWith("opus")) audioCodec = "opus";
+        }
+      }
+      if (isVideo && videoCodec === "unknown") {
+        videoCodec = mimeType.includes("webm") ? "vp9" : "h264";
+      }
+      if (isAudio && !audioCodec) {
+        audioCodec = mimeType.includes("webm") ? "opus" : "aac";
+      }
+      const height = f.height ? Number(f.height) : void 0;
+      const width = f.width ? Number(f.width) : height ? Math.round(Number(height) * 16 / 9) : void 0;
+      const fps = f.fps ? Number(f.fps) : void 0;
+      const qualityLabel = f.qualityLabel || (height ? `${height}p` : "");
+      const contentLength = f.contentLength ? parseInt(f.contentLength, 10) : f.bitrate && durationSec ? Math.round(Number(f.bitrate) * durationSec / 8) : 0;
+      return {
+        itag,
+        qualityLabel,
+        width,
+        height,
+        fps,
+        mimeType,
+        videoCodec,
+        audioCodec,
+        bitrate: String(f.bitrate || 0),
+        contentLength,
+        hasVideo: isVideo,
+        hasAudio: isAudio,
+        url: f.url || void 0
+      };
+    }
+    async function queryRealPlayerStreamInventory() {
+      try {
+        const scripts = document.querySelectorAll("script");
+        for (const s of scripts) {
+          const text = s.textContent || "";
+          if (text.includes("ytInitialPlayerResponse")) {
+            const match = text.match(/ytInitialPlayerResponse\s*=\s*(\{.+?\});/);
+            if (match) {
+              const parsed = JSON.parse(match[1]);
+              if (parsed?.streamingData?.adaptiveFormats?.length > 0) {
+                return parsed;
+              }
+            }
+          }
+        }
+      } catch {
+      }
+      const mainWorldResponse = await new Promise((resolve) => {
+        const handler = (evt) => {
+          if (evt.data && evt.data.source === "__vidleo_yt_inv__" && evt.data.type === "PLAYER_DATA") {
+            window.removeEventListener("message", handler);
+            resolve(evt.data.payload);
+          }
+        };
+        window.addEventListener("message", handler);
+        const s = document.createElement("script");
+        s.textContent = `
+        (function() {
+          try {
+            const p = (window.ytInitialPlayerResponse) || 
+                      (document.getElementById('movie_player')?.getPlayerResponse?.()) ||
+                      (document.querySelector('ytd-player')?.getPlayerResponse?.());
+            window.postMessage({
+              source: '__vidleo_yt_inv__',
+              type: 'PLAYER_DATA',
+              payload: p ? { streamingData: p.streamingData, videoDetails: p.videoDetails } : null
+            }, '*');
+          } catch(e) {
+            window.postMessage({ source: '__vidleo_yt_inv__', type: 'PLAYER_DATA', payload: null }, '*');
+          }
+        })();
+      `;
+        (document.head || document.documentElement).appendChild(s);
+        s.remove();
+        setTimeout(() => {
+          window.removeEventListener("message", handler);
+          resolve(null);
+        }, 800);
+      });
+      return mainWorldResponse;
+    }
+    async function buildStreamInventory() {
+      const rawData = await queryRealPlayerStreamInventory();
+      const videoId = extractVideoId(window.location.href);
+      if (!rawData?.streamingData) return null;
+      const streamingData = rawData.streamingData;
+      const videoDetails = rawData.videoDetails || {};
+      const durationSec = parseInt(videoDetails.lengthSeconds || "0", 10);
+      const adaptive = streamingData.adaptiveFormats || [];
+      const formats = streamingData.formats || [];
+      const all = [...formats, ...adaptive];
+      const streams = [];
+      const seenItags = /* @__PURE__ */ new Set();
+      for (const f of all) {
+        const itagStr = String(f.itag || "");
+        if (itagStr && !seenItags.has(itagStr)) {
+          seenItags.add(itagStr);
+          streams.push(parseStreamRecord(f, durationSec));
+        }
+      }
+      return {
+        videoId,
+        title: videoDetails.title || document.title.replace(" - YouTube", ""),
+        author: videoDetails.author || "",
+        duration: durationSec,
+        thumbnail: videoDetails.thumbnail?.thumbnails?.[0]?.url || (videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : ""),
+        streams
+      };
+    }
+    async function extractAndBroadcastInventory() {
+      try {
+        const inventory = await buildStreamInventory();
+        if (inventory && inventory.streams?.length > 0) {
+          chrome.runtime.sendMessage({
+            type: "YOUTUBE_STREAM_INVENTORY_BROADCAST",
+            payload: inventory
+          }).catch(() => {
+          });
+        }
+      } catch {
+      }
+    }
+    setTimeout(extractAndBroadcastInventory, 1e3);
+    setTimeout(extractAndBroadcastInventory, 3e3);
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+      if (message && message.type === "GET_YOUTUBE_STREAM_INVENTORY") {
+        buildStreamInventory().then((inventory) => {
+          if (inventory) {
+            sendResponse({ status: "success", data: inventory });
+          } else {
+            sendResponse({ status: "not_ready" });
+          }
+        }).catch((err) => sendResponse({ status: "error", error: err?.message }));
+        return true;
+      }
       if (message && message.type === "START_TAB_PLAYBACK_CAPTURE") {
         const payload = message.payload || {};
         handleTabPlaybackCapture(payload).then((result) => sendResponse({ status: "success", result })).catch((err) => sendResponse({ status: "error", error: err?.message || "Playback capture failed" }));

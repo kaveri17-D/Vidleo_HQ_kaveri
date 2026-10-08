@@ -52,6 +52,8 @@ export interface UmpDemuxResult {
   audioBytes: number;
   videoBytes: number;
   streamPartsCount: number;
+  videoCodec?: string;
+  audioCodec?: string;
 }
 
 export function parseUmpMediaStreams(rawUmp: Uint8Array): UmpDemuxResult {
@@ -122,6 +124,18 @@ export function parseUmpMediaStreams(rawUmp: Uint8Array): UmpDemuxResult {
   const audioWebm = audioChunks.length > 0 ? concatByteArrays(audioChunks) : null;
   const videoMp4 = videoChunks.length > 0 ? concatByteArrays(videoChunks) : null;
 
+  let videoCodec = 'h264';
+  if (videoMp4) {
+    const headerStr = String.fromCharCode(...videoMp4.subarray(0, Math.min(256, videoMp4.length)));
+    if (headerStr.includes('av01')) videoCodec = 'av1';
+    else if (headerStr.includes('vp09') || headerStr.includes('vp9')) videoCodec = 'vp9';
+  }
+
+  let audioCodec = 'opus';
+  if (audioWebm && audioInitChunks.length > 0) {
+    audioCodec = 'opus';
+  }
+
   return {
     audioWebm,
     videoMp4,
@@ -129,5 +143,7 @@ export function parseUmpMediaStreams(rawUmp: Uint8Array): UmpDemuxResult {
     audioBytes: audioWebm ? audioWebm.length : 0,
     videoBytes: videoMp4 ? videoMp4.length : 0,
     streamPartsCount: streamTracks.size,
+    videoCodec,
+    audioCodec,
   };
 }

@@ -94,6 +94,7 @@ interface ObservedYouTubeStream {
 }
 
 const observedYouTubeStreams = new Map<string, ObservedYouTubeStream>();
+const videoStreamInventories = new Map<string, any>();
 
 // Non-blocking webRequest observer for googlevideo streams initiated by active tabs
 if (chrome.webRequest && chrome.webRequest.onBeforeRequest) {
@@ -126,12 +127,103 @@ if (chrome.webRequest && chrome.webRequest.onBeforeRequest) {
 
 /**
  * Resolves YouTube media directly from the user's browser network.
- * Zero Railway transit; bypasses server datacenter IP rate limits (HTTP 429/403).
+ * Zero Railway transit; discovers real stream inventory from the player session.
  */
 async function resolveYouTubeDirect(url: string): Promise<any> {
   const videoIdMatch = url.match(/(?:v=|\/embed\/|youtu\.be\/|\/v\/|\/shorts\/)([a-zA-Z0-9_-]{11})/);
   const videoId = videoIdMatch ? videoIdMatch[1] : '';
 
+  // 1. First priority: Query active YouTube tabs for the genuine stream inventory from player memory
+  let tabInventory: any = null;
+  if (chrome.tabs && chrome.tabs.query) {
+    try {
+      const ytTabs = await new Promise<chrome.tabs.Tab[]>((resolve) => {
+        chrome.tabs.query({ url: ['*://*.youtube.com/*', '*://youtube.com/*'] }, (tabs) => resolve(tabs || []));
+      });
+
+      const targetTab = ytTabs.find((t) => videoId && t.url?.includes(videoId)) || ytTabs[0];
+      if (targetTab?.id) {
+        tabInventory = await new Promise<any>((resolve) => {
+          chrome.tabs.sendMessage(targetTab.id!, { type: 'GET_YOUTUBE_STREAM_INVENTORY', videoId }, (resp) => {
+            if (!chrome.runtime.lastError && resp?.status === 'success' && resp.data) {
+              resolve(resp.data);
+            } else {
+              resolve(null);
+            }
+          });
+          setTimeout(() => resolve(null), 1500);
+        });
+      }
+    } catch (tabErr) {
+      console.warn('[NEXUS Extension] Error querying active YouTube tab inventory:', tabErr);
+    }
+  }
+
+  // 2. Check cached inventory broadcast
+  if (!tabInventory && videoId && videoStreamInventories.has(videoId)) {
+    tabInventory = videoStreamInventories.get(videoId);
+  }
+
+  // If real player stream inventory was discovered from the tab, build full stream catalog
+  if (tabInventory && tabInventory.streams?.length > 0) {
+    console.log(`[NEXUS Extension] [BUG A RESOLVED] Discovered ${tabInventory.streams.length} genuine streams from YouTube player for ${videoId}`);
+    const streams = tabInventory.streams;
+
+    const videoStreams = streams.filter((s: any) => s.hasVideo);
+    const audioStreams = streams.filter((s: any) => s.hasAudio && !s.hasVideo);
+
+    const videoFormats = videoStreams.map((s: any) => ({
+      format_id: s.itag,
+      itag: s.itag,
+      qualityLabel: s.qualityLabel,
+      format_note: s.qualityLabel || `${s.height || 360}p`,
+      width: s.width,
+      height: s.height,
+      fps: s.fps,
+      mimeType: s.mimeType,
+      vcodec: s.videoCodec,
+      acodec: s.audioCodec || 'aac',
+      bitrate: s.bitrate,
+      filesize: s.contentLength,
+      ext: s.mimeType?.includes('webm') ? 'webm' : 'mp4',
+      availability: 'ACTUAL_MEDIA_AVAILABLE',
+      is_ciphered: false,
+      url: s.url,
+      hasVideo: true,
+      hasAudio: s.hasAudio,
+    }));
+
+    const audioFormats = audioStreams.map((s: any) => ({
+      format_id: s.itag,
+      itag: s.itag,
+      format_note: `${Math.round((Number(s.bitrate) || 128000) / 1000)} kbps`,
+      bitrate: s.bitrate,
+      filesize: s.contentLength,
+      acodec: s.audioCodec || 'opus',
+      ext: s.mimeType?.includes('webm') ? 'webm' : 'm4a',
+      availability: 'ACTUAL_MEDIA_AVAILABLE',
+      is_ciphered: false,
+      url: s.url,
+      hasVideo: false,
+      hasAudio: true,
+    }));
+
+    return {
+      job_id: `yt-inv-${Date.now()}`,
+      id: videoId || `yt-${Date.now()}`,
+      title: tabInventory.title || 'YouTube Stream',
+      uploader: tabInventory.author || 'YouTube Creator',
+      duration: tabInventory.duration || 0,
+      thumbnail: tabInventory.thumbnail || (videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : ''),
+      platform: 'youtube',
+      pipeline_status: 'ACTUAL_MEDIA_ACQUISITION_READY',
+      direct_stream_available: true,
+      video_formats: videoFormats,
+      audio_formats: audioFormats,
+    };
+  }
+
+  // Fallback: oembed / direct watch page fetch if tab was not yet responsive
   let oembedData: any = null;
   try {
     const oembedRes = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`);
@@ -167,9 +259,8 @@ async function resolveYouTubeDirect(url: string): Promise<any> {
   const formats = playerData?.streamingData?.formats || [];
   const adaptiveFormats = playerData?.streamingData?.adaptiveFormats || [];
 
-  // Check if an observed player stream exists for this video ID from active player playback
   const observed = videoId ? observedYouTubeStreams.get(videoId) : null;
-  const isObservedRecent = Boolean(observed && (Date.now() - observed.timestamp < 3600000)); // 1 hour
+  const isObservedRecent = Boolean(observed && (Date.now() - observed.timestamp < 3600000));
 
   const candidateStream = formats.find((f: any) => Boolean(f.url)) || 
                           adaptiveFormats.find((f: any) => Boolean(f.url)) ||
@@ -202,6 +293,7 @@ async function resolveYouTubeDirect(url: string): Promise<any> {
           seenItags.add(itagStr);
           list.push({
             format_id: itagStr,
+            itag: itagStr,
             format_note: f.qualityLabel || `${f.height || 360}p`,
             ext: f.mimeType?.includes('webm') ? 'webm' : 'mp4',
             filesize: f.contentLength ? parseInt(f.contentLength, 10) : (f.bitrate && durationSec ? Math.round((f.bitrate * durationSec) / 8) : 0),
@@ -224,6 +316,7 @@ async function resolveYouTubeDirect(url: string): Promise<any> {
           seenAudioItags.add(itagStr);
           list.push({
             format_id: itagStr,
+            itag: itagStr,
             format_note: `${Math.round((f.bitrate || 128000) / 1000)} kbps`,
             ext: f.mimeType?.includes('webm') ? 'webm' : 'm4a',
             filesize: f.contentLength ? parseInt(f.contentLength, 10) : (f.bitrate && durationSec ? Math.round((f.bitrate * durationSec) / 8) : 0),
@@ -320,6 +413,17 @@ chrome.runtime.onMessage.addListener((message: NexusMessage, sender, sendRespons
       }
     }
     sendResponse({ status: 'recorded' });
+    return false;
+  }
+
+  // Handle stream inventory broadcast from YouTube content script
+  if (message.type === 'YOUTUBE_STREAM_INVENTORY_BROADCAST') {
+    const payload = (message as any).payload;
+    if (payload?.videoId) {
+      videoStreamInventories.set(payload.videoId, payload);
+      console.log(`[NEXUS SW] Stream inventory cached for ${payload.videoId}: ${payload.streams?.length} streams`);
+    }
+    sendResponse({ status: 'cached' });
     return false;
   }
 
@@ -761,6 +865,33 @@ async function handleStartCdpMediaDownload(payload: StartCdpDownloadPayload): Pr
     });
   });
 
+  // Set player quality range to match user-selected quality
+  try {
+    const qLabel = String(payload.quality || '');
+    let qParam = 'medium';
+    if (qLabel.includes('1080')) qParam = 'hd1080';
+    else if (qLabel.includes('720')) qParam = 'hd720';
+    else if (qLabel.includes('480')) qParam = 'large';
+    else if (qLabel.includes('360')) qParam = 'medium';
+    else if (qLabel.includes('240')) qParam = 'small';
+    else if (qLabel.includes('144')) qParam = 'tiny';
+
+    await new Promise<void>((r) => {
+      chrome.debugger.sendCommand(debuggee, 'Runtime.evaluate', {
+        expression: `
+          (function() {
+            try {
+              const p = document.getElementById('movie_player') || document.querySelector('ytd-player')?.getPlayer?.();
+              if (p) {
+                p.setPlaybackQualityRange?.('${qParam}', '${qParam}');
+                p.setPlaybackQuality?.('${qParam}');
+              }
+            } catch(e) {}
+          })();
+        `
+      }, () => r());
+    });
+  } catch {}
 
   console.log('[NEXUS-FINAL] stage: NETWORK');
   broadcastToTabs({
@@ -969,6 +1100,13 @@ async function handleStartCdpMediaDownload(payload: StartCdpDownloadPayload): Pr
         audioBase64,
         videoBytesCount: demux.videoBytes,
         audioBytesCount: demux.audioBytes,
+        selectedQuality: payload.quality,
+        quality: payload.quality,
+        targetItag: payload.targetItag,
+        videoItag: payload.targetItag || '395',
+        audioItag: '251',
+        videoCodec: demux.videoCodec || 'h264',
+        audioCodec: demux.audioCodec || 'opus',
       },
     }, (resp) => {
       cleanup();

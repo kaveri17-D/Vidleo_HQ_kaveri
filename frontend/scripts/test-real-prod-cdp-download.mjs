@@ -95,6 +95,8 @@ function computeSha256(filePath) {
       '--disable-setuid-sandbox',
       '--disable-dev-shm-usage',
       '--disable-gpu',
+      '--disable-software-rasterizer',
+      '--disable-gl-drawing-for-tests',
       `--load-extension=${extDistPath}`,
       `--disable-extensions-except=${extDistPath}`,
       '--autoplay-policy=no-user-gesture-required',
@@ -148,25 +150,8 @@ function computeSha256(filePath) {
   }
 
   try {
-    // Step 3: Open Real YouTube Watch Tab
-    console.log('\n[Step 3] Navigating to Real YouTube Tab...');
-    const ytPage = await browser.newPage();
-    await ytPage.goto(VIDEO_URL, { waitUntil: 'domcontentloaded', timeout: 45000 });
-    await ytPage.waitForSelector('video', { timeout: 25000 });
-    console.log('[PASS] YouTube player video element initialized');
-
-    // Trigger playback
-    await ytPage.evaluate(() => {
-      const v = document.querySelector('video');
-      if (v) {
-        v.currentTime = 0;
-        v.muted = true;
-        v.play().catch(() => {});
-      }
-    });
-
-    // Step 4: Open Real Vercel Production Web Page
-    console.log(`\n[Step 4] Opening Real Production Vercel Tab (${PROD_URL})...`);
+    // Step 3: Open Real Vercel Production Web Page
+    console.log(`\n[Step 3] Opening Real Production Vercel Tab (${PROD_URL})...`);
     const preDownloadFiles = new Set(fs.readdirSync(DOWNLOAD_DIR));
     console.log(`[Baseline] Snapshot of existing files in Downloads: ${preDownloadFiles.size} files`);
 
@@ -206,7 +191,7 @@ function computeSha256(filePath) {
     let loaded = false;
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
-        console.log(`[Step 4.1] Navigating to ${PROD_URL} (Attempt ${attempt}/3)...`);
+        console.log(`[Step 3.1] Navigating to ${PROD_URL} (Attempt ${attempt}/3)...`);
         await uiPage.goto(PROD_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
         loaded = true;
         break;
@@ -218,6 +203,21 @@ function computeSha256(filePath) {
     if (!loaded) throw new Error(`Failed to navigate to ${PROD_URL} after 3 attempts`);
     await new Promise(r => setTimeout(r, 2000));
     console.log('[PASS] Production Vercel page loaded');
+
+    // Step 4: Open Real YouTube Watch Tab
+    console.log('\n[Step 4] Navigating to Real YouTube Tab...');
+    const ytPage = await browser.newPage();
+    await ytPage.goto(VIDEO_URL, { waitUntil: 'domcontentloaded', timeout: 45000 });
+    await ytPage.waitForSelector('video', { timeout: 25000 });
+    console.log('[PASS] YouTube player video element initialized');
+
+    await ytPage.evaluate(() => {
+      const v = document.querySelector('video');
+      if (v) {
+        v.muted = true;
+        v.pause();
+      }
+    });
 
     // Step 5: Check Extension Handshake on Production DOM
     console.log('\n[Step 5] Checking Companion Extension Detection on Production DOM...');
@@ -239,24 +239,41 @@ function computeSha256(filePath) {
     console.log('\n[Step 6] Entering Real YouTube URL into Production Downloader...');
     const inputSelector = 'input[type="text"], input[placeholder*="Paste"], input[placeholder*="paste"], input[placeholder*="http"]';
     await uiPage.waitForSelector(inputSelector, { timeout: 15000 });
-    await uiPage.type(inputSelector, VIDEO_URL, { delay: 20 });
-    console.log('[PASS] URL typed into input field');
-
-    // Submit input form
-    await uiPage.evaluate(() => {
-      const btn = Array.from(document.querySelectorAll('button')).find(b => b.innerText?.trim() === 'Download');
-      if (btn) btn.click();
-      else {
-        const form = document.querySelector('form');
-        if (form) form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await uiPage.evaluate((val) => {
+      const input = document.querySelector('input[type="text"], input[placeholder*="Paste"], input[placeholder*="paste"]');
+      if (input) {
+        const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+        if (nativeSetter) nativeSetter.call(input, val);
+        else input.value = val;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
       }
+    }, VIDEO_URL);
+    console.log('[PASS] URL set in React input field');
+    await new Promise(r => setTimeout(r, 600));
+
+    // Submit input form by clicking the submit button directly via DOM
+    console.log('Clicking Download/Analyze button on form...');
+    await uiPage.evaluate(() => {
+      const btn = document.querySelector('form button[type="submit"]') || Array.from(document.querySelectorAll('button')).find(b => b.innerText?.trim() === 'Download');
+      if (btn) btn.click();
     });
 
     console.log('Waiting for video analysis to finish and VideoDetectedCard with "Download Full Video" button to appear...');
-    await uiPage.waitForFunction(() => {
-      const buttons = Array.from(document.querySelectorAll('button'));
-      return buttons.some(b => b.innerText?.includes('Download Full Video'));
-    }, { timeout: 45000 });
+    await uiPage.bringToFront();
+    try {
+      await uiPage.waitForFunction(() => {
+        const buttons = Array.from(document.querySelectorAll('button'));
+        return buttons.some(b => (b.innerText || b.textContent || '').includes('Download Full Video'));
+      }, { timeout: 90000, polling: 500 });
+    } catch (waitErr) {
+      const currentUi = await uiPage.evaluate(() => ({
+        buttons: Array.from(document.querySelectorAll('button')).map(b => b.innerText?.trim()),
+        text: document.body.innerText.slice(0, 1500)
+      })).catch(() => ({ buttons: [], text: 'error reading DOM' }));
+      console.error('[DIAGNOSTIC] UI Page at failure:', JSON.stringify(currentUi, null, 2));
+      throw waitErr;
+    }
     console.log('[PASS] VideoDetectedCard with "Download Full Video" rendered on production page');
 
     const domInfo = await uiPage.evaluate(() => {

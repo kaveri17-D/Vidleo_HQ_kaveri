@@ -20,6 +20,24 @@ chrome.runtime.onConnect.addListener((port) => {
   });
 });
 
+(window as any).__queryFfmpegCodecs = async () => {
+  const { FFmpeg } = await import('@ffmpeg/ffmpeg');
+  const ffmpeg = new FFmpeg();
+  const logs: string[] = [];
+  ffmpeg.on('log', ({ message }: { message: string }) => logs.push(message));
+  const coreURL = chrome.runtime.getURL('ffmpeg-core.js');
+  const wasmURL = chrome.runtime.getURL('ffmpeg-core.wasm');
+  const classWorkerURL = chrome.runtime.getURL('ffmpeg-worker.js');
+  await ffmpeg.load({ coreURL, wasmURL, classWorkerURL });
+  logs.length = 0;
+  await ffmpeg.exec(['-decoders']);
+  const decoders = logs.join('\n');
+  logs.length = 0;
+  await ffmpeg.exec(['-encoders']);
+  const encoders = logs.join('\n');
+  return { decoders, encoders };
+};
+
 chrome.runtime.onMessage.addListener((message: NexusMessage, sender, sendResponse) => {
   if (!message || !message.type) return false;
 
@@ -423,9 +441,64 @@ async function handleProcessPlaybackCaptureFfmpeg(payload: any) {
   return completeResult;
 }
 
+function detectContainerFormat(bytes: Uint8Array): 'mp4' | 'webm' | 'unknown' {
+  if (bytes.length >= 8) {
+    const tag = String.fromCharCode(bytes[4], bytes[5], bytes[6], bytes[7]);
+    if (tag === 'ftyp' || tag === 'moov' || tag === 'moof' || tag === 'styp' || tag === 'sidx') return 'mp4';
+  }
+  if (bytes.length >= 4) {
+    if ((bytes[0] === 0x1A && bytes[1] === 0x45 && bytes[2] === 0xDF && bytes[3] === 0xA3) ||
+        (bytes[0] === 0x1F && bytes[1] === 0x43 && bytes[2] === 0xB6 && bytes[3] === 0x75)) {
+      return 'webm';
+    }
+  }
+  return 'unknown';
+}
+
 async function handleProcessCdpMediaFfmpeg(payload: any) {
-  const { sessionId, filename, videoBase64, audioBase64 } = payload;
+  const { 
+    sessionId, 
+    filename, 
+    videoBase64, 
+    audioBase64,
+    selectedQuality,
+    quality,
+    videoItag,
+    audioItag,
+    targetItag,
+    videoCodec: inputVideoCodec,
+    audioCodec: inputAudioCodec,
+  } = payload;
+
+  const currentQuality = selectedQuality || quality || '360p';
+  const currentVideoItag = String(videoItag || targetItag || '');
+  const currentAudioItag = String(audioItag || '');
+
+  const forensics = {
+    sessionId: sessionId || `session-${Date.now()}`,
+    selectedQuality: currentQuality,
+    videoItag: currentVideoItag,
+    audioItag: currentAudioItag,
+    videoBytes: 0,
+    audioBytes: 0,
+    videoCodec: inputVideoCodec || 'unknown',
+    audioCodec: inputAudioCodec || 'unknown',
+    videoContainer: 'unknown',
+    audioContainer: 'unknown',
+    offscreenStatus: 'initializing',
+    ffmpegInitialized: false,
+    ffmpegCommand: 'ffmpeg',
+    ffmpegArgs: [] as string[],
+    ffmpegExitCode: -1,
+    ffmpegStderr: '',
+    ffmpegException: null as string | null,
+    ffmpegStack: null as string | null,
+  };
+
+  (window as any).__NEXUS_LAST_FORENSICS__ = forensics;
+
   console.log('[NEXUS-FINAL] sessionId:', sessionId);
+  console.log('[NEXUS-FINAL] selectedQuality:', currentQuality);
   console.log('[NEXUS-FINAL] stage: OFFSCREEN');
   console.log(`[NEXUS-FINAL][OFFSCREEN] Processing CDP media assembly with FFmpeg for session ${sessionId}...`);
 
@@ -442,14 +515,39 @@ async function handleProcessCdpMediaFfmpeg(payload: any) {
     for (let i = 0; i < audioBinary.length; i++) audioBytes[i] = audioBinary.charCodeAt(i);
   } catch (decodeErr: any) {
     const errText = `Base64 decode failed: ${decodeErr?.message || decodeErr}`;
+    forensics.offscreenStatus = 'base64_decode_failed';
+    forensics.ffmpegException = errText;
+    forensics.ffmpegStack = decodeErr?.stack || null;
     console.error('[NEXUS-FINAL] FFMPEG_INPUT error:', errText);
     throw new Error(`[NEXUS-FINAL][FFMPEG_INPUT] ${errText}`);
   }
 
+  forensics.videoBytes = videoBytes.byteLength;
+  forensics.audioBytes = audioBytes.byteLength;
+
+  // Detect containers
+  const vCont = detectContainerFormat(videoBytes);
+  const aCont = detectContainerFormat(audioBytes);
+  forensics.videoContainer = vCont !== 'unknown' ? vCont : 'mp4';
+  forensics.audioContainer = aCont !== 'unknown' ? aCont : 'webm';
+
+  // Detect or infer codecs
+  if (forensics.videoCodec === 'unknown') {
+    if (vCont === 'webm') {
+      forensics.videoCodec = 'vp9';
+    } else {
+      const strSample = String.fromCharCode(...videoBytes.subarray(0, Math.min(200, videoBytes.length)));
+      if (strSample.includes('av01')) forensics.videoCodec = 'av1';
+      else forensics.videoCodec = 'h264';
+    }
+  }
+
+  if (forensics.audioCodec === 'unknown') {
+    forensics.audioCodec = aCont === 'webm' ? 'opus' : 'aac';
+  }
+
   console.log('[NEXUS-FINAL] stage: FFMPEG_INIT');
-  console.log('[NEXUS-FINAL] input filenames: video.mp4, audio.webm');
-  console.log(`[NEXUS-FINAL] video input byte length: ${videoBytes.byteLength}`);
-  console.log(`[NEXUS-FINAL] audio input byte length: ${audioBytes.byteLength}`);
+  console.log(`[NEXUS-FINAL] input detected: video=${forensics.videoContainer}/${forensics.videoCodec} (${forensics.videoBytes}B), audio=${forensics.audioContainer}/${forensics.audioCodec} (${forensics.audioBytes}B)`);
 
   // Load FFmpeg.wasm
   let ffmpeg: any;
@@ -467,33 +565,39 @@ async function handleProcessCdpMediaFfmpeg(payload: any) {
     const wasmURL = chrome.runtime.getURL('ffmpeg-core.wasm');
     const classWorkerURL = chrome.runtime.getURL('ffmpeg-worker.js');
 
-    console.log('[NEXUS-FINAL] coreURL:', coreURL);
-    console.log('[NEXUS-FINAL] wasmURL:', wasmURL);
-    console.log('[NEXUS-FINAL] classWorkerURL:', classWorkerURL);
     console.log('[NEXUS-FINAL] Loading FFmpeg.wasm...');
     await ffmpeg.load({ coreURL, wasmURL, classWorkerURL });
+    forensics.ffmpegInitialized = true;
+    forensics.offscreenStatus = 'ffmpeg_loaded';
     console.log('[NEXUS-FINAL] FFmpeg initialized: YES');
-    console.log('[NEXUS-FINAL] WASM loaded: YES');
-    console.log('[NEXUS-FINAL] worker loaded: YES');
   } catch (loadErr: any) {
-    console.error('[NEXUS-FINAL] FFmpeg initialized: NO');
-    console.error('[NEXUS-FINAL] WASM loaded: NO');
-    console.error('[NEXUS-FINAL] FFMPEG_INIT exception:', loadErr?.name, loadErr?.message || loadErr);
+    forensics.ffmpegInitialized = false;
+    forensics.offscreenStatus = 'ffmpeg_load_failed';
+    forensics.ffmpegException = loadErr?.message || String(loadErr);
+    forensics.ffmpegStack = loadErr?.stack || null;
+    console.error('[NEXUS-FINAL] FFmpeg initialized: NO', loadErr);
     throw new Error(`[NEXUS-FINAL][FFMPEG_INIT] ${loadErr?.name || 'LoadError'}: ${loadErr?.message || loadErr}`);
   }
+
+  // Name input files in MEMFS matching detected containers
+  const inputVideoName = `input_video.${forensics.videoContainer === 'webm' ? 'webm' : 'mp4'}`;
+  const inputAudioName = `input_audio.${forensics.audioContainer === 'mp4' ? 'm4a' : 'webm'}`;
 
   // Write video and audio to virtual FS
   console.log('[NEXUS-FINAL] stage: FFMPEG_INPUT');
   try {
-    await ffmpeg.writeFile('video.mp4', videoBytes);
-    await ffmpeg.writeFile('audio.webm', audioBytes);
-    console.log('[NEXUS-FINAL] FFmpeg received input: YES');
+    await ffmpeg.writeFile(inputVideoName, videoBytes);
+    await ffmpeg.writeFile(inputAudioName, audioBytes);
+    console.log(`[NEXUS-FINAL] FFmpeg received input: YES (${inputVideoName}, ${inputAudioName})`);
   } catch (fsErr: any) {
-    console.error('[NEXUS-FINAL] FFmpeg received input: NO');
+    forensics.offscreenStatus = 'fs_write_failed';
+    forensics.ffmpegException = fsErr?.message || String(fsErr);
+    forensics.ffmpegStack = fsErr?.stack || null;
+    console.error('[NEXUS-FINAL] FFmpeg received input: NO', fsErr);
     throw new Error(`[NEXUS-FINAL][FFMPEG_INPUT] FS writeFile failed: ${fsErr?.message || fsErr}`);
   }
 
-  // 1. Preserve original acquired media internally for debugging
+  // Preserve original acquired media internally for debugging
   (window as any).__ORIGINAL_ACQUIRED_MEDIA__ = {
     videoBytes,
     audioBytes,
@@ -501,39 +605,48 @@ async function handleProcessCdpMediaFfmpeg(payload: any) {
     audioSize: audioBytes.byteLength,
     timestamp: Date.now(),
   };
-  console.log('[NEXUS-FINAL] Original acquired media preserved: ' + (videoBytes.byteLength + audioBytes.byteLength) + ' bytes');
 
-  // 2. Compatibility output stage: H.264 video copy + AAC audio transcode + faststart MP4
+  // 100% WhatsApp compatibility (H.264 video + AAC audio in faststart MP4)
   console.log('[NEXUS-FINAL] stage: FFMPEG_EXEC');
   const targetOutputFile = 'whatsapp_compat.mp4';
-  const ffmpegCommand = [
-    '-i', 'video.mp4',
-    '-i', 'audio.webm',
-    '-c:v', 'copy',
-    '-c:a', 'aac',
-    '-b:a', '128k',
+  
+  const isVideoH264 = forensics.videoCodec === 'h264' && forensics.videoContainer === 'mp4';
+  const videoCodecArgs = isVideoH264
+    ? ['-c:v', 'copy']
+    : ['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23'];
+
+  const isAudioAac = forensics.audioCodec === 'aac' && forensics.audioContainer === 'mp4';
+  const audioCodecArgs = isAudioAac
+    ? ['-c:a', 'copy']
+    : ['-c:a', 'aac', '-b:a', '128k'];
+
+  const primaryArgs = [
+    '-i', inputVideoName,
+    '-i', inputAudioName,
+    ...videoCodecArgs,
+    ...audioCodecArgs,
     '-movflags', '+faststart',
     targetOutputFile
   ];
-  console.log('[NEXUS-FINAL] ffmpeg command: ffmpeg ' + ffmpegCommand.join(' '));
-  console.log('[NEXUS-FINAL] output filename:', targetOutputFile);
+
+  forensics.ffmpegCommand = 'ffmpeg';
+  forensics.ffmpegArgs = primaryArgs;
+  console.log('[NEXUS-FINAL] ffmpeg command: ffmpeg ' + primaryArgs.join(' '));
 
   let remuxCode = -1;
   let execException: any = null;
   try {
-    remuxCode = await ffmpeg.exec(ffmpegCommand);
+    remuxCode = await ffmpeg.exec(primaryArgs);
   } catch (execErr: any) {
     execException = execErr;
-    console.warn('[NEXUS-FINAL] FFMPEG_EXEC exception during stream copy:', execErr?.message || execErr);
+    console.warn('[NEXUS-FINAL] FFMPEG_EXEC exception during primary command:', execErr?.message || execErr);
   }
 
-  console.log('[NEXUS-FINAL] FFmpeg executed: YES');
-  console.log(`[NEXUS-FINAL] FFmpeg exit code: ${remuxCode}`);
-  console.log(`[NEXUS-FINAL] FFmpeg stderr/log:\n${ffmpegLogs.join('\n')}`);
+  forensics.ffmpegExitCode = remuxCode;
+  forensics.ffmpegStderr = ffmpegLogs.slice(-40).join('\n');
   if (execException) {
-    console.log(`[NEXUS-FINAL] exception name: ${execException?.name}`);
-    console.log(`[NEXUS-FINAL] exception message: ${execException?.message || execException}`);
-    console.log(`[NEXUS-FINAL] stack: ${execException?.stack || 'No stack'}`);
+    forensics.ffmpegException = execException?.message || String(execException);
+    forensics.ffmpegStack = execException?.stack || null;
   }
 
   let outputData: Uint8Array | null = null;
@@ -549,42 +662,66 @@ async function handleProcessCdpMediaFfmpeg(payload: any) {
     }
   }
 
-  // Fallback 1: Pure copy if audio transcode failed
+  // Fallback 1: If primary stream copy failed, try transcode with libx264 + aac
+  if (!outputData && isVideoH264) {
+    console.log('[NEXUS-FINAL] Stream copy failed, attempting libx264 transcode fallback...');
+    const transcodeArgs = [
+      '-i', inputVideoName,
+      '-i', inputAudioName,
+      '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '24',
+      '-c:a', 'aac', '-b:a', '128k',
+      '-movflags', '+faststart',
+      'fallback_transcode.mp4'
+    ];
+    forensics.ffmpegArgs = transcodeArgs;
+    try {
+      const tcCode = await ffmpeg.exec(transcodeArgs);
+      forensics.ffmpegExitCode = tcCode;
+      forensics.ffmpegStderr = ffmpegLogs.slice(-40).join('\n');
+      if (tcCode === 0) {
+        outputData = await ffmpeg.readFile('fallback_transcode.mp4') as Uint8Array;
+        activeVideoCodec = 'h264';
+        activeAudioCodec = 'aac';
+        console.log('[NEXUS-FINAL] Transcode fallback succeeded:', outputData.byteLength, 'bytes');
+      }
+    } catch (tcErr: any) {
+      console.warn('[NEXUS-FINAL] Transcode fallback exception:', tcErr);
+    }
+  }
+
+  // Fallback 2: Stream copy fallback
   if (!outputData) {
-    console.log('[NEXUS-FINAL] Trying fallback pure copy remux...');
-    const fallbackCommand = [
-      '-i', 'video.mp4',
-      '-i', 'audio.webm',
+    console.log('[NEXUS-FINAL] Attempting fallback copy remux...');
+    const fallbackCopyArgs = [
+      '-i', inputVideoName,
+      '-i', inputAudioName,
       '-c', 'copy',
       '-movflags', '+faststart',
       'fallback_copy.mp4'
     ];
-    console.log('[NEXUS-FINAL] fallback ffmpeg command: ffmpeg ' + fallbackCommand.join(' '));
     try {
-      const copyCode = await ffmpeg.exec(fallbackCommand);
-      console.log(`[NEXUS-FINAL] fallback copy exit code: ${copyCode}`);
+      const copyCode = await ffmpeg.exec(fallbackCopyArgs);
       if (copyCode === 0) {
         outputData = await ffmpeg.readFile('fallback_copy.mp4') as Uint8Array;
-        activeVideoCodec = 'h264';
-        activeAudioCodec = 'opus';
+        activeVideoCodec = forensics.videoCodec;
+        activeAudioCodec = forensics.audioCodec;
         console.log('[NEXUS-FINAL] Fallback copy succeeded:', outputData.byteLength, 'bytes');
       }
-    } catch (copyErr: any) {
-      console.warn('[NEXUS-FINAL] Fallback copy exception:', copyErr?.message || copyErr);
+    } catch (copyErr) {
+      console.warn('[NEXUS-FINAL] Fallback copy exception:', copyErr);
     }
   }
 
-  // Fallback 2: Direct video bytes if FFmpeg failed
+  // Fallback 3: Raw video stream if all FFmpeg remux attempts failed
   if (!outputData) {
     console.error('[NEXUS-FINAL] FFmpeg produced output: NO');
     console.warn('[NEXUS-FINAL] Using videoBytes as emergency fallback');
     outputData = videoBytes;
-    activeVideoCodec = 'h264';
+    activeVideoCodec = forensics.videoCodec;
     activeAudioCodec = 'none';
   }
 
-  console.log('[NEXUS-FINAL] stage: FFMPEG_OUTPUT');
-  console.log(`[NEXUS-FINAL] output byte length: ${outputData.byteLength}`);
+  forensics.offscreenStatus = 'complete';
 
   // Calculate hash
   const exactBytes = outputData.buffer.slice(outputData.byteOffset, outputData.byteOffset + outputData.byteLength);
@@ -622,9 +759,10 @@ async function handleProcessCdpMediaFfmpeg(payload: any) {
   console.log(`[NEXUS-FINAL] filename: ${filename || 'video.mp4'}`);
 
   // Clean MEMFS
-  try { await ffmpeg.deleteFile('video.mp4'); } catch {}
-  try { await ffmpeg.deleteFile('audio.webm'); } catch {}
+  try { await ffmpeg.deleteFile(inputVideoName); } catch {}
+  try { await ffmpeg.deleteFile(inputAudioName); } catch {}
   try { await ffmpeg.deleteFile('whatsapp_compat.mp4'); } catch {}
+  try { await ffmpeg.deleteFile('fallback_transcode.mp4'); } catch {}
   try { await ffmpeg.deleteFile('fallback_copy.mp4'); } catch {}
 
   const result = {
@@ -643,6 +781,7 @@ async function handleProcessCdpMediaFfmpeg(payload: any) {
     originalAcquiredBytes: videoBytes.byteLength + audioBytes.byteLength,
     ffmpegLogs: ffmpegLogs.slice(-20),
     downloadStarted: true,
+    forensics,
   };
 
   return result;
