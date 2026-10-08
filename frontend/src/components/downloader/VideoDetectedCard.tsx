@@ -426,12 +426,15 @@ export function VideoDetectedCard({
   };
 
   const isSourceUnresolved = 
+    metadata.platform === 'youtube' ||
     metadata.pipelineStatus === 'STREAM_SOURCE_UNRESOLVED' || 
     metadata.pipelineStatus === 'BROWSER_SOURCE_UNAVAILABLE' ||
-    metadata.pipelineStatus === 'ACTUAL_MEDIA_ACQUISITION_READY';
+    metadata.pipelineStatus === 'ACTUAL_MEDIA_ACQUISITION_READY' ||
+    metadata.pipelineStatus === 'STREAM_CANDIDATE_AVAILABLE' ||
+    metadata.pipelineStatus === 'BROWSER_EXTENSION_READY';
 
   const handleTriggerDownload = () => {
-    if (isSourceUnresolved) {
+    if (isSourceUnresolved || metadata.platform === 'youtube') {
       handleStartCdpDownload();
       return;
     }

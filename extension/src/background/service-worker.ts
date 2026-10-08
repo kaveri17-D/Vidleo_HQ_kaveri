@@ -437,6 +437,7 @@ chrome.runtime.onMessage.addListener((message: NexusMessage, sender, sendRespons
         sendResponse({
           type: 'RESOLVE_MEDIA_SUCCESS',
           payload: {
+            ...data,
             jobId: data.job_id || data.manifest?.job_id,
             manifest: data.manifest || data,
           },

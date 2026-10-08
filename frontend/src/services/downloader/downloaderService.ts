@@ -225,7 +225,8 @@ export class DownloaderService {
           });
         }
         try {
-          const extResult = await resolveMediaViaExtension(parsed.cleanUrl, 5000);
+          const rawExtResult = await resolveMediaViaExtension(parsed.cleanUrl, 6000);
+          const extResult = rawExtResult?.manifest || rawExtResult;
           if (extResult && (extResult.title || extResult.video_formats?.length > 0)) {
             const metadata = adaptBackendExtractResponse(extResult, parsed);
             metadata.pipelineStatus = extResult.pipeline_status || (extResult.direct_stream_available ? 'STREAM_CANDIDATE_AVAILABLE' : 'STREAM_SOURCE_UNRESOLVED');
@@ -504,7 +505,8 @@ export class DownloaderService {
         const extStatus = await detectExtension(150);
         if (extStatus.installed) {
           try {
-            const extResult = await resolveMediaViaExtension(metadata.canonicalUrl || metadata.url, 4000);
+            const rawExtResult = await resolveMediaViaExtension(metadata.canonicalUrl || metadata.url, 4000);
+            const extResult = rawExtResult?.manifest || rawExtResult;
             if (extResult?.candidate_stream_url) {
               resolvedStreamUrl = extResult.candidate_stream_url;
             }

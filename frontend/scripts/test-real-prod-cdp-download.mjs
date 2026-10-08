@@ -264,7 +264,10 @@ function computeSha256(filePath) {
     try {
       await uiPage.waitForFunction(() => {
         const buttons = Array.from(document.querySelectorAll('button'));
-        return buttons.some(b => (b.innerText || b.textContent || '').includes('Download Full Video'));
+        return buttons.some(b => {
+          const t = (b.innerText || b.textContent || '').trim();
+          return t.includes('Download Full Video') || t.includes('DOWNLOAD DIRECT CLIENT STREAM') || t.includes('Download Media');
+        });
       }, { timeout: 90000, polling: 500 });
     } catch (waitErr) {
       const currentUi = await uiPage.evaluate(() => ({
@@ -322,11 +325,14 @@ function computeSha256(filePath) {
 
         // Trigger the primary action button on DOM
         const buttons = Array.from(document.querySelectorAll('button'));
-        const fullVideoBtn = buttons.find(b => b.innerText?.includes('Download Full Video'));
+        const fullVideoBtn = buttons.find(b => {
+          const t = (b.innerText || b.textContent || '').trim();
+          return t.includes('Download Full Video') || t.includes('DOWNLOAD DIRECT CLIENT STREAM') || t.includes('Download Media');
+        });
         if (fullVideoBtn) {
           fullVideoBtn.click();
         } else {
-          reject(new Error('Could not find "Download Full Video" button on DOM'));
+          reject(new Error('Could not find Download button on DOM'));
         }
       });
     });
