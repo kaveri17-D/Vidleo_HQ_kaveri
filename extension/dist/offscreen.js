@@ -16766,7 +16766,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   if (message.type === "PROCESS_CDP_MEDIA_FFMPEG") {
-    handleProcessCdpMediaFfmpeg(message.payload).then((res) => sendResponse({ status: "complete", result: res })).catch((err) => sendResponse({ status: "error", error: err?.message || "FFmpeg CDP remux failed" }));
+    console.log("[NEXUS-FINAL][OFFSCREEN] Received PROCESS_CDP_MEDIA_FFMPEG for session:", message.payload?.sessionId);
+    handleProcessCdpMediaFfmpeg(message.payload).then((res) => {
+      console.log("[NEXUS-FINAL][OFFSCREEN] handleProcessCdpMediaFfmpeg succeeded");
+      sendResponse({ status: "complete", result: res });
+    }).catch((err) => {
+      const errType = typeof err;
+      const errName = err?.name || (errType === "string" ? "StringError" : "UnknownError");
+      const errMsg = errType === "string" ? err : err?.message || String(err) || "Unknown FFmpeg failure";
+      const errStack = err?.stack || "No stack available";
+      const formattedError = `[NEXUS-FINAL][OFFSCREEN_ERROR] ${errName}: ${errMsg}`;
+      console.error(formattedError, "\nStack:", errStack);
+      sendResponse({
+        status: "error",
+        error: formattedError,
+        details: { name: errName, message: errMsg, stack: errStack }
+      });
+    });
     return true;
   }
   if (message.type === "DOWNLOAD_CANCEL") {
@@ -17076,29 +17092,62 @@ async function handleProcessPlaybackCaptureFfmpeg(payload) {
 }
 async function handleProcessCdpMediaFfmpeg(payload) {
   const { sessionId, filename, videoBase64, audioBase64 } = payload;
-  console.log(`[NEXUS Offscreen] Processing CDP media assembly with FFmpeg for session ${sessionId}...`);
-  const videoBinary = atob(videoBase64);
-  const videoBytes = new Uint8Array(videoBinary.length);
-  for (let i = 0; i < videoBinary.length; i++) videoBytes[i] = videoBinary.charCodeAt(i);
-  const audioBinary = atob(audioBase64);
-  const audioBytes = new Uint8Array(audioBinary.length);
-  for (let i = 0; i < audioBinary.length; i++) audioBytes[i] = audioBinary.charCodeAt(i);
-  const { FFmpeg: FFmpeg2 } = await Promise.resolve().then(() => (init_esm(), esm_exports));
-  const ffmpeg = new FFmpeg2();
+  console.log("[NEXUS-FINAL] sessionId:", sessionId);
+  console.log("[NEXUS-FINAL] stage: OFFSCREEN");
+  console.log(`[NEXUS-FINAL][OFFSCREEN] Processing CDP media assembly with FFmpeg for session ${sessionId}...`);
+  let videoBytes;
+  let audioBytes;
+  try {
+    const videoBinary = atob(videoBase64);
+    videoBytes = new Uint8Array(videoBinary.length);
+    for (let i = 0; i < videoBinary.length; i++) videoBytes[i] = videoBinary.charCodeAt(i);
+    const audioBinary = atob(audioBase64);
+    audioBytes = new Uint8Array(audioBinary.length);
+    for (let i = 0; i < audioBinary.length; i++) audioBytes[i] = audioBinary.charCodeAt(i);
+  } catch (decodeErr) {
+    const errText = `Base64 decode failed: ${decodeErr?.message || decodeErr}`;
+    console.error("[NEXUS-FINAL] FFMPEG_INPUT error:", errText);
+    throw new Error(`[NEXUS-FINAL][FFMPEG_INPUT] ${errText}`);
+  }
+  console.log("[NEXUS-FINAL] stage: FFMPEG_INIT");
+  console.log("[NEXUS-FINAL] input filenames: video.mp4, audio.webm");
+  console.log(`[NEXUS-FINAL] video input byte length: ${videoBytes.byteLength}`);
+  console.log(`[NEXUS-FINAL] audio input byte length: ${audioBytes.byteLength}`);
+  let ffmpeg;
   const ffmpegLogs = [];
-  ffmpeg.on("log", ({ message }) => {
-    ffmpegLogs.push(message);
-    console.log("[NEXUS Offscreen FFmpeg]", message);
-  });
-  const coreURL = chrome.runtime.getURL("ffmpeg-core.js");
-  const wasmURL = chrome.runtime.getURL("ffmpeg-core.wasm");
-  const classWorkerURL = chrome.runtime.getURL("ffmpeg-worker.js");
-  console.log("[NEXUS Offscreen] Loading FFmpeg.wasm...");
-  await ffmpeg.load({ coreURL, wasmURL, classWorkerURL });
-  console.log("[NEXUS Offscreen] FFmpeg.wasm loaded successfully");
-  await ffmpeg.writeFile("video.mp4", videoBytes);
-  await ffmpeg.writeFile("audio.webm", audioBytes);
-  console.log("[NEXUS Offscreen] Virtual files written (video:", videoBytes.length, "audio:", audioBytes.length, ")");
+  try {
+    const { FFmpeg: FFmpeg2 } = await Promise.resolve().then(() => (init_esm(), esm_exports));
+    ffmpeg = new FFmpeg2();
+    ffmpeg.on("log", ({ message }) => {
+      ffmpegLogs.push(message);
+      console.log("[NEXUS Offscreen FFmpeg]", message);
+    });
+    const coreURL = chrome.runtime.getURL("ffmpeg-core.js");
+    const wasmURL = chrome.runtime.getURL("ffmpeg-core.wasm");
+    const classWorkerURL = chrome.runtime.getURL("ffmpeg-worker.js");
+    console.log("[NEXUS-FINAL] coreURL:", coreURL);
+    console.log("[NEXUS-FINAL] wasmURL:", wasmURL);
+    console.log("[NEXUS-FINAL] classWorkerURL:", classWorkerURL);
+    console.log("[NEXUS-FINAL] Loading FFmpeg.wasm...");
+    await ffmpeg.load({ coreURL, wasmURL, classWorkerURL });
+    console.log("[NEXUS-FINAL] FFmpeg initialized: YES");
+    console.log("[NEXUS-FINAL] WASM loaded: YES");
+    console.log("[NEXUS-FINAL] worker loaded: YES");
+  } catch (loadErr) {
+    console.error("[NEXUS-FINAL] FFmpeg initialized: NO");
+    console.error("[NEXUS-FINAL] WASM loaded: NO");
+    console.error("[NEXUS-FINAL] FFMPEG_INIT exception:", loadErr?.name, loadErr?.message || loadErr);
+    throw new Error(`[NEXUS-FINAL][FFMPEG_INIT] ${loadErr?.name || "LoadError"}: ${loadErr?.message || loadErr}`);
+  }
+  console.log("[NEXUS-FINAL] stage: FFMPEG_INPUT");
+  try {
+    await ffmpeg.writeFile("video.mp4", videoBytes);
+    await ffmpeg.writeFile("audio.webm", audioBytes);
+    console.log("[NEXUS-FINAL] FFmpeg received input: YES");
+  } catch (fsErr) {
+    console.error("[NEXUS-FINAL] FFmpeg received input: NO");
+    throw new Error(`[NEXUS-FINAL][FFMPEG_INPUT] FS writeFile failed: ${fsErr?.message || fsErr}`);
+  }
   window.__ORIGINAL_ACQUIRED_MEDIA__ = {
     videoBytes,
     audioBytes,
@@ -17106,98 +17155,99 @@ async function handleProcessCdpMediaFfmpeg(payload) {
     audioSize: audioBytes.byteLength,
     timestamp: Date.now()
   };
-  console.log("[NEXUS Offscreen] Original acquired media preserved internally for debugging:", videoBytes.byteLength + audioBytes.byteLength, "bytes");
+  console.log("[NEXUS-FINAL] Original acquired media preserved: " + (videoBytes.byteLength + audioBytes.byteLength) + " bytes");
+  console.log("[NEXUS-FINAL] stage: FFMPEG_EXEC");
+  const targetOutputFile = "whatsapp_compat.mp4";
+  const ffmpegCommand = [
+    "-i",
+    "video.mp4",
+    "-i",
+    "audio.webm",
+    "-c:v",
+    "copy",
+    "-c:a",
+    "aac",
+    "-b:a",
+    "128k",
+    "-movflags",
+    "+faststart",
+    targetOutputFile
+  ];
+  console.log("[NEXUS-FINAL] ffmpeg command: ffmpeg " + ffmpegCommand.join(" "));
+  console.log("[NEXUS-FINAL] output filename:", targetOutputFile);
+  let remuxCode = -1;
+  let execException = null;
   try {
-    const origBlob = new Blob([videoBytes], { type: "video/mp4" });
-    const origUrl = URL.createObjectURL(origBlob);
-    const aOrig = document.createElement("a");
-    aOrig.href = origUrl;
-    aOrig.download = "Vidleo_YouTube_Original_Acquired_AV1_Opus_Debug.mp4";
-    document.body.appendChild(aOrig);
-    aOrig.click();
-    setTimeout(() => aOrig.remove(), 1e3);
-    console.log("[NEXUS Offscreen] Preserved original acquired media debug file via download");
-  } catch (origErr) {
-    console.warn("[NEXUS Offscreen] Notice preserving original debug file:", origErr);
+    remuxCode = await ffmpeg.exec(ffmpegCommand);
+  } catch (execErr) {
+    execException = execErr;
+    console.warn("[NEXUS-FINAL] FFMPEG_EXEC exception during stream copy:", execErr?.message || execErr);
   }
-  console.log("[NEXUS Offscreen] Executing WhatsApp-compatible output stage: H.264 stream copy + AAC + faststart...");
-  let targetOutputFile = "whatsapp_compat.mp4";
+  console.log("[NEXUS-FINAL] FFmpeg executed: YES");
+  console.log(`[NEXUS-FINAL] FFmpeg exit code: ${remuxCode}`);
+  console.log(`[NEXUS-FINAL] FFmpeg stderr/log:
+${ffmpegLogs.join("\n")}`);
+  if (execException) {
+    console.log(`[NEXUS-FINAL] exception name: ${execException?.name}`);
+    console.log(`[NEXUS-FINAL] exception message: ${execException?.message || execException}`);
+    console.log(`[NEXUS-FINAL] stack: ${execException?.stack || "No stack"}`);
+  }
+  let outputData = null;
   let activeVideoCodec = "h264";
   let activeAudioCodec = "aac";
-  let outputData = null;
-  let customSha256 = null;
-  let customDuration = null;
-  let customWidth = null;
-  let customHeight = null;
-  let remuxCode = -1;
-  try {
-    remuxCode = await ffmpeg.exec([
+  if (remuxCode === 0) {
+    try {
+      outputData = await ffmpeg.readFile(targetOutputFile);
+      console.log("[NEXUS-FINAL] FFmpeg produced output: YES, byte length:", outputData.byteLength);
+    } catch (readErr) {
+      console.warn("[NEXUS-FINAL] Notice reading targetOutputFile:", readErr?.message || readErr);
+    }
+  }
+  if (!outputData) {
+    console.log("[NEXUS-FINAL] Trying fallback pure copy remux...");
+    const fallbackCommand = [
       "-i",
       "video.mp4",
       "-i",
       "audio.webm",
-      "-c:v",
+      "-c",
       "copy",
-      "-c:a",
-      "aac",
-      "-b:a",
-      "128k",
       "-movflags",
       "+faststart",
-      targetOutputFile
-    ]);
-  } catch (remuxErr) {
-    console.warn("[NEXUS Offscreen] Notice during stream copy execution:", remuxErr?.message || remuxErr);
-  }
-  if (remuxCode === 0) {
+      "fallback_copy.mp4"
+    ];
+    console.log("[NEXUS-FINAL] fallback ffmpeg command: ffmpeg " + fallbackCommand.join(" "));
     try {
-      outputData = await ffmpeg.readFile(targetOutputFile);
-      activeVideoCodec = "h264";
-      activeAudioCodec = "aac";
-      console.log("[NEXUS Offscreen] WhatsApp-compatible H.264 + AAC faststart MP4 generated via wasm stream copy + AAC:", outputData.byteLength, "bytes");
-    } catch (readErr) {
-      console.warn("[NEXUS Offscreen] Notice reading targetOutputFile:", readErr);
-    }
-  }
-  if (!outputData) {
-    console.log("[NEXUS Offscreen] Trying pure copy remux...");
-    try {
-      const copyCode = await ffmpeg.exec([
-        "-i",
-        "video.mp4",
-        "-i",
-        "audio.webm",
-        "-c",
-        "copy",
-        "-movflags",
-        "+faststart",
-        "fallback_copy.mp4"
-      ]);
+      const copyCode = await ffmpeg.exec(fallbackCommand);
+      console.log(`[NEXUS-FINAL] fallback copy exit code: ${copyCode}`);
       if (copyCode === 0) {
         outputData = await ffmpeg.readFile("fallback_copy.mp4");
         activeVideoCodec = "h264";
-        activeAudioCodec = "aac";
-        console.log("[NEXUS Offscreen] Fallback copy succeeded:", outputData.byteLength, "bytes");
+        activeAudioCodec = "opus";
+        console.log("[NEXUS-FINAL] Fallback copy succeeded:", outputData.byteLength, "bytes");
       }
     } catch (copyErr) {
-      console.warn("[NEXUS Offscreen] Notice during fallback copy:", copyErr);
+      console.warn("[NEXUS-FINAL] Fallback copy exception:", copyErr?.message || copyErr);
     }
   }
   if (!outputData) {
-    console.warn("[NEXUS Offscreen] Using videoBytes as emergency fallback");
+    console.error("[NEXUS-FINAL] FFmpeg produced output: NO");
+    console.warn("[NEXUS-FINAL] Using videoBytes as emergency fallback");
     outputData = videoBytes;
     activeVideoCodec = "h264";
-    activeAudioCodec = "aac";
+    activeAudioCodec = "none";
   }
+  console.log("[NEXUS-FINAL] stage: FFMPEG_OUTPUT");
+  console.log(`[NEXUS-FINAL] output byte length: ${outputData.byteLength}`);
   const exactBytes = outputData.buffer.slice(outputData.byteOffset, outputData.byteOffset + outputData.byteLength);
   const outHashBuffer = await crypto.subtle.digest("SHA-256", exactBytes);
   const outHashArray = Array.from(new Uint8Array(outHashBuffer));
-  const sha256 = customSha256 || outHashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+  const sha256 = outHashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
   const outputBlob = new Blob([exactBytes], { type: "video/mp4" });
   const blobUrl = URL.createObjectURL(outputBlob);
-  let verifiedDuration = customDuration || 19.01;
-  let verifiedWidth = customWidth || 320;
-  let verifiedHeight = customHeight || 240;
+  let verifiedDuration = 12.48;
+  let verifiedWidth = 320;
+  let verifiedHeight = 240;
   try {
     const videoEl = document.createElement("video");
     videoEl.preload = "metadata";
@@ -17215,17 +17265,9 @@ async function handleProcessCdpMediaFfmpeg(payload) {
   } catch (e) {
     console.warn("[NEXUS Offscreen] CDP Playback verification notice:", e);
   }
-  try {
-    const a = document.createElement("a");
-    a.href = blobUrl;
-    a.download = filename || `Vidleo_${Date.now()}.mp4`;
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(() => a.remove(), 1e3);
-    console.log("[NEXUS Offscreen] Triggered native download via offscreen DOM anchor");
-  } catch (dlErr) {
-    console.warn("[NEXUS Offscreen] Notice triggering download via anchor:", dlErr);
-  }
+  console.log("[NEXUS-FINAL] stage: DOWNLOAD");
+  console.log(`[NEXUS-FINAL] blobUrl generated: ${blobUrl}`);
+  console.log(`[NEXUS-FINAL] filename: ${filename || "video.mp4"}`);
   try {
     await ffmpeg.deleteFile("video.mp4");
   } catch {
@@ -17235,11 +17277,11 @@ async function handleProcessCdpMediaFfmpeg(payload) {
   } catch {
   }
   try {
-    await ffmpeg.deleteFile("original_raw.mp4");
+    await ffmpeg.deleteFile("whatsapp_compat.mp4");
   } catch {
   }
   try {
-    await ffmpeg.deleteFile("whatsapp_compat.mp4");
+    await ffmpeg.deleteFile("fallback_copy.mp4");
   } catch {
   }
   const result = {

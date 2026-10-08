@@ -590,13 +590,24 @@ if (chrome.runtime.onMessageExternal) {
 
     if (message.type === 'NEXUS_CDP_DOWNLOAD_START') {
       const payload = message.payload as StartCdpDownloadPayload;
+      console.log('[NEXUS-FINAL] sessionId:', payload.sessionId);
+      console.log('[NEXUS-FINAL] selectedQuality:', payload.quality || 'unknown');
       handleStartCdpMediaDownload(payload)
         .then((result) => {
           sendResponse({ type: 'NEXUS_CDP_RESULT', payload: result });
         })
         .catch((err) => {
-          console.error('[NEXUS SW] handleStartCdpMediaDownload failed:', err);
-          sendResponse({ type: 'NEXUS_CDP_ERROR', payload: { error: err.message } });
+          const errMsg = err?.message || String(err);
+          console.error('[NEXUS-FINAL][SW] handleStartCdpMediaDownload failed:', errMsg, err?.stack);
+          sendResponse({ type: 'NEXUS_CDP_ERROR', payload: { error: errMsg, stack: err?.stack } });
+          broadcastToTabs({
+            type: 'NEXUS_CDP_ERROR',
+            payload: {
+              sessionId: payload.sessionId,
+              error: errMsg,
+              stack: err?.stack,
+            }
+          });
         });
       return true;
     }
@@ -629,7 +640,9 @@ function containsMoof(u: Uint8Array): boolean {
  */
 async function handleStartCdpMediaDownload(payload: StartCdpDownloadPayload): Promise<CdpDownloadResultPayload> {
   const { sessionId, videoId, videoUrl, targetFilename, durationSeconds } = payload;
-  console.log('[NEXUS SW] handleStartCdpMediaDownload initiated for session:', sessionId);
+  console.log('[NEXUS-FINAL] sessionId:', sessionId);
+  console.log('[NEXUS-FINAL] selectedQuality:', payload.quality || 'unknown');
+  console.log('[NEXUS-FINAL] stage: CDP_ATTACH');
   await ensureOffscreenDocument();
 
   broadcastToTabs({
@@ -749,6 +762,7 @@ async function handleStartCdpMediaDownload(payload: StartCdpDownloadPayload): Pr
   });
 
 
+  console.log('[NEXUS-FINAL] stage: NETWORK');
   broadcastToTabs({
     type: 'NEXUS_CDP_PROGRESS',
     payload: {
@@ -802,7 +816,7 @@ async function handleStartCdpMediaDownload(payload: StartCdpDownloadPayload): Pr
           }
 
           if (bytes.length > 50000 && containsMoof(bytes)) {
-            console.log('[NEXUS SW] Acquired genuine UMP response body:', bytes.length, 'bytes from req:', params.requestId);
+            console.log('[NEXUS-FINAL] stage: MEDIA_RESPONSE, bytes:', bytes.length, 'from req:', params.requestId);
             if (!settled) {
               settled = true;
               clearTimeout(timeout);
@@ -860,6 +874,7 @@ async function handleStartCdpMediaDownload(payload: StartCdpDownloadPayload): Pr
   });
 
   // Demux UMP packets
+  console.log('[NEXUS-FINAL] stage: UMP, raw bytes:', rawUmpBytes.length);
   broadcastToTabs({
     type: 'NEXUS_CDP_PROGRESS',
     payload: {
@@ -879,6 +894,8 @@ async function handleStartCdpMediaDownload(payload: StartCdpDownloadPayload): Pr
     throw new Error(`Failed to demux audio or video from acquired UMP media stream (audio: ${demux.audioBytes}, video: ${demux.videoBytes})`);
   }
 
+  console.log('[NEXUS-FINAL] stage: VIDEO_ASSEMBLY');
+  console.log(`[NEXUS-FINAL] videoStream: bytes=${demux.videoBytes}, itag=395, container=mp4`);
   broadcastToTabs({
     type: 'NEXUS_CDP_PROGRESS',
     payload: {
@@ -891,6 +908,8 @@ async function handleStartCdpMediaDownload(payload: StartCdpDownloadPayload): Pr
     },
   });
 
+  console.log('[NEXUS-FINAL] stage: AUDIO_ASSEMBLY');
+  console.log(`[NEXUS-FINAL] audioStream: bytes=${demux.audioBytes}, itag=251, container=webm`);
   broadcastToTabs({
     type: 'NEXUS_CDP_PROGRESS',
     payload: {
@@ -922,6 +941,7 @@ async function handleStartCdpMediaDownload(payload: StartCdpDownloadPayload): Pr
   });
 
   // Ensure offscreen document is alive immediately before sending media message
+  console.log('[NEXUS-FINAL] stage: OFFSCREEN dispatch');
   console.log('[NEXUS SW] Ensuring offscreen document is alive before remux dispatch...');
   await ensureOffscreenDocument();
 

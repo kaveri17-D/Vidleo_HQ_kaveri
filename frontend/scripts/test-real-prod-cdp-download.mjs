@@ -102,11 +102,26 @@ function computeSha256(filePath) {
   });
 
   browser.on('targetcreated', async (target) => {
+    const url = target.url();
+    const type = target.type();
     try {
       const p = await target.page().catch(() => null);
       if (p) {
-        const name = target.url().split('/').pop() || target.type();
+        const name = url.split('/').pop() || type;
         p.on('console', msg => console.log(`  [${name} LOG]`, msg.text()));
+      } else {
+        const session = await target.createCDPSession().catch(() => null);
+        if (session) {
+          await session.send('Runtime.enable').catch(() => {});
+          const name = url.split('/').pop() || type;
+          session.on('Runtime.consoleAPICalled', (evt) => {
+            const args = evt.args.map(a => a.value !== undefined ? a.value : (a.description || '')).join(' ');
+            console.log(`  [${name} LOG]`, args);
+          });
+          session.on('Runtime.exceptionThrown', (evt) => {
+            console.error(`  [${name} EXCEPTION]`, evt.exceptionDetails?.exception?.description || evt.exceptionDetails?.text);
+          });
+        }
       }
     } catch {}
   });
@@ -188,7 +203,19 @@ function computeSha256(filePath) {
       downloadPath: DOWNLOAD_DIR,
     });
 
-    await uiPage.goto(PROD_URL, { waitUntil: 'domcontentloaded', timeout: 45000 });
+    let loaded = false;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        console.log(`[Step 4.1] Navigating to ${PROD_URL} (Attempt ${attempt}/3)...`);
+        await uiPage.goto(PROD_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+        loaded = true;
+        break;
+      } catch (navErr) {
+        console.warn(`[Notice] Attempt ${attempt} navigation notice: ${navErr.message}. Retrying in 3s...`);
+        await new Promise(r => setTimeout(r, 3000));
+      }
+    }
+    if (!loaded) throw new Error(`Failed to navigate to ${PROD_URL} after 3 attempts`);
     await new Promise(r => setTimeout(r, 2000));
     console.log('[PASS] Production Vercel page loaded');
 

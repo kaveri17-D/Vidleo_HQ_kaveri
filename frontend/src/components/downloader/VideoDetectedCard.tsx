@@ -1041,8 +1041,9 @@ export function VideoDetectedCard({
               </div>
 
               {cdpState?.error && (
-                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800">
-                  {cdpState.error}
+                <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800 break-words font-mono space-y-1">
+                  <div className="font-bold font-sans">Acquisition / Transcode Diagnostic:</div>
+                  <div className="whitespace-pre-wrap">{cdpState.error}</div>
                 </div>
               )}
 
