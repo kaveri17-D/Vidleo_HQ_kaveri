@@ -8,6 +8,16 @@ import type {
 } from '../messaging/protocol';
 
 console.log('[NEXUS Offscreen] Initialized and listening for media processing requests');
+try {
+  const extId = chrome.runtime.id;
+  const extVer = chrome.runtime.getManifest()?.version || '1.0.1';
+  console.log('[NEXUS-INSTRUMENT] OFFSCREEN_DOCUMENT_READY:', JSON.stringify({
+    event: 'OFFSCREEN_DOCUMENT_READY',
+    extensionId: extId,
+    extensionVersion: extVer,
+    timestamp: Date.now(),
+  }));
+} catch {}
 
 let activeAbortController: AbortController | null = null;
 let currentSink: ExtensionDownloadSink | null = null;
@@ -47,7 +57,26 @@ chrome.runtime.onMessage.addListener((message: NexusMessage, sender, sendRespons
   }
 
   if (message.type === 'OFFSCREEN_PING') {
-    sendResponse({ type: 'OFFSCREEN_PONG', timestamp: Date.now() });
+    const extId = chrome.runtime?.id || 'unknown';
+    const extVer = chrome.runtime?.getManifest?.()?.version || '1.0.1';
+    console.log('[NEXUS-INSTRUMENT] OFFSCREEN_PING:', JSON.stringify({
+      event: 'OFFSCREEN_PING',
+      extensionId: extId,
+      extensionVersion: extVer,
+      timestamp: Date.now(),
+    }));
+    sendResponse({
+      type: 'OFFSCREEN_PONG',
+      timestamp: Date.now(),
+      extensionId: extId,
+      extensionVersion: extVer,
+    });
+    console.log('[NEXUS-INSTRUMENT] OFFSCREEN_PONG:', JSON.stringify({
+      event: 'OFFSCREEN_PONG',
+      extensionId: extId,
+      extensionVersion: extVer,
+      timestamp: Date.now(),
+    }));
     return false;
   }
 
@@ -554,6 +583,61 @@ async function handleProcessCdpMediaFfmpeg(payload: any) {
   console.log('[NEXUS-FINAL] stage: FFMPEG_INIT');
   console.log(`[NEXUS-FINAL] input detected: video=${forensics.videoContainer}/${forensics.videoCodec} (${forensics.videoBytes}B), audio=${forensics.audioContainer}/${forensics.audioCodec} (${forensics.audioBytes}B)`);
 
+  const extId = chrome.runtime?.id || 'unknown';
+  const extVer = chrome.runtime?.getManifest?.()?.version || '1.0.1';
+  const reqId = payload.requestId || '';
+
+  const instrument = (event: string, extra: any = {}) => {
+    const data = {
+      event,
+      sessionId,
+      requestId: reqId,
+      extensionId: extId,
+      extensionVersion: extVer,
+      timestamp: Date.now(),
+      ...extra,
+    };
+    console.log(`[NEXUS-INSTRUMENT] ${event}:`, JSON.stringify(data));
+    try {
+      chrome.runtime.sendMessage({
+        type: 'NEXUS_INSTRUMENTATION',
+        payload: data,
+      }).catch(() => {});
+    } catch {}
+  };
+
+  instrument('FFMPEG_INIT_START');
+
+  // Stage FFMPEG_CORE_RESOLVE
+  instrument('FFMPEG_CORE_RESOLVE_START');
+  const coreURL = chrome.runtime.getURL('ffmpeg-core.js');
+  const wasmURL = chrome.runtime.getURL('ffmpeg-core.wasm');
+  const classWorkerURL = chrome.runtime.getURL('ffmpeg-worker.js');
+  instrument('FFMPEG_CORE_URL', { coreURL });
+  instrument('FFMPEG_WASM_URL', { wasmURL });
+
+  // Probe fetch coreURL
+  instrument('FFMPEG_CORE_FETCH_START', { url: coreURL });
+  let coreBytes = 0;
+  try {
+    const cResp = await fetch(coreURL);
+    const cBuf = await cResp.arrayBuffer();
+    coreBytes = cBuf.byteLength;
+    instrument('FFMPEG_CORE_FETCH_RESPONSE', { status: cResp.status, statusText: cResp.statusText, bytes: coreBytes });
+    instrument('FFMPEG_CORE_FETCH_STATUS', { status: cResp.status });
+    instrument('FFMPEG_CORE_FETCH_BYTES', { bytes: coreBytes });
+  } catch (cErr: any) {
+    instrument('FFMPEG_CORE_FETCH_STATUS', { status: -1, error: cErr?.message });
+  }
+
+  // Probe fetch wasmURL
+  try {
+    const wResp = await fetch(wasmURL);
+    instrument('FFMPEG_WASM_FETCH_STATUS', { status: wResp.status });
+  } catch (wErr: any) {
+    instrument('FFMPEG_WASM_FETCH_STATUS', { status: -1, error: wErr?.message });
+  }
+
   // Load FFmpeg.wasm
   let ffmpeg: any;
   const ffmpegLogs: string[] = [];
@@ -566,21 +650,19 @@ async function handleProcessCdpMediaFfmpeg(payload: any) {
       console.log('[NEXUS Offscreen FFmpeg]', message);
     });
 
-    const coreURL = chrome.runtime.getURL('ffmpeg-core.js');
-    const wasmURL = chrome.runtime.getURL('ffmpeg-core.wasm');
-    const classWorkerURL = chrome.runtime.getURL('ffmpeg-worker.js');
-
     console.log('[NEXUS-FINAL] Loading FFmpeg.wasm...');
     await ffmpeg.load({ coreURL, wasmURL, classWorkerURL });
     forensics.ffmpegInitialized = true;
     forensics.offscreenStatus = 'ffmpeg_loaded';
     console.log('[NEXUS-FINAL] FFmpeg initialized: YES');
+    instrument('FFMPEG_INIT_SUCCESS', { coreBytes });
   } catch (loadErr: any) {
     forensics.ffmpegInitialized = false;
     forensics.offscreenStatus = 'ffmpeg_load_failed';
     forensics.ffmpegException = loadErr?.message || String(loadErr);
     forensics.ffmpegStack = loadErr?.stack || null;
     console.error('[NEXUS-FINAL] FFmpeg initialized: NO', loadErr);
+    instrument('FFMPEG_INIT_ERROR', { error: loadErr?.message || String(loadErr), stack: loadErr?.stack });
     throw new Error(`[NEXUS-FINAL][FFMPEG_INIT] ${loadErr?.name || 'LoadError'}: ${loadErr?.message || loadErr}`);
   }
 

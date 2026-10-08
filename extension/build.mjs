@@ -128,16 +128,20 @@ async function build() {
       path.resolve(distDir, 'ffmpeg-core.wasm')
     );
   }
-  if (fs.existsSync(path.resolve(ffmpegPkgDist, 'worker.js'))) {
-    await esbuild.build({
-      entryPoints: [path.resolve(ffmpegPkgDist, 'worker.js')],
-      outfile: path.resolve(distDir, 'ffmpeg-worker.js'),
-      bundle: true,
-      format: 'esm',
-      target: ['chrome110'],
-      platform: 'browser',
-    });
-  }
+  const workerSource = fs.existsSync(path.resolve(__dirname, 'src/ffmpeg/worker.ts'))
+    ? path.resolve(__dirname, 'src/ffmpeg/worker.ts')
+    : path.resolve(ffmpegPkgDist, 'worker.js');
+  console.log('[NEXUS Extension Build] Bundling extension-safe FFmpeg worker from', workerSource);
+  await esbuild.build({
+    entryPoints: [workerSource],
+    outfile: path.resolve(distDir, 'ffmpeg-worker.js'),
+    bundle: true,
+    format: 'esm',
+    target: ['chrome110'],
+    platform: 'browser',
+    nodePaths: [frontendNodeModules],
+    logLevel: 'info',
+  });
 
   // Phase 16: Compute SHA256 hashes and generate BUILD_MANIFEST.json
   const hashFile = (p) => {
@@ -165,6 +169,7 @@ async function build() {
     offscreenSha256: hashFile(path.resolve(distDir, 'offscreen.js')),
     ffmpegCoreSha256: hashFile(path.resolve(distDir, 'ffmpeg-core.js')),
     ffmpegWasmSha256: hashFile(path.resolve(distDir, 'ffmpeg-core.wasm')),
+    ffmpegWorkerSha256: hashFile(path.resolve(distDir, 'ffmpeg-worker.js')),
   };
 
   fs.writeFileSync(path.resolve(distDir, 'BUILD_MANIFEST.json'), JSON.stringify(buildManifest, null, 2));

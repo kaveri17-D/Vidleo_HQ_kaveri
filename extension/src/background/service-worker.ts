@@ -62,6 +62,12 @@ async function ensureOffscreenDocument(forceFresh: boolean = false): Promise<voi
       reasons: ['BLOBS' as any, 'AUDIO_PLAYBACK' as any],
       justification: 'NEXUS client-first media demuxing and MP4 multiplexing',
     });
+    console.log('[NEXUS-INSTRUMENT] OFFSCREEN_CREATED:', JSON.stringify({
+      event: 'OFFSCREEN_CREATED',
+      extensionId: chrome.runtime?.id || 'unknown',
+      extensionVersion: chrome.runtime?.getManifest?.()?.version || '1.0.1',
+      timestamp: Date.now(),
+    }));
     console.log('[NEXUS Service Worker] Created fresh offscreen document, awaiting liveness...');
   } catch (err: any) {
     if (!err?.message?.includes('Only a single offscreen document may be created')) {
@@ -1205,6 +1211,7 @@ async function handleStartCdpMediaDownload(
     chrome.runtime.sendMessage({
       type: 'PROCESS_CDP_MEDIA_FFMPEG',
       payload: {
+        requestId: payload.requestId || '',
         sessionId,
         filename: targetFilename || `Vidleo_YouTube_${videoId || Date.now()}.mp4`,
         videoBase64,
