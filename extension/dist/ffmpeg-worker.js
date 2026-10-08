@@ -1,4 +1,4 @@
-// ../frontend/node_modules/@ffmpeg/ffmpeg/dist/esm/const.js
+// frontend/node_modules/@ffmpeg/ffmpeg/dist/esm/const.js
 var CORE_VERSION = "0.12.9";
 var CORE_URL = `https://unpkg.com/@ffmpeg/core@${CORE_VERSION}/dist/umd/ffmpeg-core.js`;
 var FFMessageType;
@@ -21,13 +21,13 @@ var FFMessageType;
   FFMessageType2["UNMOUNT"] = "UNMOUNT";
 })(FFMessageType || (FFMessageType = {}));
 
-// ../frontend/node_modules/@ffmpeg/ffmpeg/dist/esm/errors.js
+// frontend/node_modules/@ffmpeg/ffmpeg/dist/esm/errors.js
 var ERROR_UNKNOWN_MESSAGE_TYPE = new Error("unknown message type");
 var ERROR_NOT_LOADED = new Error("ffmpeg is not loaded, call `await ffmpeg.load()` first");
 var ERROR_TERMINATED = new Error("called FFmpeg.terminate()");
 var ERROR_IMPORT_FAILURE = new Error("failed to import ffmpeg-core.js");
 
-// ../frontend/node_modules/@ffmpeg/ffmpeg/dist/esm/worker.js
+// frontend/node_modules/@ffmpeg/ffmpeg/dist/esm/worker.js
 var ffmpeg;
 var load = async ({ coreURL: _coreURL, wasmURL: _wasmURL, workerURL: _workerURL }) => {
   const first = !ffmpeg;

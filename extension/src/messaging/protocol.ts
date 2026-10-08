@@ -32,6 +32,9 @@ export type NexusMessageType =
   | 'NEXUS_CDP_CANCEL'
   | 'CDP_MEDIA_DOWNLOAD_SUCCESS'
   | 'CDP_MEDIA_DOWNLOAD_ERROR'
+  | 'FRONTEND_HELLO'
+  | 'EXTENSION_HELLO'
+  | 'NEXUS_EXTENSION_INFO'
   | 'PROCESS_CDP_MEDIA_FFMPEG';
 
 export interface StartDirectAcquisitionPayload {
@@ -157,6 +160,7 @@ export interface ProcessPlaybackCaptureFfmpegPayload {
 }
 
 export interface StartCdpDownloadPayload {
+  requestId?: string;
   sessionId: string;
   videoId?: string;
   videoUrl: string;
@@ -167,6 +171,7 @@ export interface StartCdpDownloadPayload {
 }
 
 export interface CdpDownloadProgressPayload {
+  requestId?: string;
   sessionId: string;
   state:
     | 'EXTENSION_READY'
@@ -188,11 +193,11 @@ export interface CdpDownloadProgressPayload {
   bytesAcquired?: number;
   videoBytes?: number;
   audioBytes?: number;
-  requestId?: string;
 }
 
 export interface CdpDownloadResultPayload {
   success: boolean;
+  requestId?: string;
   sessionId: string;
   filename: string;
   totalBytes: number;
@@ -211,6 +216,7 @@ export interface CdpDownloadResultPayload {
 
 export interface CdpMediaDownloadSuccessPayload {
   type: 'CDP_MEDIA_DOWNLOAD_SUCCESS';
+  requestId?: string;
   sessionId: string;
   filename: string;
   bytes: number;
@@ -233,6 +239,7 @@ export interface CdpMediaDownloadSuccessPayload {
 
 export interface CdpMediaDownloadErrorPayload {
   type: 'CDP_MEDIA_DOWNLOAD_ERROR';
+  requestId?: string;
   sessionId: string;
   stage: string;
   code: string;

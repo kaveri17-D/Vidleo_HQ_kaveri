@@ -392,23 +392,81 @@ async function notifyComplete(
   }
 }
 
-// Active in-flight CDP jobs map to prevent duplicate debugger attachments and race conditions
-const activeCdpJobs = new Map<string, Promise<CdpMediaDownloadSuccessPayload>>();
+// Idempotency and ownership tracking maps (Phases 3, 4, 8)
+const activeRequests = new Map<string, Promise<CdpMediaDownloadSuccessPayload>>();
+const activeSessions = new Map<string, Promise<CdpMediaDownloadSuccessPayload>>();
+const activeTabJobs = new Map<number, { sessionId: string; requestId: string }>();
+const tabDebuggerOwners = new Map<number, { sessionId: string; requestId: string; attached: boolean }>();
+const terminalSessions = new Map<string, { state: 'SUCCESS' | 'FAILED' | 'CANCELLED'; result: any }>();
 
 async function dispatchCdpMediaDownload(payload: StartCdpDownloadPayload, sendResponse: (res: any) => void) {
   const sessionId = payload.sessionId || `cdp-${Date.now()}`;
-  console.log('[NEXUS-FINAL] dispatchCdpMediaDownload invoked for session:', sessionId);
+  const requestId = payload.requestId || (payload as any).requestId || `req-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  const selectedQuality = payload.quality || '360p';
 
-  let jobPromise = activeCdpJobs.get(sessionId);
-  if (!jobPromise) {
-    jobPromise = handleStartCdpMediaDownload(payload)
-      .finally(() => {
-        activeCdpJobs.delete(sessionId);
-      });
-    activeCdpJobs.set(sessionId, jobPromise);
-  } else {
-    console.log('[NEXUS-FINAL] Deduplicating CDP download request, reusing active job for session:', sessionId);
+  console.log(`[NEXUS-FINAL] dispatchCdpMediaDownload: requestId=${requestId}, sessionId=${sessionId}, quality=${selectedQuality}`);
+
+  // Phase 8: Exactly-Once Terminal State Guard
+  if (terminalSessions.has(sessionId)) {
+    const term = terminalSessions.get(sessionId)!;
+    console.log(`[NEXUS-FINAL] Session ${sessionId} already terminal (${term.state}). Returning terminal result.`);
+    sendResponse({
+      type: term.state === 'SUCCESS' ? 'CDP_MEDIA_DOWNLOAD_SUCCESS' : 'CDP_MEDIA_DOWNLOAD_ERROR',
+      payload: term.result,
+    });
+    return;
   }
+
+  // Phase 3: Request & Session Level Deduplication
+  let existingPromise = activeRequests.get(requestId) || activeSessions.get(sessionId);
+  if (existingPromise) {
+    console.log(`[NEXUS-FINAL] Reusing existing in-flight job for requestId=${requestId} / sessionId=${sessionId}`);
+    try {
+      const result = await existingPromise;
+      sendResponse({ type: 'CDP_MEDIA_DOWNLOAD_SUCCESS', payload: result });
+    } catch (err: any) {
+      sendResponse({ type: 'CDP_MEDIA_DOWNLOAD_ERROR', payload: err });
+    }
+    return;
+  }
+
+  let ownedTabId: number | undefined;
+
+  const jobPromise = (async (): Promise<CdpMediaDownloadSuccessPayload> => {
+    try {
+      const result = await handleStartCdpMediaDownload({
+        ...payload,
+        sessionId,
+        requestId,
+      }, (tabId: number) => {
+        ownedTabId = tabId;
+        // Phase 3: Tab-level concurrency check
+        if (activeTabJobs.has(tabId) && activeTabJobs.get(tabId)!.sessionId !== sessionId) {
+          const err: any = new Error('Target playback tab is currently owned by another acquisition session');
+          err.code = 'CDP_TAB_BUSY';
+          throw err;
+        }
+        activeTabJobs.set(tabId, { sessionId, requestId });
+      });
+
+      // Terminal state guard: SUCCESS
+      terminalSessions.set(sessionId, { state: 'SUCCESS', result });
+      return result;
+    } catch (err: any) {
+      // Terminal state guard: FAILED
+      terminalSessions.set(sessionId, { state: 'FAILED', result: err });
+      throw err;
+    } finally {
+      activeRequests.delete(requestId);
+      activeSessions.delete(sessionId);
+      if (ownedTabId !== undefined) {
+        activeTabJobs.delete(ownedTabId);
+      }
+    }
+  })();
+
+  activeRequests.set(requestId, jobPromise);
+  activeSessions.set(sessionId, jobPromise);
 
   try {
     const result = await jobPromise;
@@ -418,12 +476,15 @@ async function dispatchCdpMediaDownload(payload: StartCdpDownloadPayload, sendRe
     });
   } catch (err: any) {
     const errMsg = err?.message || String(err);
-    console.error('[NEXUS-FINAL][SW] handleStartCdpMediaDownload failed:', errMsg, err?.stack);
+    const errCode = err?.code || 'CDP_DOWNLOAD_FAILED';
+    console.error(`[NEXUS-FINAL][SW] CDP Download failed (${errCode}):`, errMsg, err?.stack);
+
     const errorPayload: CdpMediaDownloadErrorPayload = {
       type: 'CDP_MEDIA_DOWNLOAD_ERROR',
-      sessionId: payload.sessionId,
+      requestId,
+      sessionId,
       stage: 'ACQUISITION_FAILED',
-      code: 'CDP_DOWNLOAD_FAILED',
+      code: errCode,
       message: errMsg,
       error: errMsg,
       ffmpegExitCode: -1,
@@ -764,7 +825,10 @@ function containsMoof(u: Uint8Array): boolean {
  * Demuxes client-side with zero-dependency UMP parser, passes pure AV1 and Opus to offscreen FFmpeg,
  * and downloads the resulting high-fidelity MP4 directly to the user's laptop.
  */
-async function handleStartCdpMediaDownload(payload: StartCdpDownloadPayload): Promise<CdpMediaDownloadSuccessPayload> {
+async function handleStartCdpMediaDownload(
+  payload: StartCdpDownloadPayload,
+  onTabAssigned?: (tabId: number) => void
+): Promise<CdpMediaDownloadSuccessPayload> {
   const { sessionId, videoId, videoUrl, targetFilename, durationSeconds } = payload;
   console.log('[NEXUS-FINAL] sessionId:', sessionId);
   console.log('[NEXUS-FINAL] selectedQuality:', payload.quality || 'unknown');
@@ -774,6 +838,7 @@ async function handleStartCdpMediaDownload(payload: StartCdpDownloadPayload): Pr
   broadcastToTabs({
     type: 'NEXUS_CDP_PROGRESS',
     payload: {
+      requestId: payload.requestId,
       sessionId,
       state: 'EXTENSION_READY',
       percent: 10,
@@ -810,12 +875,17 @@ async function handleStartCdpMediaDownload(payload: StartCdpDownloadPayload): Pr
   }
 
   const tabId = targetTab.id;
+  if (onTabAssigned) {
+    onTabAssigned(tabId);
+  }
+
   const debuggee = { tabId };
   console.log('[NEXUS SW] Selected targetTab:', tabId, targetTab.url);
 
   broadcastToTabs({
     type: 'NEXUS_CDP_PROGRESS',
     payload: {
+      requestId: payload.requestId,
       sessionId,
       state: 'YOUTUBE_TAB_READY',
       percent: 20,
@@ -826,6 +896,7 @@ async function handleStartCdpMediaDownload(payload: StartCdpDownloadPayload): Pr
   broadcastToTabs({
     type: 'NEXUS_CDP_PROGRESS',
     payload: {
+      requestId: payload.requestId,
       sessionId,
       state: 'CDP_ATTACHING',
       percent: 30,
@@ -833,22 +904,33 @@ async function handleStartCdpMediaDownload(payload: StartCdpDownloadPayload): Pr
     },
   });
 
-  // Attach debugger
-  await new Promise<void>((resolve, reject) => {
-    chrome.debugger.attach(debuggee, '1.3', () => {
-      if (chrome.runtime.lastError) {
-        console.warn('[NEXUS SW] chrome.debugger.attach message:', chrome.runtime.lastError.message);
-        if (chrome.runtime.lastError.message?.includes('Another debugger is already attached')) {
-          resolve();
+  let debuggerAttached = false;
+  let rawUmpBytes: Uint8Array;
+
+  try {
+    // Attach debugger with strict ownership tracking (Phase 4)
+    await new Promise<void>((resolve, reject) => {
+      chrome.debugger.attach(debuggee, '1.3', () => {
+        if (chrome.runtime.lastError) {
+          const msg = chrome.runtime.lastError.message || '';
+          console.warn('[NEXUS SW] chrome.debugger.attach message:', msg);
+          if (msg.includes('Another debugger is already attached')) {
+            debuggerAttached = true;
+            tabDebuggerOwners.set(tabId, { sessionId, requestId: payload.requestId || '', attached: true });
+            resolve();
+          } else {
+            const err: any = new Error(`CDP attach failed: ${msg}`);
+            err.code = 'CDP_ATTACH_FAILED';
+            reject(err);
+          }
         } else {
-          reject(new Error(chrome.runtime.lastError.message));
+          debuggerAttached = true;
+          tabDebuggerOwners.set(tabId, { sessionId, requestId: payload.requestId || '', attached: true });
+          console.log('[NEXUS SW] Debugger attached successfully to tab', tabId);
+          resolve();
         }
-      } else {
-        console.log('[NEXUS SW] Debugger attached successfully to tab', tabId);
-        resolve();
-      }
+      });
     });
-  });
 
   // Enable Network domain with large buffers
   await new Promise<void>((resolve) => {
@@ -1147,6 +1229,13 @@ async function handleStartCdpMediaDownload(payload: StartCdpDownloadPayload): Pr
       }
     });
   });
+  } finally {
+    if (debuggerAttached) {
+      try { chrome.debugger.detach(debuggee, () => {}); } catch {}
+      debuggerAttached = false;
+      tabDebuggerOwners.delete(tabId);
+    }
+  }
 
   broadcastToTabs({
     type: 'NEXUS_CDP_PROGRESS',

@@ -1,5 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
+import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import esbuild from '../worker/node_modules/esbuild/lib/main.js';
 
@@ -137,6 +139,39 @@ async function build() {
     });
   }
 
+  // Phase 16: Compute SHA256 hashes and generate BUILD_MANIFEST.json
+  const hashFile = (p) => {
+    if (!fs.existsSync(p)) return 'MISSING';
+    const buf = fs.readFileSync(p);
+    return crypto.createHash('sha256').update(buf).digest('hex');
+  };
+
+  let gitCommit = process.env.GIT_COMMIT || 'unknown';
+  if (gitCommit === 'unknown') {
+    try {
+      gitCommit = execSync('git rev-parse HEAD', { cwd: __dirname, stdio: ['pipe', 'pipe', 'ignore'] }).toString().trim();
+    } catch {}
+  }
+
+  const buildManifest = {
+    buildId: `build-${Date.now()}`,
+    gitCommit,
+    buildTimestamp: new Date().toISOString(),
+    extensionVersion: '1.0.1',
+    protocolVersion: '1.0.0',
+    manifestSha256: hashFile(path.resolve(distDir, 'manifest.json')),
+    backgroundSha256: hashFile(path.resolve(distDir, 'background.js')),
+    contentSha256: hashFile(path.resolve(distDir, 'content.js')),
+    offscreenSha256: hashFile(path.resolve(distDir, 'offscreen.js')),
+    ffmpegCoreSha256: hashFile(path.resolve(distDir, 'ffmpeg-core.js')),
+    ffmpegWasmSha256: hashFile(path.resolve(distDir, 'ffmpeg-core.wasm')),
+  };
+
+  fs.writeFileSync(path.resolve(distDir, 'BUILD_MANIFEST.json'), JSON.stringify(buildManifest, null, 2));
+
+  console.log('[NEXUS Extension Build] BUILD_MANIFEST.json created:');
+  console.log(JSON.stringify(buildManifest, null, 2));
+
   console.log('[NEXUS Extension Build] Build completed successfully into extension/dist!');
 
   // Also sync dist files into extension root so either path can be loaded in chrome://extensions
@@ -146,7 +181,8 @@ async function build() {
     'content.js', 'content.js.map',
     'youtube-observer.js', 'youtube-observer.js.map',
     'popup.js', 'popup.js.map', 'popup.html',
-    'ffmpeg-core.js', 'ffmpeg-core.wasm', 'ffmpeg-worker.js'
+    'ffmpeg-core.js', 'ffmpeg-core.wasm', 'ffmpeg-worker.js',
+    'BUILD_MANIFEST.json'
   ];
   for (const f of rootFilesToSync) {
     const src = path.resolve(distDir, f);
