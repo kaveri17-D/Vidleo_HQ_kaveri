@@ -10,6 +10,7 @@ import type {
   CdpMediaDownloadErrorPayload
 } from '../messaging/protocol';
 import { parseUmpMediaStreams } from '../utils/ump-parser';
+import { assembleMediaResponseBodies } from '../utils/media-response-accumulator';
 
 const DEFAULT_API_BASE_URL = 'http://127.0.0.1:8000';
 const OFFSCREEN_DOCUMENT_PATH = 'offscreen.html';
@@ -194,7 +195,11 @@ async function resolveYouTubeDirect(url: string): Promise<any> {
       bitrate: s.bitrate,
       filesize: s.contentLength,
       ext: s.mimeType?.includes('webm') ? 'webm' : 'mp4',
-      availability: 'ACTUAL_MEDIA_AVAILABLE',
+      availability: (videoId && observedYouTubeStreams.has(`${videoId}-${s.itag}`))
+        ? 'ACTUAL_MEDIA_ACQUIRABLE'
+        : 'METADATA_ONLY',
+      source: 'REAL_YOUTUBE_PLAYER_INVENTORY',
+      streamIdentity: `youtube:${videoId || 'unknown'}:video:${s.itag}`,
       is_ciphered: false,
       url: s.url,
       hasVideo: true,
@@ -209,7 +214,11 @@ async function resolveYouTubeDirect(url: string): Promise<any> {
       filesize: s.contentLength,
       acodec: s.audioCodec || 'opus',
       ext: s.mimeType?.includes('webm') ? 'webm' : 'm4a',
-      availability: 'ACTUAL_MEDIA_AVAILABLE',
+      availability: (videoId && observedYouTubeStreams.has(`${videoId}-${s.itag}`))
+        ? 'ACTUAL_MEDIA_ACQUIRABLE'
+        : 'METADATA_ONLY',
+      source: 'REAL_YOUTUBE_PLAYER_INVENTORY',
+      streamIdentity: `youtube:${videoId || 'unknown'}:audio:${s.itag}`,
       is_ciphered: false,
       url: s.url,
       hasVideo: false,
@@ -489,12 +498,12 @@ async function dispatchCdpMediaDownload(payload: StartCdpDownloadPayload, sendRe
       type: 'CDP_MEDIA_DOWNLOAD_ERROR',
       requestId,
       sessionId,
-      stage: 'ACQUISITION_FAILED',
+      stage: err?.stage || (errCode === 'FFMPEG_INIT_ERROR' ? 'FFMPEG_INIT' : 'ACQUISITION_FAILED'),
       code: errCode,
       message: errMsg,
       error: errMsg,
-      ffmpegExitCode: -1,
-      ffmpegStderr: '',
+      ffmpegExitCode: err?.ffmpegExitCode ?? -1,
+      ffmpegStderr: err?.ffmpegStderr || '',
     };
     broadcastToTabs({
       type: 'CDP_MEDIA_DOWNLOAD_ERROR',
@@ -836,6 +845,27 @@ async function handleStartCdpMediaDownload(
   onTabAssigned?: (tabId: number) => void
 ): Promise<CdpMediaDownloadSuccessPayload> {
   const { sessionId, videoId, videoUrl, targetFilename, durationSeconds } = payload;
+  const expectedDuration = Number(durationSeconds || 0);
+  const requestedItag = payload.targetItag == null ? '' : String(payload.targetItag);
+  const acquisitionMode = payload.mode || 'FULL';
+  if (acquisitionMode !== 'FULL') {
+    const error: any = new Error('CDP Full Video acquisition requires mode=FULL');
+    error.code = 'INVALID_ACQUISITION_MODE';
+    throw error;
+  }
+  const trace = (event: string, extra: any = {}) => {
+    const data = {
+      event,
+      sessionId,
+      requestId: payload.requestId || '',
+      extensionId: chrome.runtime?.id || 'unknown',
+      extensionVersion: chrome.runtime?.getManifest?.()?.version || '1.0.1',
+      timestamp: Date.now(),
+      ...extra,
+    };
+    console.log(`[NEXUS-INSTRUMENT] ${event}:`, JSON.stringify(data));
+  };
+  trace('DOWNLOAD_START', { videoUrl, selectedQuality: payload.quality, targetItag: requestedItag, expectedDuration, mode: acquisitionMode });
   console.log('[NEXUS-FINAL] sessionId:', sessionId);
   console.log('[NEXUS-FINAL] selectedQuality:', payload.quality || 'unknown');
   console.log('[NEXUS-FINAL] stage: CDP_ATTACH');
@@ -1017,68 +1047,174 @@ async function handleStartCdpMediaDownload(
   // Wait for media response body
   rawUmpBytes = await new Promise<Uint8Array>((resolve, reject) => {
     let settled = false;
+    let playerEnded = false;
+    let responseOrder = 0;
+    let quietTimer: ReturnType<typeof setTimeout> | null = null;
+    let acquisitionTimer: ReturnType<typeof setTimeout> | null = null;
+    const pendingBodies = new Set<Promise<void>>();
+    const responseMeta = new Map<string, any>();
+    const bodies: Array<{ sequence: number; requestId: string; bytes: Uint8Array; meta: any }> = [];
+    const timeoutMs = Math.max(120000, (expectedDuration > 0 ? expectedDuration * 1500 : 180000));
 
-    const timeout = setTimeout(() => {
-      if (!settled) {
+    const cleanup = () => {
+      if (quietTimer) clearTimeout(quietTimer);
+      if (acquisitionTimer) clearTimeout(acquisitionTimer);
+      try { chrome.debugger.onEvent.removeListener(eventListener); } catch {}
+    };
+
+    const finishIfReady = () => {
+      if (settled || !playerEnded || pendingBodies.size > 0) return;
+      if (quietTimer) clearTimeout(quietTimer);
+      quietTimer = setTimeout(() => {
+        if (settled) return;
         settled = true;
-        try { chrome.debugger.onEvent.removeListener(eventListener); } catch {}
-        try { chrome.debugger.detach(debuggee, () => {}); } catch {}
-        reject(new Error('Timed out waiting for YouTube player media response body'));
-      }
-    }, 35000);
-
-    const targetRequestIds = new Set<string>();
-
-    const eventListener = (source: chrome.debugger.Debuggee, method: string, params?: any) => {
-      if (source.tabId && source.tabId !== tabId) return;
-
-      if (method === 'Network.responseReceived' && params?.response) {
-        const url = params.response.url || '';
-        const mime = params.response.mimeType || '';
-        if (url.includes('videoplayback') || mime.includes('vnd.yt-ump')) {
-          console.log('[NEXUS SW] videoplayback response received:', params.requestId, mime);
-          targetRequestIds.add(params.requestId);
+        cleanup();
+        const ordered = bodies.slice().sort((a, b) => a.sequence - b.sequence);
+        const totalBytes = ordered.reduce((n, item) => n + item.bytes.length, 0);
+        const hasMedia = ordered.some((item) => item.bytes.length > 0 && (containsMoof(item.bytes) || item.meta.mimeType.includes('vnd.yt-ump')));
+        trace('MEDIA_BYTES_ACQUIRED', {
+          responseCount: ordered.length,
+          totalBytes,
+          responses: ordered.map((item) => ({ ...item.meta, responseId: item.requestId, encodedDataLength: item.bytes.length })),
+          playerEnded,
+        });
+        if (!hasMedia || ordered.length === 0) {
+          const error: any = new Error('No complete browser media response set was acquired before player ended');
+          error.code = 'MEDIA_ACQUISITION_INCOMPLETE';
+          reject(error);
+          return;
         }
-      }
+        try {
+          const assembled = assembleMediaResponseBodies(ordered.map((item) => ({
+            sequence: item.sequence,
+            requestId: item.requestId,
+            bytes: item.bytes,
+            streamKey: item.meta.streamKey,
+            rangeStart: item.meta.rangeStart,
+            rangeEnd: item.meta.rangeEnd,
+            rangeTotal: item.meta.rangeTotal,
+          })));
+          trace('MEDIA_RESPONSE_ASSEMBLED', {
+            responseCount: assembled.responseCount,
+            duplicateCount: assembled.duplicateCount,
+            rangeCount: assembled.rangeCount,
+            rangeGroups: assembled.rangeGroups,
+            assembledBytes: assembled.bytes.length,
+          });
+          resolve(assembled.bytes);
+        } catch (assemblyErr: any) {
+          const error: any = new Error(assemblyErr?.message || 'Media response range reconstruction failed');
+          error.code = assemblyErr?.message?.startsWith('MEDIA_RANGE_') ? 'MEDIA_RANGE_INCOMPLETE' : 'MEDIA_ASSEMBLY_FAILED';
+          reject(error);
+        }
+      }, 3500);
+    };
 
-      if (method === 'Network.loadingFinished' && params?.requestId) {
-        // Check if targeted or large response
-        chrome.debugger.sendCommand(debuggee, 'Network.getResponseBody', { requestId: params.requestId }, (res: any) => {
-          if (chrome.runtime.lastError || !res?.body) return;
+    acquisitionTimer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      const error: any = new Error(`Timed out acquiring complete browser media stream after ${Math.round(timeoutMs / 1000)}s`);
+      error.code = 'MEDIA_ACQUISITION_TIMEOUT';
+      reject(error);
+    }, timeoutMs);
 
+    const getBody = (requestId: string) => {
+      const meta = responseMeta.get(requestId);
+      if (!meta) return;
+      const operation = new Promise<void>((done) => {
+        trace('GET_RESPONSE_BODY', { responseId: requestId, ...meta });
+        chrome.debugger.sendCommand(debuggee, 'Network.getResponseBody', { requestId }, (res: any) => {
+          if (chrome.runtime.lastError || !res?.body) {
+            done();
+            return;
+          }
           let bytes: Uint8Array;
           if (res.base64Encoded) {
             const binary = atob(res.body);
             bytes = new Uint8Array(binary.length);
             for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
           } else {
-            const enc = new TextEncoder();
-            bytes = enc.encode(res.body);
+            bytes = new TextEncoder().encode(res.body);
           }
-
-          if (bytes.length > 50000 && containsMoof(bytes)) {
-            console.log('[NEXUS-FINAL] stage: MEDIA_RESPONSE, bytes:', bytes.length, 'from req:', params.requestId);
-            if (!settled) {
-              settled = true;
-              clearTimeout(timeout);
-              try { chrome.debugger.onEvent.removeListener(eventListener); } catch {}
-              try { chrome.debugger.detach(debuggee, () => {}); } catch {}
-              resolve(bytes);
-            }
+          if (bytes.length > 0) {
+            bodies.push({ sequence: meta.responseOrder, requestId, bytes, meta });
+            trace('MEDIA_RESPONSE_BODY_ACQUIRED', { responseId: requestId, bytes: bytes.length, ...meta });
           }
+          done();
         });
+      });
+      pendingBodies.add(operation);
+      operation.finally(() => {
+        pendingBodies.delete(operation);
+        finishIfReady();
+      });
+    };
+
+    const eventListener = (source: chrome.debugger.Debuggee, method: string, params?: any) => {
+      if (source.tabId && source.tabId !== tabId) return;
+      if (method === 'Network.responseReceived' && params?.response) {
+        const response = params.response;
+        const url = response.url || '';
+        const mimeType = String(response.mimeType || '').toLowerCase();
+        if (!url.includes('videoplayback') && !mimeType.includes('vnd.yt-ump')) return;
+        const parsed = new URL(url);
+        const itag = parsed.searchParams.get('itag') || '';
+        // Keep the requested video quality exact; audio responses are retained
+        // separately so the demuxer can pair the browser's actual tracks.
+        if (requestedItag && itag && itag !== requestedItag && !mimeType.includes('audio') && !mimeType.includes('vnd.yt-ump')) return;
+        const headers = response.headers || {};
+        const contentRange = Object.entries(headers).find(([k]) => k.toLowerCase() === 'content-range')?.[1] || '';
+        const contentLength = Object.entries(headers).find(([k]) => k.toLowerCase() === 'content-length')?.[1] || '';
+        const rangeMatch = String(contentRange).match(/bytes\s+(\d+)-(\d+)\/(\d+|\*)/i);
+        const stableUrl = new URL(url);
+        for (const key of ['range', 'rn', 'rbuf', 'alr']) stableUrl.searchParams.delete(key);
+        const rangeTotal = rangeMatch && rangeMatch[3] !== '*' ? Number(rangeMatch[3]) : undefined;
+        const meta = {
+          itag,
+          mimeType,
+          url,
+          streamKey: `${itag || 'unknown'}:${mimeType}:${stableUrl.origin}${stableUrl.pathname}${stableUrl.search}`,
+          responseOrder: responseOrder++,
+          requestType: response.type || '',
+          contentRange: String(contentRange),
+          rangeStart: rangeMatch ? Number(rangeMatch[1]) : undefined,
+          rangeEnd: rangeMatch ? Number(rangeMatch[2]) : undefined,
+          rangeTotal,
+          contentLength: Number(contentLength) || 0,
+          timestamp: Date.now(),
+        };
+        responseMeta.set(params.requestId, meta);
+        trace('MEDIA_RESPONSE_DETECTED', { responseId: params.requestId, ...meta });
+      }
+      if (method === 'Network.loadingFinished' && params?.requestId && responseMeta.has(params.requestId)) {
+        getBody(params.requestId);
       }
     };
 
     chrome.debugger.onEvent.addListener(eventListener);
+    trace('NETWORK_LISTENING', { targetTabId: tabId, requestedItag, expectedDuration });
 
-    // Trigger fresh media request by reloading target tab with debugger and listeners active
-    console.log('[NEXUS SW] Reloading tab', tabId, 'now that listeners are active');
-    if (chrome.tabs && chrome.tabs.reload) {
-      chrome.tabs.reload(tabId);
-    } else {
-      chrome.debugger.sendCommand(debuggee, 'Page.reload', {}, () => {});
-    }
+    // Reload with listeners already active, then let the real player play to
+    // its natural end. This forces the browser to request later ranges and
+    // UMP fragments instead of treating the first buffered chunk as complete.
+    const driveExpression = `(async()=>{let v=null;for(let i=0;i<60&&!v;i++){v=document.querySelector('video');if(!v)await new Promise(r=>setTimeout(r,500))}if(!v)throw new Error('YouTube video element not found');try{v.muted=true;await v.play()}catch(e){};return await new Promise(r=>{const done=()=>r({duration:Number(v.duration)||0,currentTime:Number(v.currentTime)||0});if(v.ended||((v.duration>0)&&(v.currentTime>=v.duration-0.25)))return done();v.addEventListener('ended',done,{once:true});const timer=setInterval(()=>{if(v.ended||((v.duration>0)&&(v.currentTime>=v.duration-0.25))){clearInterval(timer);done()}},500)})})()`;
+    const startPlayback = () => {
+      chrome.debugger.sendCommand(debuggee, 'Runtime.evaluate', { expression: driveExpression, awaitPromise: true, returnByValue: true }, (result: any) => {
+        if (chrome.runtime.lastError || result?.exceptionDetails) {
+          const error: any = new Error('Unable to drive the real YouTube player to full duration');
+          error.code = 'PLAYER_FULL_DURATION_FAILED';
+          settled = true;
+          cleanup();
+          reject(error);
+          return;
+        }
+        playerEnded = true;
+        trace('PLAYER_REACHED_END', { playerDuration: result?.result?.value?.duration, currentTime: result?.result?.value?.currentTime });
+        finishIfReady();
+      });
+    };
+    chrome.tabs.reload(tabId, {}, () => setTimeout(startPlayback, 1500));
   });
 
   broadcastToTabs({
@@ -1123,6 +1259,7 @@ async function handleStartCdpMediaDownload(
 
   // Demux UMP packets
   console.log('[NEXUS-FINAL] stage: UMP, raw bytes:', rawUmpBytes.length);
+  trace('UMP_DEMUX', { rawUmpBytes: rawUmpBytes.length });
   broadcastToTabs({
     type: 'NEXUS_CDP_PROGRESS',
     payload: {
@@ -1143,28 +1280,28 @@ async function handleStartCdpMediaDownload(
   }
 
   console.log('[NEXUS-FINAL] stage: VIDEO_ASSEMBLY');
-  console.log(`[NEXUS-FINAL] videoStream: bytes=${demux.videoBytes}, itag=395, container=mp4`);
+  console.log(`[NEXUS-FINAL] videoStream: bytes=${demux.videoBytes}, itag=${requestedItag || 'observed'}, container=mp4`);
   broadcastToTabs({
     type: 'NEXUS_CDP_PROGRESS',
     payload: {
       sessionId,
       state: 'VIDEO_ASSEMBLY',
       percent: 80,
-      message: `Assembled video track (${demux.videoBytes} bytes, itag 395 AV1)`,
+      message: `Assembled video track (${demux.videoBytes} bytes, itag ${requestedItag || 'observed'})`,
       videoBytes: demux.videoBytes,
       audioBytes: demux.audioBytes,
     },
   });
 
   console.log('[NEXUS-FINAL] stage: AUDIO_ASSEMBLY');
-  console.log(`[NEXUS-FINAL] audioStream: bytes=${demux.audioBytes}, itag=251, container=webm`);
+  console.log(`[NEXUS-FINAL] audioStream: bytes=${demux.audioBytes}, itag=observed, container=webm`);
   broadcastToTabs({
     type: 'NEXUS_CDP_PROGRESS',
     payload: {
       sessionId,
       state: 'AUDIO_ASSEMBLY',
       percent: 85,
-      message: `Assembled audio track (${demux.audioBytes} bytes, itag 251 Opus)`,
+      message: `Assembled audio track (${demux.audioBytes} bytes, itag observed)`,
       videoBytes: demux.videoBytes,
       audioBytes: demux.audioBytes,
     },
@@ -1218,11 +1355,12 @@ async function handleStartCdpMediaDownload(
         audioBase64,
         videoBytesCount: demux.videoBytes,
         audioBytesCount: demux.audioBytes,
+        expectedDuration,
         selectedQuality: payload.quality,
         quality: payload.quality,
         targetItag: payload.targetItag,
-        videoItag: payload.targetItag || '395',
-        audioItag: '251',
+        videoItag: requestedItag,
+        audioItag: '',
         videoCodec: demux.videoCodec || 'h264',
         audioCodec: demux.audioCodec || 'opus',
       },
@@ -1233,7 +1371,12 @@ async function handleStartCdpMediaDownload(
         reject(new Error(chrome.runtime.lastError.message));
       } else if (resp?.status === 'error') {
         console.error('[NEXUS SW] offscreen returned error:', resp.error);
-        reject(new Error(resp.error));
+        const error: any = new Error(resp.error || resp.details?.message || 'Offscreen processing failed');
+        error.code = resp.code || 'OFFSCREEN_ERROR';
+        error.ffmpegExitCode = resp.details?.ffmpegExitCode ?? -1;
+        error.ffmpegStderr = resp.details?.ffmpegStderr || '';
+        error.stage = error.code === 'FFMPEG_INIT_ERROR' ? 'FFMPEG_INIT' : 'OFFSCREEN';
+        reject(error);
       } else {
         console.log('[NEXUS SW] offscreen FFmpeg completed successfully:', resp?.result?.filename || 'done', 'codecs:', resp?.result?.videoCodec, resp?.result?.audioCodec);
         if (resp?.result?.ffmpegLogs) {
@@ -1254,11 +1397,41 @@ async function handleStartCdpMediaDownload(
     },
   });
 
-  if (ffmpegRes.blobUrl && chrome.downloads) {
-    chrome.downloads.onChanged.addListener((delta) => {
-      console.log(`[NEXUS SW] chrome.downloads onChanged for ID ${delta.id}: state=${delta.state?.current || 'unchanged'}, error=${delta.error?.current || 'none'}, filename=${delta.filename?.current || ''}`);
-    });
+  const resultPayload: CdpMediaDownloadSuccessPayload = {
+    type: 'CDP_MEDIA_DOWNLOAD_SUCCESS',
+    requestId: payload.requestId,
+    sessionId,
+    filename: ffmpegRes.filename,
+    bytes: ffmpegRes.outputBytes,
+    totalBytes: ffmpegRes.outputBytes,
+    mimeType: ffmpegRes.mimeType || 'video/mp4',
+    outputPath: ffmpegRes.filename,
+    blobUrl: ffmpegRes.blobUrl,
+    ffmpegExitCode: ffmpegRes.ffmpegExitCode,
+    rawUmpBytes: demux.rawUmpBytes,
+    videoBytes: demux.videoBytes,
+    audioBytes: demux.audioBytes,
+    duration: ffmpegRes.duration,
+    videoCodec: ffmpegRes.videoCodec || 'h264',
+    audioCodec: ffmpegRes.audioCodec || 'aac',
+    resolution: `${ffmpegRes.width}x${ffmpegRes.height}`,
+    sha256: ffmpegRes.sha256,
+    downloadStarted: true,
+    provenance: 'CDP_ACTIVE_PLAYER_MEDIA_RESPONSE_BODY',
+  };
 
+  if (resultPayload.ffmpegExitCode !== 0 || ffmpegRes.outputValid !== true || resultPayload.bytes <= 0) {
+    const error: any = new Error('FFmpeg completed without a valid non-empty MP4 output');
+    error.code = 'FFMPEG_OUTPUT_INVALID';
+    error.ffmpegExitCode = resultPayload.ffmpegExitCode;
+    error.ffmpegStderr = ffmpegRes.forensics?.ffmpegStderr || '';
+    throw error;
+  }
+
+  // Start exactly one native Chrome download only after all output validation
+  // has passed. The webpage receives the validated result for state updates;
+  // it must not trigger a second blob download of its own.
+  if (ffmpegRes.blobUrl && chrome.downloads) {
     chrome.downloads.download({
       url: ffmpegRes.blobUrl,
       filename: ffmpegRes.filename,
@@ -1271,28 +1444,6 @@ async function handleStartCdpMediaDownload(
       }
     });
   }
-
-  const resultPayload: CdpMediaDownloadSuccessPayload = {
-    type: 'CDP_MEDIA_DOWNLOAD_SUCCESS',
-    sessionId,
-    filename: ffmpegRes.filename,
-    bytes: ffmpegRes.outputBytes,
-    totalBytes: ffmpegRes.outputBytes,
-    mimeType: ffmpegRes.mimeType || 'video/mp4',
-    outputPath: ffmpegRes.filename,
-    blobUrl: ffmpegRes.blobUrl,
-    ffmpegExitCode: 0,
-    rawUmpBytes: demux.rawUmpBytes,
-    videoBytes: demux.videoBytes,
-    audioBytes: demux.audioBytes,
-    duration: ffmpegRes.duration,
-    videoCodec: ffmpegRes.videoCodec || 'h264',
-    audioCodec: ffmpegRes.audioCodec || 'aac',
-    resolution: `${ffmpegRes.width}x${ffmpegRes.height}`,
-    sha256: ffmpegRes.sha256,
-    downloadStarted: true,
-    provenance: 'CDP_ACTIVE_PLAYER_MEDIA_RESPONSE_BODY',
-  };
 
   broadcastToTabs({
     type: 'NEXUS_CDP_PROGRESS',
@@ -1434,4 +1585,3 @@ async function handleStartPlaybackCapture(payload: any) {
 
   return finalResult;
 }
-

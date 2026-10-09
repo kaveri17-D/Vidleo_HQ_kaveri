@@ -279,7 +279,7 @@ export function VideoDetectedCard({
   const [selectedQuality, setSelectedQuality] = useState<QualityOption>(() => {
     return (
       videoOptions.find((q) => q.isRecommended && q.availability !== 'UNAVAILABLE') ||
-      videoOptions.find((q) => q.availability === 'ACTUAL_MEDIA_AVAILABLE') ||
+      videoOptions.find((q) => q.availability === 'ACTUAL_MEDIA_AVAILABLE' || q.availability === 'ACTUAL_MEDIA_ACQUIRABLE') ||
       videoOptions[0] ||
       audioOptions[0]
     );
@@ -321,6 +321,7 @@ export function VideoDetectedCard({
         durationSeconds: metadata.durationSeconds,
         quality: selectedQuality?.label,
         targetItag: selectedQuality?.id,
+        mode: 'FULL',
         onProgress: (p) => {
           setCdpState({
             active: true,
@@ -339,14 +340,8 @@ export function VideoDetectedCard({
         result: res,
       });
 
-      if (res.blobUrl) {
-        const a = document.createElement('a');
-        a.href = res.blobUrl;
-        a.download = res.filename;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-      }
+      // The MV3 service worker owns the single native chrome.downloads call
+      // after output validation. Do not trigger a second webpage blob download.
     } catch (err: any) {
       setCdpState({
         active: false,

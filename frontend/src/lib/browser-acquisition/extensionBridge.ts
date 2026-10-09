@@ -425,6 +425,7 @@ export interface ExtensionCdpDownloadOptions {
   durationSeconds?: number;
   quality?: string;
   targetItag?: string | number;
+  mode?: 'FULL' | 'DEMO';
   onProgress?: (progress: {
     state: string;
     percent: number;
@@ -448,6 +449,7 @@ export interface ExtensionCdpDownloadResult {
   audioCodec: string;
   resolution: string;
   sha256: string;
+  requestId?: string;
   blobUrl?: string;
   downloadStarted: boolean;
   provenance: 'CDP_ACTIVE_PLAYER_MEDIA_RESPONSE_BODY';
@@ -464,7 +466,8 @@ export async function startCdpMediaDownloadViaExtension(
     throw new Error('Vidleo Companion Extension is required for browser media acquisition. Please ensure the extension is loaded and enabled in Chrome.');
   }
 
-  const sessionId = `cdp-acq-${Date.now()}`;
+  const sessionId = `cdp-acq-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const requestId = `cdp-req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -490,16 +493,22 @@ export async function startCdpMediaDownloadViaExtension(
           });
         }
       } else if (type === 'CDP_MEDIA_DOWNLOAD_SUCCESS' || type === 'NEXUS_CDP_RESULT') {
-        if (!settled && (payload?.sessionId === sessionId || !payload?.sessionId)) {
+        if (!settled && payload?.sessionId === sessionId && (!payload?.requestId || payload.requestId === requestId)) {
           settled = true;
           cleanup();
           resolve(payload);
         }
       } else if (type === 'CDP_MEDIA_DOWNLOAD_ERROR' || type === 'NEXUS_CDP_ERROR') {
-        if (!settled && (payload?.sessionId === sessionId || !payload?.sessionId)) {
+        if (!settled && payload?.sessionId === sessionId && (!payload?.requestId || payload.requestId === requestId)) {
           settled = true;
           cleanup();
           reject(new Error(payload?.message || payload?.error || 'CDP media acquisition failed in extension'));
+        }
+      } else if (type === 'EXTENSION_MESSAGE_CHANNEL_ERROR') {
+        if (!settled && payload?.sessionId === sessionId && (!payload?.requestId || payload.requestId === requestId)) {
+          settled = true;
+          cleanup();
+          reject(new Error(`[EXTENSION_MESSAGE_CHANNEL_ERROR] ${payload?.message || payload?.error || 'Extension message channel failed'}`));
         }
       }
     }
@@ -507,19 +516,19 @@ export async function startCdpMediaDownloadViaExtension(
     window.addEventListener('message', handleMessage);
 
     window.postMessage({
-      source: 'nexus-webpage',
-      type: 'NEXUS_CDP_DOWNLOAD_START',
-      payload: {
-        sessionId,
+        source: 'nexus-webpage',
+        type: 'NEXUS_CDP_DOWNLOAD_START',
+        payload: {
+        requestId,
+          sessionId,
         videoId: options.videoId,
         videoUrl: options.videoUrl,
         targetFilename: options.targetFilename,
         durationSeconds: options.durationSeconds,
         quality: options.quality,
         targetItag: options.targetItag,
+        mode: options.mode || 'FULL',
       },
     }, '*');
   });
 }
-
-

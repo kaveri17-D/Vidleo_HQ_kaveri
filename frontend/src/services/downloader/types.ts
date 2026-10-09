@@ -13,7 +13,7 @@ export type MediaFormatType = 'video' | 'audio';
 export type VideoContainer = 'mp4' | 'webm' | 'mkv';
 export type AudioContainer = 'mp3' | 'm4a' | 'wav';
 
-export type QualityAvailability = 'ACTUAL_MEDIA_AVAILABLE' | 'METADATA_ONLY' | 'UNAVAILABLE';
+export type QualityAvailability = 'ACTUAL_MEDIA_AVAILABLE' | 'ACTUAL_MEDIA_ACQUIRABLE' | 'METADATA_ONLY' | 'UNAVAILABLE';
 
 export interface QualityOption {
   id: string;

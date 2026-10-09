@@ -1,4 +1,4 @@
-// frontend/node_modules/@ffmpeg/core/dist/esm/ffmpeg-core.js
+// ../frontend/node_modules/@ffmpeg/core/dist/esm/ffmpeg-core.js
 var createFFmpegCore = (() => {
   var _scriptDir = import.meta.url;
   return (function(createFFmpegCore2 = {}) {
@@ -4542,7 +4542,7 @@ var createFFmpegCore = (() => {
 })();
 var ffmpeg_core_default = createFFmpegCore;
 
-// frontend/node_modules/@ffmpeg/ffmpeg/dist/esm/const.js
+// ../frontend/node_modules/@ffmpeg/ffmpeg/dist/esm/const.js
 var CORE_VERSION = "0.12.9";
 var CORE_URL = `https://unpkg.com/@ffmpeg/core@${CORE_VERSION}/dist/umd/ffmpeg-core.js`;
 var FFMessageType;
@@ -4565,29 +4565,28 @@ var FFMessageType;
   FFMessageType2["UNMOUNT"] = "UNMOUNT";
 })(FFMessageType || (FFMessageType = {}));
 
-// frontend/node_modules/@ffmpeg/ffmpeg/dist/esm/errors.js
+// ../frontend/node_modules/@ffmpeg/ffmpeg/dist/esm/errors.js
 var ERROR_UNKNOWN_MESSAGE_TYPE = new Error("unknown message type");
 var ERROR_NOT_LOADED = new Error("ffmpeg is not loaded, call `await ffmpeg.load()` first");
 var ERROR_TERMINATED = new Error("called FFmpeg.terminate()");
 var ERROR_IMPORT_FAILURE = new Error("failed to import ffmpeg-core.js");
 
-// extension/src/ffmpeg/worker.ts
+// src/ffmpeg/worker.ts
 var ffmpeg;
 var load = async ({ coreURL: _coreURL, wasmURL: _wasmURL, workerURL: _workerURL, wasmBinary: _wasmBinary } = {}) => {
   const first = !ffmpeg;
+  const localCoreURL = new URL("ffmpeg-core.js", self.location.href).toString();
   let coreFactory = ffmpeg_core_default?.default || ffmpeg_core_default;
   if (!coreFactory && self.createFFmpegCore) {
     coreFactory = self.createFFmpegCore;
   }
   if (!coreFactory) {
     try {
-      if (!_coreURL) _coreURL = CORE_URL;
+      if (!_coreURL) _coreURL = localCoreURL;
       self.importScripts?.(_coreURL);
       coreFactory = self.createFFmpegCore;
     } catch {
-      if (!_coreURL || _coreURL === CORE_URL) {
-        _coreURL = CORE_URL.replace("/umd/", "/esm/");
-      }
+      if (!_coreURL) _coreURL = localCoreURL;
       try {
         const mod = await import(
           /* @vite-ignore */
@@ -4602,7 +4601,7 @@ var load = async ({ coreURL: _coreURL, wasmURL: _wasmURL, workerURL: _workerURL,
   if (!coreFactory) {
     throw ERROR_IMPORT_FAILURE;
   }
-  const coreURL = _coreURL || CORE_URL;
+  const coreURL = _coreURL || localCoreURL;
   const wasmURL = _wasmURL ? _wasmURL : coreURL.replace(/\.js$/g, ".wasm");
   const workerURL = _workerURL ? _workerURL : coreURL.replace(/\.js$/g, ".worker.js");
   let wasmBinary = _wasmBinary;

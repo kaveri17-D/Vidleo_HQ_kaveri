@@ -1,5 +1,5 @@
 (() => {
-  // extension/src/content/youtube-observer.ts
+  // src/content/youtube-observer.ts
   (function() {
     const seenUrls = /* @__PURE__ */ new Set();
     function extractVideoId(url) {

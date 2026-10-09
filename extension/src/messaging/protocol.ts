@@ -32,6 +32,7 @@ export type NexusMessageType =
   | 'NEXUS_CDP_CANCEL'
   | 'CDP_MEDIA_DOWNLOAD_SUCCESS'
   | 'CDP_MEDIA_DOWNLOAD_ERROR'
+  | 'EXTENSION_MESSAGE_CHANNEL_ERROR'
   | 'FRONTEND_HELLO'
   | 'EXTENSION_HELLO'
   | 'NEXUS_EXTENSION_INFO'
@@ -168,6 +169,7 @@ export interface StartCdpDownloadPayload {
   durationSeconds?: number;
   quality?: string;
   targetItag?: string | number;
+  mode?: 'FULL' | 'DEMO';
 }
 
 export interface CdpDownloadProgressPayload {
@@ -263,4 +265,3 @@ export interface NexusMessage<T = any> {
   payload: T;
   timestamp?: number;
 }
-

@@ -116,7 +116,16 @@ chrome.runtime.onMessage.addListener((message: NexusMessage, sender, sendRespons
         sendResponse({
           status: 'error',
           error: formattedError,
-          details: { name: errName, message: errMsg, stack: errStack }
+          code: err?.code || (errMsg.includes('[FFMPEG_INIT]') ? 'FFMPEG_INIT_ERROR' : 'OFFSCREEN_ERROR'),
+          details: {
+            name: errName,
+            message: errMsg,
+            stack: errStack,
+            sessionId: message.payload?.sessionId,
+            requestId: message.payload?.requestId,
+            ffmpegExitCode: (window as any).__NEXUS_LAST_FORENSICS__?.ffmpegExitCode ?? -1,
+            ffmpegStderr: (window as any).__NEXUS_LAST_FORENSICS__?.ffmpegStderr || '',
+          }
         });
       });
     return true; // Keep open for async response
@@ -495,6 +504,7 @@ async function handleProcessCdpMediaFfmpeg(payload: any) {
     filename, 
     videoBase64, 
     audioBase64,
+    expectedDuration = 0,
     selectedQuality,
     quality,
     videoItag,
@@ -524,6 +534,7 @@ async function handleProcessCdpMediaFfmpeg(payload: any) {
     ffmpegCommand: 'ffmpeg',
     ffmpegArgs: [] as string[],
     ffmpegExitCode: -1,
+    outputValid: false,
     ffmpegStderr: '',
     ffmpegException: null as string | null,
     ffmpegStack: null as string | null,
@@ -735,6 +746,8 @@ async function handleProcessCdpMediaFfmpeg(payload: any) {
 
   forensics.ffmpegExitCode = remuxCode;
   forensics.ffmpegStderr = ffmpegLogs.slice(-40).join('\n');
+  instrument('FFMPEG_COMMAND', { args: forensics.ffmpegArgs });
+  instrument('FFMPEG_EXIT_CODE', { code: remuxCode, stderr: forensics.ffmpegStderr });
   if (execException) {
     forensics.ffmpegException = execException?.message || String(execException);
     forensics.ffmpegStack = execException?.stack || null;
@@ -803,13 +816,25 @@ async function handleProcessCdpMediaFfmpeg(payload: any) {
     }
   }
 
-  // Fallback 3: Raw video stream if all FFmpeg remux attempts failed
+  // Never return raw media as an MP4. A browser download is successful only
+  // when FFmpeg produced a non-empty, structurally valid MP4.
   if (!outputData) {
     console.error('[NEXUS-FINAL] FFmpeg produced output: NO');
-    console.warn('[NEXUS-FINAL] Using videoBytes as emergency fallback');
-    outputData = videoBytes;
-    activeVideoCodec = forensics.videoCodec;
-    activeAudioCodec = 'none';
+    forensics.offscreenStatus = 'ffmpeg_output_missing';
+    throw new Error(`[NEXUS-FINAL][FFMPEG_OUTPUT] FFmpeg produced no output (exitCode=${forensics.ffmpegExitCode})`);
+  }
+
+  const hasFtyp = outputData.length >= 8 &&
+    String.fromCharCode(...outputData.subarray(4, 8)) === 'ftyp';
+  const outputText = new TextDecoder().decode(outputData.subarray(0, Math.min(outputData.length, 2 * 1024 * 1024)));
+  const hasMoov = outputText.includes('moov');
+  const outputValid = forensics.ffmpegExitCode === 0 && outputData.byteLength > 0 && hasFtyp && hasMoov;
+  forensics.outputValid = outputValid;
+  instrument('OUTPUT_BYTES', { bytes: outputData.byteLength });
+  instrument('OUTPUT_VALID', { valid: outputValid, hasFtyp, hasMoov });
+  if (!outputValid) {
+    forensics.offscreenStatus = 'invalid_output';
+    throw new Error(`[NEXUS-FINAL][FFMPEG_OUTPUT_INVALID] exitCode=${forensics.ffmpegExitCode}, bytes=${outputData.byteLength}, ftyp=${hasFtyp}, moov=${hasMoov}`);
   }
 
   forensics.offscreenStatus = 'complete';
@@ -823,16 +848,16 @@ async function handleProcessCdpMediaFfmpeg(payload: any) {
   const outputBlob = new Blob([exactBytes], { type: 'video/mp4' });
   const blobUrl = URL.createObjectURL(outputBlob);
 
-  let verifiedDuration = 12.48;
-  let verifiedWidth = 320;
-  let verifiedHeight = 240;
+  let verifiedDuration = 0;
+  let verifiedWidth = 0;
+  let verifiedHeight = 0;
 
   try {
     const videoEl = document.createElement('video');
     videoEl.preload = 'metadata';
     videoEl.src = blobUrl;
     await new Promise<void>((resolve) => {
-      videoEl.onloadedmetadata = () => {
+    videoEl.onloadedmetadata = () => {
         verifiedDuration = videoEl.duration;
         verifiedWidth = videoEl.videoWidth;
         verifiedHeight = videoEl.videoHeight;
@@ -843,6 +868,17 @@ async function handleProcessCdpMediaFfmpeg(payload: any) {
     });
   } catch (e) {
     console.warn('[NEXUS Offscreen] CDP Playback verification notice:', e);
+  }
+
+  if (!(verifiedDuration > 0) || !(verifiedWidth > 0) || !(verifiedHeight > 0)) {
+    forensics.offscreenStatus = 'playback_verification_failed';
+    throw new Error('[NEXUS-FINAL][OUTPUT_VALIDATION] MP4 metadata could not be decoded in Chromium');
+  }
+
+  const durationTolerance = Math.max(1.5, Number(expectedDuration || 0) * 0.05);
+  if (Number(expectedDuration || 0) > 0 && Math.abs(verifiedDuration - Number(expectedDuration)) > durationTolerance) {
+    forensics.offscreenStatus = 'duration_mismatch';
+    throw new Error(`[NEXUS-FINAL][DURATION_MISMATCH] expected=${expectedDuration}s actual=${verifiedDuration}s tolerance=${durationTolerance}s`);
   }
 
   console.log('[NEXUS-FINAL] stage: DOWNLOAD');
@@ -860,6 +896,8 @@ async function handleProcessCdpMediaFfmpeg(payload: any) {
     sessionId,
     filename: filename || `Vidleo_${Date.now()}.mp4`,
     outputBytes: outputData.byteLength,
+    ffmpegExitCode: forensics.ffmpegExitCode,
+    outputValid,
     sha256,
     blobUrl,
     mimeType: 'video/mp4',
@@ -877,5 +915,3 @@ async function handleProcessCdpMediaFfmpeg(payload: any) {
 
   return result;
 }
-
-

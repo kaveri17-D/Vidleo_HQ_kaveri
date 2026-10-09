@@ -1,5 +1,5 @@
 (() => {
-  // extension/src/content/content.ts
+  // src/content/content.ts
   try {
     if (document.documentElement) {
       document.documentElement.setAttribute("data-nexus-extension-installed", "true");
@@ -60,24 +60,18 @@
         console.warn("[NEXUS Content Bridge] chrome.runtime.sendMessage lastError:", errMsg);
         window.postMessage({
           source: "nexus-extension",
-          type: `${type}_ERROR`,
+          type: "EXTENSION_MESSAGE_CHANNEL_ERROR",
           messageId,
-          error: errMsg
+          payload: {
+            messageId,
+            commandType: type,
+            sessionId: payload?.sessionId,
+            requestId: payload?.requestId,
+            code: "EXTENSION_MESSAGE_CHANNEL_ERROR",
+            message: errMsg,
+            error: errMsg
+          }
         }, "*");
-        if (type === "NEXUS_CDP_DOWNLOAD_START") {
-          window.postMessage({
-            source: "nexus-extension",
-            type: "CDP_MEDIA_DOWNLOAD_ERROR",
-            messageId,
-            payload: { error: errMsg, message: errMsg }
-          }, "*");
-          window.postMessage({
-            source: "nexus-extension",
-            type: "NEXUS_CDP_ERROR",
-            messageId,
-            payload: { error: errMsg }
-          }, "*");
-        }
         return;
       }
       if (response) {

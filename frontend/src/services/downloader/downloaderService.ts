@@ -74,11 +74,7 @@ function mapBackendFormatsToQualities(
       ? rawExt 
       : (type === 'video' ? 'mp4' : 'mp3')) as VideoContainer | AudioContainer;
 
-    const availability = (f.availability as any) || (
-      fileSizeBytes > 0 || Boolean(f.format_note) || Boolean(f.height)
-        ? 'ACTUAL_MEDIA_AVAILABLE'
-        : 'METADATA_ONLY'
-    );
+    const availability = (f.availability as any) || 'METADATA_ONLY';
 
     return {
       id: formatId,

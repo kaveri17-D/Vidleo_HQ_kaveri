@@ -3,7 +3,7 @@
 /// <reference lib="webworker" />
 
 import createFFmpegCore from '@ffmpeg/core';
-import { CORE_URL, FFMessageType } from '../../../frontend/node_modules/@ffmpeg/ffmpeg/dist/esm/const.js';
+import { FFMessageType } from '../../../frontend/node_modules/@ffmpeg/ffmpeg/dist/esm/const.js';
 import {
   ERROR_UNKNOWN_MESSAGE_TYPE,
   ERROR_NOT_LOADED,
@@ -14,6 +14,7 @@ let ffmpeg: any;
 
 const load = async ({ coreURL: _coreURL, wasmURL: _wasmURL, workerURL: _workerURL, wasmBinary: _wasmBinary }: any = {}) => {
   const first = !ffmpeg;
+  const localCoreURL = new URL('ffmpeg-core.js', self.location.href).toString();
   let coreFactory: any = (createFFmpegCore as any)?.default || createFFmpegCore;
 
   if (!coreFactory && (self as any).createFFmpegCore) {
@@ -23,14 +24,12 @@ const load = async ({ coreURL: _coreURL, wasmURL: _wasmURL, workerURL: _workerUR
   // If not bundled, attempt fallback loading
   if (!coreFactory) {
     try {
-      if (!_coreURL) _coreURL = CORE_URL;
+      if (!_coreURL) _coreURL = localCoreURL;
       // when web worker type is `classic`
       (self as any).importScripts?.(_coreURL);
       coreFactory = (self as any).createFFmpegCore;
     } catch {
-      if (!_coreURL || _coreURL === CORE_URL) {
-        _coreURL = CORE_URL.replace('/umd/', '/esm/');
-      }
+      if (!_coreURL) _coreURL = localCoreURL;
       try {
         const mod = await import(/* @vite-ignore */ _coreURL);
         coreFactory = mod?.default || mod;
@@ -44,7 +43,7 @@ const load = async ({ coreURL: _coreURL, wasmURL: _wasmURL, workerURL: _workerUR
     throw ERROR_IMPORT_FAILURE;
   }
 
-  const coreURL = _coreURL || CORE_URL;
+  const coreURL = _coreURL || localCoreURL;
   const wasmURL = _wasmURL ? _wasmURL : coreURL.replace(/\.js$/g, '.wasm');
   const workerURL = _workerURL ? _workerURL : coreURL.replace(/\.js$/g, '.worker.js');
 

@@ -1,4 +1,4 @@
-// extension/src/utils/ump-parser.ts
+// src/utils/ump-parser.ts
 function readVarInt(buf, offset) {
   if (offset >= buf.length) return [-1, offset];
   const firstByte = buf[offset];
@@ -71,20 +71,33 @@ function parseUmpMediaStreams(rawUmp) {
   const audioClusters = [];
   const videoInitChunks = [];
   const videoFrags = [];
+  const seenInitChunks = /* @__PURE__ */ new Set();
+  function initKey(chunk) {
+    const prefix = Array.from(chunk.subarray(0, Math.min(chunk.length, 32))).join(",");
+    return `${chunk.length}:${prefix}`;
+  }
   const sortedTrackIds = Array.from(streamTracks.keys()).sort((a, b) => a - b);
   for (const id of sortedTrackIds) {
     const chunks = streamTracks.get(id) || [];
     for (const chunk of chunks) {
       if (isWebm(chunk)) {
         if (chunk[0] === 26 && chunk[1] === 69 && chunk[2] === 223 && chunk[3] === 163) {
-          audioInitChunks.push(chunk);
+          const key = `audio:${initKey(chunk)}`;
+          if (!seenInitChunks.has(key)) {
+            seenInitChunks.add(key);
+            audioInitChunks.push(chunk);
+          }
         } else {
           audioClusters.push(chunk);
         }
       } else if (isMp4(chunk)) {
         const tag = String.fromCharCode(chunk[4], chunk[5], chunk[6], chunk[7]);
         if (tag === "ftyp" || tag === "moov") {
-          videoInitChunks.push(chunk);
+          const key = `video:${tag}:${initKey(chunk)}`;
+          if (!seenInitChunks.has(key)) {
+            seenInitChunks.add(key);
+            videoInitChunks.push(chunk);
+          }
         } else {
           videoFrags.push(chunk);
         }
@@ -117,7 +130,116 @@ function parseUmpMediaStreams(rawUmp) {
   };
 }
 
-// extension/src/background/service-worker.ts
+// src/utils/media-response-accumulator.ts
+function concatBytes(parts) {
+  const total = parts.reduce((sum, part) => sum + part.byteLength, 0);
+  const result = new Uint8Array(total);
+  let offset = 0;
+  for (const part of parts) {
+    result.set(part, offset);
+    offset += part.byteLength;
+  }
+  return result;
+}
+function sameBytes(a, b) {
+  if (a.byteLength !== b.byteLength) return false;
+  for (let i = 0; i < a.byteLength; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+function bodyFingerprint(bytes) {
+  const sample = Math.min(64, bytes.byteLength);
+  let head = "";
+  let tail = "";
+  for (let i = 0; i < sample; i++) head += bytes[i].toString(16).padStart(2, "0");
+  for (let i = Math.max(0, bytes.byteLength - sample); i < bytes.byteLength; i++) {
+    tail += bytes[i].toString(16).padStart(2, "0");
+  }
+  return `${bytes.byteLength}:${head}:${tail}`;
+}
+function assembleMediaResponseBodies(input) {
+  const bodies = input.filter((body) => body.bytes.byteLength > 0).slice().sort((a, b) => a.sequence - b.sequence);
+  const ranged = /* @__PURE__ */ new Map();
+  const unranged = [];
+  for (const body of bodies) {
+    if (Number.isFinite(body.rangeStart) && Number.isFinite(body.rangeEnd)) {
+      const group = ranged.get(body.streamKey) || [];
+      group.push(body);
+      ranged.set(body.streamKey, group);
+    } else {
+      unranged.push(body);
+    }
+  }
+  let duplicateCount = 0;
+  const reconstructed = [];
+  for (const [streamKey, group] of ranged) {
+    const byStart = group.slice().sort((a, b) => a.rangeStart - b.rangeStart || a.rangeEnd - b.rangeEnd);
+    const unique = [];
+    for (const body of byStart) {
+      const previous = unique[unique.length - 1];
+      if (previous && body.rangeStart === previous.rangeStart && body.rangeEnd === previous.rangeEnd) {
+        if (!sameBytes(previous.bytes, body.bytes)) {
+          throw new Error(`MEDIA_RANGE_CONFLICT stream=${streamKey} range=${body.rangeStart}-${body.rangeEnd}`);
+        }
+        duplicateCount++;
+        continue;
+      }
+      unique.push(body);
+    }
+    for (let i = 0; i < unique.length; i++) {
+      const body = unique[i];
+      const declaredLength = body.rangeEnd - body.rangeStart + 1;
+      if (declaredLength !== body.bytes.byteLength) {
+        throw new Error(`MEDIA_RANGE_LENGTH_MISMATCH stream=${streamKey} range=${body.rangeStart}-${body.rangeEnd} body=${body.bytes.byteLength}`);
+      }
+      const next = unique[i + 1];
+      if (next && next.rangeStart <= body.rangeEnd) {
+        throw new Error(`MEDIA_RANGE_OVERLAP stream=${streamKey} ranges=${body.rangeStart}-${body.rangeEnd},${next.rangeStart}-${next.rangeEnd}`);
+      }
+      if (next && next.rangeStart > body.rangeEnd + 1) {
+        throw new Error(`MEDIA_RANGE_GAP stream=${streamKey} after=${body.rangeEnd} before=${next.rangeStart}`);
+      }
+    }
+    const total = unique.find((body) => Number.isFinite(body.rangeTotal))?.rangeTotal;
+    if (total !== void 0 && unique.length > 0) {
+      if (unique[0].rangeStart !== 0 || unique[unique.length - 1].rangeEnd !== total - 1) {
+        throw new Error(`MEDIA_RANGE_INCOMPLETE stream=${streamKey} expected=0-${total - 1}`);
+      }
+    }
+    reconstructed.push({
+      firstSequence: unique[0]?.sequence ?? Number.MAX_SAFE_INTEGER,
+      streamKey,
+      bytes: concatBytes(unique.map((body) => body.bytes)),
+      ranges: unique.map((body) => ({ start: body.rangeStart, end: body.rangeEnd, total: body.rangeTotal }))
+    });
+  }
+  const seenUnranged = /* @__PURE__ */ new Map();
+  const uniqueUnranged = [];
+  for (const body of unranged) {
+    const key = `${body.streamKey}:${bodyFingerprint(body.bytes)}`;
+    const previous = seenUnranged.get(key);
+    if (previous && sameBytes(previous.bytes, body.bytes)) {
+      duplicateCount++;
+      continue;
+    }
+    seenUnranged.set(key, body);
+    uniqueUnranged.push(body);
+  }
+  const parts = [
+    ...reconstructed.map((item) => ({ sequence: item.firstSequence, bytes: item.bytes })),
+    ...uniqueUnranged.map((body) => ({ sequence: body.sequence, bytes: body.bytes }))
+  ].sort((a, b) => a.sequence - b.sequence);
+  return {
+    bytes: concatBytes(parts.map((part) => part.bytes)),
+    responseCount: bodies.length,
+    duplicateCount,
+    rangeCount: ranged.size,
+    rangeGroups: reconstructed.map(({ streamKey, ranges }) => ({ streamKey, ranges }))
+  };
+}
+
+// src/background/service-worker.ts
 var DEFAULT_API_BASE_URL = "http://127.0.0.1:8000";
 var OFFSCREEN_DOCUMENT_PATH = "offscreen.html";
 console.log("[NEXUS Service Worker] Background Service Worker initialized");
@@ -263,7 +385,9 @@ async function resolveYouTubeDirect(url) {
       bitrate: s.bitrate,
       filesize: s.contentLength,
       ext: s.mimeType?.includes("webm") ? "webm" : "mp4",
-      availability: "ACTUAL_MEDIA_AVAILABLE",
+      availability: videoId && observedYouTubeStreams.has(`${videoId}-${s.itag}`) ? "ACTUAL_MEDIA_ACQUIRABLE" : "METADATA_ONLY",
+      source: "REAL_YOUTUBE_PLAYER_INVENTORY",
+      streamIdentity: `youtube:${videoId || "unknown"}:video:${s.itag}`,
       is_ciphered: false,
       url: s.url,
       hasVideo: true,
@@ -277,7 +401,9 @@ async function resolveYouTubeDirect(url) {
       filesize: s.contentLength,
       acodec: s.audioCodec || "opus",
       ext: s.mimeType?.includes("webm") ? "webm" : "m4a",
-      availability: "ACTUAL_MEDIA_AVAILABLE",
+      availability: videoId && observedYouTubeStreams.has(`${videoId}-${s.itag}`) ? "ACTUAL_MEDIA_ACQUIRABLE" : "METADATA_ONLY",
+      source: "REAL_YOUTUBE_PLAYER_INVENTORY",
+      streamIdentity: `youtube:${videoId || "unknown"}:audio:${s.itag}`,
       is_ciphered: false,
       url: s.url,
       hasVideo: false,
@@ -510,12 +636,12 @@ async function dispatchCdpMediaDownload(payload, sendResponse) {
       type: "CDP_MEDIA_DOWNLOAD_ERROR",
       requestId,
       sessionId,
-      stage: "ACQUISITION_FAILED",
+      stage: err?.stage || (errCode === "FFMPEG_INIT_ERROR" ? "FFMPEG_INIT" : "ACQUISITION_FAILED"),
       code: errCode,
       message: errMsg,
       error: errMsg,
-      ffmpegExitCode: -1,
-      ffmpegStderr: ""
+      ffmpegExitCode: err?.ffmpegExitCode ?? -1,
+      ffmpegStderr: err?.ffmpegStderr || ""
     };
     broadcastToTabs({
       type: "CDP_MEDIA_DOWNLOAD_ERROR",
@@ -773,6 +899,27 @@ function containsMoof(u) {
 }
 async function handleStartCdpMediaDownload(payload, onTabAssigned) {
   const { sessionId, videoId, videoUrl, targetFilename, durationSeconds } = payload;
+  const expectedDuration = Number(durationSeconds || 0);
+  const requestedItag = payload.targetItag == null ? "" : String(payload.targetItag);
+  const acquisitionMode = payload.mode || "FULL";
+  if (acquisitionMode !== "FULL") {
+    const error = new Error("CDP Full Video acquisition requires mode=FULL");
+    error.code = "INVALID_ACQUISITION_MODE";
+    throw error;
+  }
+  const trace = (event, extra = {}) => {
+    const data = {
+      event,
+      sessionId,
+      requestId: payload.requestId || "",
+      extensionId: chrome.runtime?.id || "unknown",
+      extensionVersion: chrome.runtime?.getManifest?.()?.version || "1.0.1",
+      timestamp: Date.now(),
+      ...extra
+    };
+    console.log(`[NEXUS-INSTRUMENT] ${event}:`, JSON.stringify(data));
+  };
+  trace("DOWNLOAD_START", { videoUrl, selectedQuality: payload.quality, targetItag: requestedItag, expectedDuration, mode: acquisitionMode });
   console.log("[NEXUS-FINAL] sessionId:", sessionId);
   console.log("[NEXUS-FINAL] selectedQuality:", payload.quality || "unknown");
   console.log("[NEXUS-FINAL] stage: CDP_ATTACH");
@@ -931,72 +1078,165 @@ async function handleStartCdpMediaDownload(payload, onTabAssigned) {
     });
     rawUmpBytes = await new Promise((resolve, reject) => {
       let settled = false;
-      const timeout = setTimeout(() => {
-        if (!settled) {
+      let playerEnded = false;
+      let responseOrder = 0;
+      let quietTimer = null;
+      let acquisitionTimer = null;
+      const pendingBodies = /* @__PURE__ */ new Set();
+      const responseMeta = /* @__PURE__ */ new Map();
+      const bodies = [];
+      const timeoutMs = Math.max(12e4, expectedDuration > 0 ? expectedDuration * 1500 : 18e4);
+      const cleanup = () => {
+        if (quietTimer) clearTimeout(quietTimer);
+        if (acquisitionTimer) clearTimeout(acquisitionTimer);
+        try {
+          chrome.debugger.onEvent.removeListener(eventListener);
+        } catch {
+        }
+      };
+      const finishIfReady = () => {
+        if (settled || !playerEnded || pendingBodies.size > 0) return;
+        if (quietTimer) clearTimeout(quietTimer);
+        quietTimer = setTimeout(() => {
+          if (settled) return;
           settled = true;
-          try {
-            chrome.debugger.onEvent.removeListener(eventListener);
-          } catch {
+          cleanup();
+          const ordered = bodies.slice().sort((a, b) => a.sequence - b.sequence);
+          const totalBytes = ordered.reduce((n, item) => n + item.bytes.length, 0);
+          const hasMedia = ordered.some((item) => item.bytes.length > 0 && (containsMoof(item.bytes) || item.meta.mimeType.includes("vnd.yt-ump")));
+          trace("MEDIA_BYTES_ACQUIRED", {
+            responseCount: ordered.length,
+            totalBytes,
+            responses: ordered.map((item) => ({ ...item.meta, responseId: item.requestId, encodedDataLength: item.bytes.length })),
+            playerEnded
+          });
+          if (!hasMedia || ordered.length === 0) {
+            const error = new Error("No complete browser media response set was acquired before player ended");
+            error.code = "MEDIA_ACQUISITION_INCOMPLETE";
+            reject(error);
+            return;
           }
           try {
-            chrome.debugger.detach(debuggee, () => {
+            const assembled = assembleMediaResponseBodies(ordered.map((item) => ({
+              sequence: item.sequence,
+              requestId: item.requestId,
+              bytes: item.bytes,
+              streamKey: item.meta.streamKey,
+              rangeStart: item.meta.rangeStart,
+              rangeEnd: item.meta.rangeEnd,
+              rangeTotal: item.meta.rangeTotal
+            })));
+            trace("MEDIA_RESPONSE_ASSEMBLED", {
+              responseCount: assembled.responseCount,
+              duplicateCount: assembled.duplicateCount,
+              rangeCount: assembled.rangeCount,
+              rangeGroups: assembled.rangeGroups,
+              assembledBytes: assembled.bytes.length
             });
-          } catch {
+            resolve(assembled.bytes);
+          } catch (assemblyErr) {
+            const error = new Error(assemblyErr?.message || "Media response range reconstruction failed");
+            error.code = assemblyErr?.message?.startsWith("MEDIA_RANGE_") ? "MEDIA_RANGE_INCOMPLETE" : "MEDIA_ASSEMBLY_FAILED";
+            reject(error);
           }
-          reject(new Error("Timed out waiting for YouTube player media response body"));
-        }
-      }, 35e3);
-      const targetRequestIds = /* @__PURE__ */ new Set();
-      const eventListener = (source, method, params) => {
-        if (source.tabId && source.tabId !== tabId) return;
-        if (method === "Network.responseReceived" && params?.response) {
-          const url = params.response.url || "";
-          const mime = params.response.mimeType || "";
-          if (url.includes("videoplayback") || mime.includes("vnd.yt-ump")) {
-            console.log("[NEXUS SW] videoplayback response received:", params.requestId, mime);
-            targetRequestIds.add(params.requestId);
-          }
-        }
-        if (method === "Network.loadingFinished" && params?.requestId) {
-          chrome.debugger.sendCommand(debuggee, "Network.getResponseBody", { requestId: params.requestId }, (res) => {
-            if (chrome.runtime.lastError || !res?.body) return;
+        }, 3500);
+      };
+      acquisitionTimer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        const error = new Error(`Timed out acquiring complete browser media stream after ${Math.round(timeoutMs / 1e3)}s`);
+        error.code = "MEDIA_ACQUISITION_TIMEOUT";
+        reject(error);
+      }, timeoutMs);
+      const getBody = (requestId) => {
+        const meta = responseMeta.get(requestId);
+        if (!meta) return;
+        const operation = new Promise((done) => {
+          trace("GET_RESPONSE_BODY", { responseId: requestId, ...meta });
+          chrome.debugger.sendCommand(debuggee, "Network.getResponseBody", { requestId }, (res) => {
+            if (chrome.runtime.lastError || !res?.body) {
+              done();
+              return;
+            }
             let bytes;
             if (res.base64Encoded) {
               const binary = atob(res.body);
               bytes = new Uint8Array(binary.length);
               for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
             } else {
-              const enc = new TextEncoder();
-              bytes = enc.encode(res.body);
+              bytes = new TextEncoder().encode(res.body);
             }
-            if (bytes.length > 5e4 && containsMoof(bytes)) {
-              console.log("[NEXUS-FINAL] stage: MEDIA_RESPONSE, bytes:", bytes.length, "from req:", params.requestId);
-              if (!settled) {
-                settled = true;
-                clearTimeout(timeout);
-                try {
-                  chrome.debugger.onEvent.removeListener(eventListener);
-                } catch {
-                }
-                try {
-                  chrome.debugger.detach(debuggee, () => {
-                  });
-                } catch {
-                }
-                resolve(bytes);
-              }
+            if (bytes.length > 0) {
+              bodies.push({ sequence: meta.responseOrder, requestId, bytes, meta });
+              trace("MEDIA_RESPONSE_BODY_ACQUIRED", { responseId: requestId, bytes: bytes.length, ...meta });
             }
+            done();
           });
+        });
+        pendingBodies.add(operation);
+        operation.finally(() => {
+          pendingBodies.delete(operation);
+          finishIfReady();
+        });
+      };
+      const eventListener = (source, method, params) => {
+        if (source.tabId && source.tabId !== tabId) return;
+        if (method === "Network.responseReceived" && params?.response) {
+          const response = params.response;
+          const url = response.url || "";
+          const mimeType = String(response.mimeType || "").toLowerCase();
+          if (!url.includes("videoplayback") && !mimeType.includes("vnd.yt-ump")) return;
+          const parsed = new URL(url);
+          const itag = parsed.searchParams.get("itag") || "";
+          if (requestedItag && itag && itag !== requestedItag && !mimeType.includes("audio") && !mimeType.includes("vnd.yt-ump")) return;
+          const headers = response.headers || {};
+          const contentRange = Object.entries(headers).find(([k]) => k.toLowerCase() === "content-range")?.[1] || "";
+          const contentLength = Object.entries(headers).find(([k]) => k.toLowerCase() === "content-length")?.[1] || "";
+          const rangeMatch = String(contentRange).match(/bytes\s+(\d+)-(\d+)\/(\d+|\*)/i);
+          const stableUrl = new URL(url);
+          for (const key of ["range", "rn", "rbuf", "alr"]) stableUrl.searchParams.delete(key);
+          const rangeTotal = rangeMatch && rangeMatch[3] !== "*" ? Number(rangeMatch[3]) : void 0;
+          const meta = {
+            itag,
+            mimeType,
+            url,
+            streamKey: `${itag || "unknown"}:${mimeType}:${stableUrl.origin}${stableUrl.pathname}${stableUrl.search}`,
+            responseOrder: responseOrder++,
+            requestType: response.type || "",
+            contentRange: String(contentRange),
+            rangeStart: rangeMatch ? Number(rangeMatch[1]) : void 0,
+            rangeEnd: rangeMatch ? Number(rangeMatch[2]) : void 0,
+            rangeTotal,
+            contentLength: Number(contentLength) || 0,
+            timestamp: Date.now()
+          };
+          responseMeta.set(params.requestId, meta);
+          trace("MEDIA_RESPONSE_DETECTED", { responseId: params.requestId, ...meta });
+        }
+        if (method === "Network.loadingFinished" && params?.requestId && responseMeta.has(params.requestId)) {
+          getBody(params.requestId);
         }
       };
       chrome.debugger.onEvent.addListener(eventListener);
-      console.log("[NEXUS SW] Reloading tab", tabId, "now that listeners are active");
-      if (chrome.tabs && chrome.tabs.reload) {
-        chrome.tabs.reload(tabId);
-      } else {
-        chrome.debugger.sendCommand(debuggee, "Page.reload", {}, () => {
+      trace("NETWORK_LISTENING", { targetTabId: tabId, requestedItag, expectedDuration });
+      const driveExpression = `(async()=>{let v=null;for(let i=0;i<60&&!v;i++){v=document.querySelector('video');if(!v)await new Promise(r=>setTimeout(r,500))}if(!v)throw new Error('YouTube video element not found');try{v.muted=true;await v.play()}catch(e){};return await new Promise(r=>{const done=()=>r({duration:Number(v.duration)||0,currentTime:Number(v.currentTime)||0});if(v.ended||((v.duration>0)&&(v.currentTime>=v.duration-0.25)))return done();v.addEventListener('ended',done,{once:true});const timer=setInterval(()=>{if(v.ended||((v.duration>0)&&(v.currentTime>=v.duration-0.25))){clearInterval(timer);done()}},500)})})()`;
+      const startPlayback = () => {
+        chrome.debugger.sendCommand(debuggee, "Runtime.evaluate", { expression: driveExpression, awaitPromise: true, returnByValue: true }, (result) => {
+          if (chrome.runtime.lastError || result?.exceptionDetails) {
+            const error = new Error("Unable to drive the real YouTube player to full duration");
+            error.code = "PLAYER_FULL_DURATION_FAILED";
+            settled = true;
+            cleanup();
+            reject(error);
+            return;
+          }
+          playerEnded = true;
+          trace("PLAYER_REACHED_END", { playerDuration: result?.result?.value?.duration, currentTime: result?.result?.value?.currentTime });
+          finishIfReady();
         });
-      }
+      };
+      chrome.tabs.reload(tabId, {}, () => setTimeout(startPlayback, 1500));
     });
     broadcastToTabs({
       type: "NEXUS_CDP_PROGRESS",
@@ -1040,6 +1280,7 @@ async function handleStartCdpMediaDownload(payload, onTabAssigned) {
     }
   }
   console.log("[NEXUS-FINAL] stage: UMP, raw bytes:", rawUmpBytes.length);
+  trace("UMP_DEMUX", { rawUmpBytes: rawUmpBytes.length });
   broadcastToTabs({
     type: "NEXUS_CDP_PROGRESS",
     payload: {
@@ -1057,27 +1298,27 @@ async function handleStartCdpMediaDownload(payload, onTabAssigned) {
     throw new Error(`Failed to demux audio or video from acquired UMP media stream (audio: ${demux.audioBytes}, video: ${demux.videoBytes})`);
   }
   console.log("[NEXUS-FINAL] stage: VIDEO_ASSEMBLY");
-  console.log(`[NEXUS-FINAL] videoStream: bytes=${demux.videoBytes}, itag=395, container=mp4`);
+  console.log(`[NEXUS-FINAL] videoStream: bytes=${demux.videoBytes}, itag=${requestedItag || "observed"}, container=mp4`);
   broadcastToTabs({
     type: "NEXUS_CDP_PROGRESS",
     payload: {
       sessionId,
       state: "VIDEO_ASSEMBLY",
       percent: 80,
-      message: `Assembled video track (${demux.videoBytes} bytes, itag 395 AV1)`,
+      message: `Assembled video track (${demux.videoBytes} bytes, itag ${requestedItag || "observed"})`,
       videoBytes: demux.videoBytes,
       audioBytes: demux.audioBytes
     }
   });
   console.log("[NEXUS-FINAL] stage: AUDIO_ASSEMBLY");
-  console.log(`[NEXUS-FINAL] audioStream: bytes=${demux.audioBytes}, itag=251, container=webm`);
+  console.log(`[NEXUS-FINAL] audioStream: bytes=${demux.audioBytes}, itag=observed, container=webm`);
   broadcastToTabs({
     type: "NEXUS_CDP_PROGRESS",
     payload: {
       sessionId,
       state: "AUDIO_ASSEMBLY",
       percent: 85,
-      message: `Assembled audio track (${demux.audioBytes} bytes, itag 251 Opus)`,
+      message: `Assembled audio track (${demux.audioBytes} bytes, itag observed)`,
       videoBytes: demux.videoBytes,
       audioBytes: demux.audioBytes
     }
@@ -1126,11 +1367,12 @@ async function handleStartCdpMediaDownload(payload, onTabAssigned) {
         audioBase64,
         videoBytesCount: demux.videoBytes,
         audioBytesCount: demux.audioBytes,
+        expectedDuration,
         selectedQuality: payload.quality,
         quality: payload.quality,
         targetItag: payload.targetItag,
-        videoItag: payload.targetItag || "395",
-        audioItag: "251",
+        videoItag: requestedItag,
+        audioItag: "",
         videoCodec: demux.videoCodec || "h264",
         audioCodec: demux.audioCodec || "opus"
       }
@@ -1141,7 +1383,12 @@ async function handleStartCdpMediaDownload(payload, onTabAssigned) {
         reject(new Error(chrome.runtime.lastError.message));
       } else if (resp?.status === "error") {
         console.error("[NEXUS SW] offscreen returned error:", resp.error);
-        reject(new Error(resp.error));
+        const error = new Error(resp.error || resp.details?.message || "Offscreen processing failed");
+        error.code = resp.code || "OFFSCREEN_ERROR";
+        error.ffmpegExitCode = resp.details?.ffmpegExitCode ?? -1;
+        error.ffmpegStderr = resp.details?.ffmpegStderr || "";
+        error.stage = error.code === "FFMPEG_INIT_ERROR" ? "FFMPEG_INIT" : "OFFSCREEN";
+        reject(error);
       } else {
         console.log("[NEXUS SW] offscreen FFmpeg completed successfully:", resp?.result?.filename || "done", "codecs:", resp?.result?.videoCodec, resp?.result?.audioCodec);
         if (resp?.result?.ffmpegLogs) {
@@ -1160,10 +1407,36 @@ async function handleStartCdpMediaDownload(payload, onTabAssigned) {
       message: "Media multiplexing complete, triggering browser download..."
     }
   });
+  const resultPayload = {
+    type: "CDP_MEDIA_DOWNLOAD_SUCCESS",
+    requestId: payload.requestId,
+    sessionId,
+    filename: ffmpegRes.filename,
+    bytes: ffmpegRes.outputBytes,
+    totalBytes: ffmpegRes.outputBytes,
+    mimeType: ffmpegRes.mimeType || "video/mp4",
+    outputPath: ffmpegRes.filename,
+    blobUrl: ffmpegRes.blobUrl,
+    ffmpegExitCode: ffmpegRes.ffmpegExitCode,
+    rawUmpBytes: demux.rawUmpBytes,
+    videoBytes: demux.videoBytes,
+    audioBytes: demux.audioBytes,
+    duration: ffmpegRes.duration,
+    videoCodec: ffmpegRes.videoCodec || "h264",
+    audioCodec: ffmpegRes.audioCodec || "aac",
+    resolution: `${ffmpegRes.width}x${ffmpegRes.height}`,
+    sha256: ffmpegRes.sha256,
+    downloadStarted: true,
+    provenance: "CDP_ACTIVE_PLAYER_MEDIA_RESPONSE_BODY"
+  };
+  if (resultPayload.ffmpegExitCode !== 0 || ffmpegRes.outputValid !== true || resultPayload.bytes <= 0) {
+    const error = new Error("FFmpeg completed without a valid non-empty MP4 output");
+    error.code = "FFMPEG_OUTPUT_INVALID";
+    error.ffmpegExitCode = resultPayload.ffmpegExitCode;
+    error.ffmpegStderr = ffmpegRes.forensics?.ffmpegStderr || "";
+    throw error;
+  }
   if (ffmpegRes.blobUrl && chrome.downloads) {
-    chrome.downloads.onChanged.addListener((delta) => {
-      console.log(`[NEXUS SW] chrome.downloads onChanged for ID ${delta.id}: state=${delta.state?.current || "unchanged"}, error=${delta.error?.current || "none"}, filename=${delta.filename?.current || ""}`);
-    });
     chrome.downloads.download({
       url: ffmpegRes.blobUrl,
       filename: ffmpegRes.filename,
@@ -1176,27 +1449,6 @@ async function handleStartCdpMediaDownload(payload, onTabAssigned) {
       }
     });
   }
-  const resultPayload = {
-    type: "CDP_MEDIA_DOWNLOAD_SUCCESS",
-    sessionId,
-    filename: ffmpegRes.filename,
-    bytes: ffmpegRes.outputBytes,
-    totalBytes: ffmpegRes.outputBytes,
-    mimeType: ffmpegRes.mimeType || "video/mp4",
-    outputPath: ffmpegRes.filename,
-    blobUrl: ffmpegRes.blobUrl,
-    ffmpegExitCode: 0,
-    rawUmpBytes: demux.rawUmpBytes,
-    videoBytes: demux.videoBytes,
-    audioBytes: demux.audioBytes,
-    duration: ffmpegRes.duration,
-    videoCodec: ffmpegRes.videoCodec || "h264",
-    audioCodec: ffmpegRes.audioCodec || "aac",
-    resolution: `${ffmpegRes.width}x${ffmpegRes.height}`,
-    sha256: ffmpegRes.sha256,
-    downloadStarted: true,
-    provenance: "CDP_ACTIVE_PLAYER_MEDIA_RESPONSE_BODY"
-  };
   broadcastToTabs({
     type: "NEXUS_CDP_PROGRESS",
     payload: {

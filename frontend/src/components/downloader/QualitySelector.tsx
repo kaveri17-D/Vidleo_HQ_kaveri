@@ -52,7 +52,7 @@ export function QualitySelector({
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
         {options.map((opt) => {
           const isSelected = selectedOption?.id === opt.id;
-          const isActualAvailable = opt.availability === 'ACTUAL_MEDIA_AVAILABLE';
+          const isActualAvailable = opt.availability === 'ACTUAL_MEDIA_AVAILABLE' || opt.availability === 'ACTUAL_MEDIA_ACQUIRABLE';
           const isMetadataOnly = opt.availability === 'METADATA_ONLY';
           const isUnavailable = opt.availability === 'UNAVAILABLE';
 
@@ -105,7 +105,7 @@ export function QualitySelector({
                     )}
                     {isActualAvailable && (
                       <span className="text-[8.5px] font-mono uppercase px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold border border-emerald-200">
-                        ACTUAL MEDIA AVAILABLE
+                        {opt.availability === 'ACTUAL_MEDIA_ACQUIRABLE' ? 'ACTUAL MEDIA ACQUIRABLE' : 'ACTUAL MEDIA AVAILABLE'}
                       </span>
                     )}
                     {isMetadataOnly && (

@@ -96,6 +96,12 @@ export function parseUmpMediaStreams(rawUmp: Uint8Array): UmpDemuxResult {
   const audioClusters: Uint8Array[] = [];
   const videoInitChunks: Uint8Array[] = [];
   const videoFrags: Uint8Array[] = [];
+  const seenInitChunks = new Set<string>();
+
+  function initKey(chunk: Uint8Array): string {
+    const prefix = Array.from(chunk.subarray(0, Math.min(chunk.length, 32))).join(',');
+    return `${chunk.length}:${prefix}`;
+  }
 
   const sortedTrackIds = Array.from(streamTracks.keys()).sort((a, b) => a - b);
   for (const id of sortedTrackIds) {
@@ -103,14 +109,22 @@ export function parseUmpMediaStreams(rawUmp: Uint8Array): UmpDemuxResult {
     for (const chunk of chunks) {
       if (isWebm(chunk)) {
         if (chunk[0] === 0x1A && chunk[1] === 0x45 && chunk[2] === 0xDF && chunk[3] === 0xA3) {
-          audioInitChunks.push(chunk);
+          const key = `audio:${initKey(chunk)}`;
+          if (!seenInitChunks.has(key)) {
+            seenInitChunks.add(key);
+            audioInitChunks.push(chunk);
+          }
         } else {
           audioClusters.push(chunk);
         }
       } else if (isMp4(chunk)) {
         const tag = String.fromCharCode(chunk[4], chunk[5], chunk[6], chunk[7]);
         if (tag === 'ftyp' || tag === 'moov') {
-          videoInitChunks.push(chunk);
+          const key = `video:${tag}:${initKey(chunk)}`;
+          if (!seenInitChunks.has(key)) {
+            seenInitChunks.add(key);
+            videoInitChunks.push(chunk);
+          }
         } else {
           videoFrags.push(chunk);
         }

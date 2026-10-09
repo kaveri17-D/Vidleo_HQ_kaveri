@@ -115,15 +115,22 @@ async function build() {
   // Copy local FFmpeg.wasm assets into extension dist for zero-network offline execution
   const ffmpegCoreDist = path.resolve(frontendNodeModules, '@ffmpeg/core/dist/esm');
   const ffmpegPkgDist = path.resolve(frontendNodeModules, '@ffmpeg/ffmpeg/dist/esm');
+  const replaceFile = (source, destination) => {
+    // The workspace may contain generated assets from a previous build owned
+    // by the build sandbox user. Unlinking the specific generated file first
+    // lets the canonical build replace it without changing directory policy.
+    try { fs.rmSync(destination, { force: true }); } catch {}
+    fs.copyFileSync(source, destination);
+  };
 
   if (fs.existsSync(path.resolve(ffmpegCoreDist, 'ffmpeg-core.js'))) {
-    fs.copyFileSync(
+    replaceFile(
       path.resolve(ffmpegCoreDist, 'ffmpeg-core.js'),
       path.resolve(distDir, 'ffmpeg-core.js')
     );
   }
   if (fs.existsSync(path.resolve(ffmpegCoreDist, 'ffmpeg-core.wasm'))) {
-    fs.copyFileSync(
+    replaceFile(
       path.resolve(ffmpegCoreDist, 'ffmpeg-core.wasm'),
       path.resolve(distDir, 'ffmpeg-core.wasm')
     );
@@ -172,7 +179,9 @@ async function build() {
     ffmpegWorkerSha256: hashFile(path.resolve(distDir, 'ffmpeg-worker.js')),
   };
 
-  fs.writeFileSync(path.resolve(distDir, 'BUILD_MANIFEST.json'), JSON.stringify(buildManifest, null, 2));
+  const buildManifestPath = path.resolve(distDir, 'BUILD_MANIFEST.json');
+  try { fs.rmSync(buildManifestPath, { force: true }); } catch {}
+  fs.writeFileSync(buildManifestPath, JSON.stringify(buildManifest, null, 2));
 
   console.log('[NEXUS Extension Build] BUILD_MANIFEST.json created:');
   console.log(JSON.stringify(buildManifest, null, 2));
@@ -193,7 +202,7 @@ async function build() {
     const src = path.resolve(distDir, f);
     const dest = path.resolve(__dirname, f);
     if (fs.existsSync(src)) {
-      try { fs.copyFileSync(src, dest); } catch {}
+      try { replaceFile(src, dest); } catch {}
     }
   }
 }
