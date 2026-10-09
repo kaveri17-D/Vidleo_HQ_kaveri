@@ -1201,13 +1201,24 @@ async function handleStartCdpMediaDownload(
             done();
             return;
           }
+          // UMP/fMP4 response bodies are binary. CDP must return them as
+          // base64; UTF-8 re-encoding a binary string changes bytes and can
+          // manufacture invalid H.264 NAL lengths. Reject the body instead of
+          // passing silently corrupted bytes to the demuxer.
+          if (!res.base64Encoded) {
+            trace('MEDIA_RESPONSE_BODY_REJECTED', {
+              responseId: requestId,
+              reason: 'BINARY_BODY_NOT_BASE64',
+              ...meta,
+            });
+            done();
+            return;
+          }
           let bytes: Uint8Array;
           if (res.base64Encoded) {
             const binary = atob(res.body);
             bytes = new Uint8Array(binary.length);
             for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-          } else {
-            bytes = new TextEncoder().encode(res.body);
           }
           if (bytes.length > 0) {
             bodies.push({ sequence: meta.responseOrder, requestId, bytes, meta });

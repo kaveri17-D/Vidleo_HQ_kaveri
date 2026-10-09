@@ -103,51 +103,79 @@ export function parseUmpMediaStreams(rawUmp: Uint8Array): UmpDemuxResult {
     return tag === 'ftyp' || tag === 'moov' || tag === 'moof' || tag === 'sidx' || tag === 'styp' || tag === 'emsg';
   }
 
-  const audioInitChunks: Uint8Array[] = [];
-  const audioClusters: Uint8Array[] = [];
-  const videoInitChunks: Uint8Array[] = [];
-  const videoFrags: Uint8Array[] = [];
-  const seenInitChunks = new Set<string>();
+  function boxType(box: Uint8Array): string {
+    return String.fromCharCode(box[4], box[5], box[6], box[7]);
+  }
 
-  function initKey(chunk: Uint8Array): string {
-    const prefix = Array.from(chunk.subarray(0, Math.min(chunk.length, 32))).join(',');
-    return `${chunk.length}:${prefix}`;
+  /**
+   * UMP MEDIA payload boundaries are transport boundaries, not MP4 box
+   * boundaries. A moof/mdat may be split across several payloads. The old
+   * parser classified each payload independently and silently discarded a
+   * continuation whose first bytes were not an MP4 header, producing malformed
+   * H.264 samples. Join each track first, then validate and de-duplicate only
+   * complete initialization boxes.
+   */
+  function parseMp4Track(chunks: Uint8Array[], streamId: number): Uint8Array {
+    const joined = concatByteArrays(chunks);
+    const boxes: Uint8Array[] = [];
+    let cursor = 0;
+    while (cursor < joined.length) {
+      if (joined.length - cursor < 8) {
+        throw new Error(`UMP_MP4_BOX_HEADER_TRUNCATED stream=${streamId} offset=${cursor}`);
+      }
+      const size32 = new DataView(joined.buffer, joined.byteOffset + cursor, 4).getUint32(0, false);
+      let headerSize = 8;
+      let boxSize = size32;
+      if (size32 === 1) {
+        if (joined.length - cursor < 16) {
+          throw new Error(`UMP_MP4_LARGE_BOX_HEADER_TRUNCATED stream=${streamId} offset=${cursor}`);
+        }
+        const high = new DataView(joined.buffer, joined.byteOffset + cursor + 8, 4).getUint32(0, false);
+        const low = new DataView(joined.buffer, joined.byteOffset + cursor + 12, 4).getUint32(0, false);
+        boxSize = high * 0x100000000 + low;
+        headerSize = 16;
+      } else if (size32 === 0) {
+        boxSize = joined.length - cursor;
+      }
+      if (!Number.isSafeInteger(boxSize) || boxSize < headerSize || cursor + boxSize > joined.length) {
+        throw new Error(`UMP_MP4_BOX_TRUNCATED stream=${streamId} offset=${cursor} declared=${boxSize} available=${joined.length - cursor}`);
+      }
+      boxes.push(joined.slice(cursor, cursor + boxSize));
+      cursor += boxSize;
+    }
+
+    const seenInit = new Set<string>();
+    const output: Uint8Array[] = [];
+    for (const box of boxes) {
+      const type = boxType(box);
+      if (type === 'ftyp' || type === 'moov') {
+        const key = `${type}:${box.byteLength}:${Array.from(box.subarray(0, Math.min(32, box.length))).join(',')}`;
+        if (seenInit.has(key)) continue;
+        seenInit.add(key);
+      }
+      output.push(box);
+    }
+    if (!output.some((box) => boxType(box) === 'moov' || boxType(box) === 'moof')) {
+      throw new Error(`UMP_MP4_MEDIA_BOXES_MISSING stream=${streamId}`);
+    }
+    return concatByteArrays(output);
   }
 
   const sortedTrackIds = Array.from(streamTracks.keys()).sort((a, b) => a - b);
+  const audioTracks: Uint8Array[] = [];
+  const videoTracks: Uint8Array[] = [];
   for (const id of sortedTrackIds) {
     const chunks = streamTracks.get(id) || [];
-    for (const chunk of chunks) {
-      if (isWebm(chunk)) {
-        if (chunk[0] === 0x1A && chunk[1] === 0x45 && chunk[2] === 0xDF && chunk[3] === 0xA3) {
-          const key = `audio:${initKey(chunk)}`;
-          if (!seenInitChunks.has(key)) {
-            seenInitChunks.add(key);
-            audioInitChunks.push(chunk);
-          }
-        } else {
-          audioClusters.push(chunk);
-        }
-      } else if (isMp4(chunk)) {
-        const tag = String.fromCharCode(chunk[4], chunk[5], chunk[6], chunk[7]);
-        if (tag === 'ftyp' || tag === 'moov') {
-          const key = `video:${tag}:${initKey(chunk)}`;
-          if (!seenInitChunks.has(key)) {
-            seenInitChunks.add(key);
-            videoInitChunks.push(chunk);
-          }
-        } else {
-          videoFrags.push(chunk);
-        }
-      }
+    const joined = concatByteArrays(chunks);
+    if (isWebm(joined)) {
+      audioTracks.push(joined);
+    } else if (isMp4(joined)) {
+      videoTracks.push(parseMp4Track(chunks, id));
     }
   }
 
-  const audioChunks = [...audioInitChunks, ...audioClusters];
-  const videoChunks = [...videoInitChunks, ...videoFrags];
-
-  const audioWebm = audioChunks.length > 0 ? concatByteArrays(audioChunks) : null;
-  const videoMp4 = videoChunks.length > 0 ? concatByteArrays(videoChunks) : null;
+  const audioWebm = audioTracks.length > 0 ? concatByteArrays(audioTracks) : null;
+  const videoMp4 = videoTracks.length > 0 ? concatByteArrays(videoTracks) : null;
 
   let videoCodec = 'h264';
   if (videoMp4) {
@@ -157,7 +185,7 @@ export function parseUmpMediaStreams(rawUmp: Uint8Array): UmpDemuxResult {
   }
 
   let audioCodec = 'opus';
-  if (audioWebm && audioInitChunks.length > 0) {
+  if (audioWebm) {
     audioCodec = 'opus';
   }
 

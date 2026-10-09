@@ -36,8 +36,18 @@ assert.equal(hasFatalDecodeDiagnostics('Invalid NAL unit size (3707 > 1041)'), t
 assert.equal(hasFatalDecodeDiagnostics('Error splitting the input into NAL units'), true);
 assert.equal(hasFatalDecodeDiagnostics(['warning: non-monotonous DTS', 'Decoding error']), true);
 
-const minimalUmp = new Uint8Array([21, 9, 1, 0, 0, 0, 8, 102, 116, 121, 112]);
-assert.equal(parseUmpMediaStreams(minimalUmp).videoBytes, 8);
+const minimalUmp = new Uint8Array([
+  21, 9, 1, 0, 0, 0, 8, 102, 116, 121, 112,
+  21, 9, 1, 0, 0, 0, 8, 109, 111, 111, 118,
+]);
+assert.equal(parseUmpMediaStreams(minimalUmp).videoBytes, 16);
 assert.throws(() => parseUmpMediaStreams(minimalUmp.subarray(0, 9)), /UMP_TRUNCATED_PART/);
+const splitBoxUmp = new Uint8Array([
+  21, 5, 2, 0, 0, 0, 8,
+  21, 5, 2, 102, 116, 121, 112,
+  21, 5, 2, 0, 0, 0, 8,
+  21, 5, 2, 109, 111, 111, 118,
+]);
+assert.equal(parseUmpMediaStreams(splitBoxUmp).videoBytes, 16);
 
 console.log('media-response-accumulator tests: PASS');
