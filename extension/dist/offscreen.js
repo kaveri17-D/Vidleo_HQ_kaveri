@@ -17380,11 +17380,13 @@ async function handleProcessCdpMediaFfmpeg(payload) {
     forensics.ffmpegStack = execException?.stack || null;
   }
   let outputData = null;
+  let outputFileName = null;
   let activeVideoCodec = "h264";
   let activeAudioCodec = "aac";
   if (remuxCode === 0) {
     try {
       outputData = await ffmpeg.readFile(targetOutputFile);
+      outputFileName = targetOutputFile;
       console.log("[NEXUS-FINAL] FFmpeg produced output: YES, byte length:", outputData.byteLength);
     } catch (readErr) {
       console.warn("[NEXUS-FINAL] Notice reading targetOutputFile:", readErr?.message || readErr);
@@ -17418,6 +17420,7 @@ async function handleProcessCdpMediaFfmpeg(payload) {
       forensics.ffmpegStderr = ffmpegLogs.slice(-40).join("\n");
       if (tcCode === 0) {
         outputData = await ffmpeg.readFile("fallback_transcode.mp4");
+        outputFileName = "fallback_transcode.mp4";
         activeVideoCodec = "h264";
         activeAudioCodec = "aac";
         console.log("[NEXUS-FINAL] Transcode fallback succeeded:", outputData.byteLength, "bytes");
@@ -17443,6 +17446,7 @@ async function handleProcessCdpMediaFfmpeg(payload) {
       const copyCode = await ffmpeg.exec(fallbackCopyArgs);
       if (copyCode === 0) {
         outputData = await ffmpeg.readFile("fallback_copy.mp4");
+        outputFileName = "fallback_copy.mp4";
         activeVideoCodec = forensics.videoCodec;
         activeAudioCodec = forensics.audioCodec;
         console.log("[NEXUS-FINAL] Fallback copy succeeded:", outputData.byteLength, "bytes");
@@ -17455,6 +17459,36 @@ async function handleProcessCdpMediaFfmpeg(payload) {
     console.error("[NEXUS-FINAL] FFmpeg produced output: NO");
     forensics.offscreenStatus = "ffmpeg_output_missing";
     throw new Error(`[NEXUS-FINAL][FFMPEG_OUTPUT] FFmpeg produced no output (exitCode=${forensics.ffmpegExitCode})`);
+  }
+  const fullDecodeArgs = [
+    "-v",
+    "error",
+    "-xerror",
+    "-err_detect",
+    "explode",
+    "-i",
+    outputFileName || targetOutputFile,
+    "-map",
+    "0:v:0",
+    "-map",
+    "0:a:0?",
+    "-f",
+    "null",
+    "-"
+  ];
+  let fullDecodeCode = -1;
+  try {
+    fullDecodeCode = await ffmpeg.exec(fullDecodeArgs);
+  } catch (decodeErr) {
+    forensics.fullDecodeException = decodeErr?.message || String(decodeErr);
+  }
+  forensics.fullDecodeArgs = fullDecodeArgs;
+  forensics.fullDecodeExitCode = fullDecodeCode;
+  forensics.fullDecodeStderr = ffmpegLogs.slice(-80).join("\n");
+  instrument("FULL_DECODE_CHECK", { code: fullDecodeCode, stderr: forensics.fullDecodeStderr });
+  if (fullDecodeCode !== 0) {
+    forensics.offscreenStatus = "full_decode_failed";
+    throw new Error(`[NEXUS-FINAL][FULL_DECODE_FAILED] exitCode=${fullDecodeCode}`);
   }
   const hasFtyp = outputData.length >= 8 && String.fromCharCode(...outputData.subarray(4, 8)) === "ftyp";
   const outputText = new TextDecoder().decode(outputData.subarray(0, Math.min(outputData.length, 2 * 1024 * 1024)));
@@ -17543,7 +17577,7 @@ async function handleProcessCdpMediaFfmpeg(payload) {
     whatsappCompatible: activeVideoCodec === "h264" && activeAudioCodec === "aac",
     originalAcquiredBytes: videoBytes.byteLength + audioBytes.byteLength,
     ffmpegLogs: ffmpegLogs.slice(-20),
-    downloadStarted: true,
+    downloadStarted: false,
     forensics
   };
   return result;
