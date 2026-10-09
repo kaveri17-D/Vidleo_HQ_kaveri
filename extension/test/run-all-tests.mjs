@@ -1,6 +1,7 @@
 import esbuild from '../../worker/node_modules/esbuild/lib/main.js';
 import { execSync } from 'child_process';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -21,7 +22,11 @@ for (const testFile of testFiles) {
     format: 'esm',
     platform: 'node',
   });
-  execSync(`node "${output}"`, { stdio: 'inherit' });
+  try {
+    execSync(`node "${output}"`, { stdio: 'inherit' });
+  } finally {
+    try { fs.unlinkSync(output); } catch {}
+  }
 }
 
 console.log('\n========================================');

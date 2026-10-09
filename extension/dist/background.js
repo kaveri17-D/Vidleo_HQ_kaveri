@@ -496,7 +496,7 @@ async function resolveYouTubeDirect(url) {
       bitrate: s.bitrate,
       filesize: s.contentLength,
       ext: s.mimeType?.includes("webm") ? "webm" : "mp4",
-      availability: videoId && observedYouTubeStreams.has(`${videoId}-${s.itag}`) ? "ACTUAL_MEDIA_ACQUIRABLE" : "METADATA_ONLY",
+      availability: "ACTUAL_MEDIA_AVAILABLE",
       source: "REAL_YOUTUBE_PLAYER_INVENTORY",
       streamIdentity: `youtube:${videoId || "unknown"}:video:${s.itag}`,
       is_ciphered: false,
@@ -512,7 +512,7 @@ async function resolveYouTubeDirect(url) {
       filesize: s.contentLength,
       acodec: s.audioCodec || "opus",
       ext: s.mimeType?.includes("webm") ? "webm" : "m4a",
-      availability: videoId && observedYouTubeStreams.has(`${videoId}-${s.itag}`) ? "ACTUAL_MEDIA_ACQUIRABLE" : "METADATA_ONLY",
+      availability: "ACTUAL_MEDIA_AVAILABLE",
       source: "REAL_YOUTUBE_PLAYER_INVENTORY",
       streamIdentity: `youtube:${videoId || "unknown"}:audio:${s.itag}`,
       is_ciphered: false,
@@ -844,12 +844,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const payload = message.payload;
     if (payload?.streamUrl) {
       const vid = payload.videoId;
+      let itag = "";
+      try {
+        const u = new URL(payload.streamUrl);
+        itag = u.searchParams.get("itag") || "";
+      } catch {
+      }
       if (vid) {
-        observedYouTubeStreams.set(vid, {
+        const entry = {
           url: payload.streamUrl,
+          itag,
           videoId: vid,
           timestamp: Date.now()
-        });
+        };
+        observedYouTubeStreams.set(vid, entry);
+        if (itag) {
+          observedYouTubeStreams.set(`${vid}-${itag}`, entry);
+        }
       }
     }
     sendResponse({ status: "recorded" });
@@ -1134,6 +1145,22 @@ async function handleStartCdpMediaDownload(payload, onTabAssigned) {
   const tabId = targetTab.id;
   if (onTabAssigned) {
     onTabAssigned(tabId);
+  }
+  let previousActiveTabId = null;
+  try {
+    const activeTabs = await new Promise((r) => {
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => r(tabs || []));
+    });
+    if (activeTabs[0]?.id && activeTabs[0].id !== tabId) {
+      previousActiveTabId = activeTabs[0].id;
+    }
+  } catch {
+  }
+  try {
+    await new Promise((r) => {
+      chrome.tabs.update(tabId, { active: true }, () => r());
+    });
+  } catch {
   }
   const debuggee = { tabId };
   console.log("[NEXUS SW] Selected targetTab:", tabId, targetTab.url);
@@ -1496,41 +1523,98 @@ async function handleStartCdpMediaDownload(payload, onTabAssigned) {
       }
 
       v.muted = true;
-      try { v.playbackRate = 16.0; } catch (e) { v.playbackRate = 2.0; }
+      try { v.playbackRate = 2.0; } catch (e) {}
       try { await v.play(); } catch (e) {}
 
       return await new Promise((resolve) => {
+        let lastBufferedEnd = 0;
+        let stallTicks = 0;
+        const startTime = Date.now();
+        const maxWaitMs = Math.max(90000, sourceDuration * 1200);
+
         const timer = setInterval(() => {
-          const skipBtn = document.querySelector('.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button');
-          if (skipBtn) {
-            try { skipBtn.click(); } catch (e) {}
-          }
+          try {
+            const skipBtn = document.querySelector('.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button, .videoAdUiSkipButton');
+            if (skipBtn) {
+              try { skipBtn.click(); } catch (e) {}
+            }
 
-          const cur = Number(player?.getCurrentTime?.()) || Number(v.currentTime) || 0;
-          const dur = Number(player?.getDuration?.()) || Number(v.duration) || sourceDuration;
-          const reachedEnd = v.ended || (dur > 0 && cur >= dur - 0.5);
+            const cur = Number(player?.getCurrentTime?.()) || Number(v?.currentTime) || 0;
+            const dur = Number(player?.getDuration?.()) || Number(v?.duration) || sourceDuration;
 
-          if (reachedEnd) {
-            clearInterval(timer);
-            resolve({
-              duration: dur,
-              videoDuration: Number(v.duration) || 0,
-              currentTime: cur,
-              sourceDuration,
-            });
-            return;
-          }
+            // Inspect contiguous buffered range starting from 0
+            let bufferedEnd = 0;
+            if (v && v.buffered && v.buffered.length > 0) {
+              for (let i = 0; i < v.buffered.length; i++) {
+                if (v.buffered.start(i) <= 1.0) {
+                  bufferedEnd = Math.max(bufferedEnd, v.buffered.end(i));
+                }
+              }
+            }
 
-          if (v.paused && !v.ended) {
-            try { v.play(); } catch (e) {}
+            const bufferReachedEnd = dur > 0 && bufferedEnd >= dur - 0.5;
+            const playerReachedEnd = Boolean(v?.ended) || (dur > 0 && cur >= dur - 0.5);
+
+            if (bufferReachedEnd || playerReachedEnd) {
+              clearInterval(timer);
+              try { player?.seekTo?.(dur, true); } catch (e) { if (v) v.currentTime = dur; }
+              setTimeout(() => {
+                resolve({
+                  duration: dur,
+                  videoDuration: Number(v?.duration) || 0,
+                  currentTime: dur,
+                  sourceDuration,
+                  bufferedEnd,
+                });
+              }, 600);
+              return;
+            }
+
+            // Buffer Frontier Advancement:
+            // When YouTube loads contiguous buffer, advance playhead to near the edge of the buffer (1.0s before end)
+            // This immediately stimulates YouTube's DASH scheduler to fetch the NEXT contiguous chunk!
+            if (bufferedEnd > lastBufferedEnd + 0.5) {
+              lastBufferedEnd = bufferedEnd;
+              stallTicks = 0;
+              const targetTime = Math.min(dur - 0.5, Math.max(0, bufferedEnd - 1.0));
+              try {
+                player?.seekTo?.(targetTime, true);
+              } catch (e) {
+                if (v) v.currentTime = targetTime;
+              }
+            } else {
+              stallTicks++;
+              if (v && v.paused && !v.ended) {
+                try { v.play(); } catch (e) {}
+              }
+              if (v && v.playbackRate !== 2.0 && v.playbackRate !== 1.0) {
+                try { v.playbackRate = 2.0; } catch (e) {}
+              }
+              if (!v.muted) {
+                v.muted = true;
+              }
+              // If stalled for > 1.5 seconds without buffer advancement, nudge playhead
+              if (stallTicks % 15 === 0 && bufferedEnd > 0) {
+                const nudgeTime = Math.min(dur - 0.5, Math.max(0, bufferedEnd - 0.5));
+                try { player?.seekTo?.(nudgeTime, true); } catch (e) { if (v) v.currentTime = nudgeTime; }
+                try { v.play(); } catch (e) {}
+              }
+            }
+
+            if (Date.now() - startTime > maxWaitMs) {
+              clearInterval(timer);
+              resolve({
+                duration: dur,
+                videoDuration: Number(v?.duration) || 0,
+                currentTime: cur,
+                sourceDuration,
+                bufferedEnd,
+              });
+            }
+          } catch (tickErr) {
+            // keep timer alive
           }
-          if (v.playbackRate !== 16.0) {
-            try { v.playbackRate = 16.0; } catch (e) {}
-          }
-          if (!v.muted) {
-            v.muted = true;
-          }
-        }, 250);
+        }, 100);
       });
     })()`;
       const startPlayback = () => {
@@ -1635,6 +1719,13 @@ async function handleStartCdpMediaDownload(payload, onTabAssigned) {
       }
       debuggerAttached = false;
       tabDebuggerOwners.delete(tabId);
+    }
+    if (previousActiveTabId) {
+      try {
+        chrome.tabs.update(previousActiveTabId, { active: true }, () => {
+        });
+      } catch {
+      }
     }
   }
   console.log("[NEXUS-FINAL] stage: UMP, raw bytes:", rawUmpBytes.length);
