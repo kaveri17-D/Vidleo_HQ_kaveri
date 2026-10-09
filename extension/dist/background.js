@@ -566,6 +566,75 @@ var activeSessions = /* @__PURE__ */ new Map();
 var activeTabJobs = /* @__PURE__ */ new Map();
 var tabDebuggerOwners = /* @__PURE__ */ new Map();
 var terminalSessions = /* @__PURE__ */ new Map();
+async function waitForNativeDownloadCompletion(options) {
+  const downloads = globalThis.chrome?.downloads;
+  if (!downloads?.download || !downloads?.search) {
+    const error2 = new Error("Chrome downloads API is unavailable");
+    error2.code = "NATIVE_DOWNLOAD_UNAVAILABLE";
+    throw error2;
+  }
+  if (!options.url) {
+    const error2 = new Error("Validated output did not provide a native download URL");
+    error2.code = "NATIVE_DOWNLOAD_URL_MISSING";
+    throw error2;
+  }
+  const timeoutMs = Math.max(3e4, Number(options.timeoutMs || 18e4));
+  const startedAt = Date.now();
+  const item = await new Promise((resolve, reject) => {
+    downloads.download({
+      url: options.url,
+      filename: options.filename,
+      saveAs: false
+    }, (downloadId) => {
+      const runtimeError = globalThis.chrome?.runtime?.lastError;
+      if (runtimeError) {
+        const error2 = new Error(runtimeError.message || "Chrome native download failed to start");
+        error2.code = "NATIVE_DOWNLOAD_START_FAILED";
+        reject(error2);
+      } else if (!Number.isFinite(downloadId)) {
+        const error2 = new Error("Chrome did not return a download ID");
+        error2.code = "NATIVE_DOWNLOAD_START_FAILED";
+        reject(error2);
+      } else {
+        resolve({ id: downloadId });
+      }
+    });
+  });
+  while (Date.now() - startedAt < timeoutMs) {
+    const rows = await new Promise((resolve) => {
+      downloads.search({ id: item.id }, (results) => resolve(Array.isArray(results) ? results : []));
+    });
+    const current = rows[0];
+    if (current?.state === "complete") {
+      const received = Number(current.bytesReceived || 0);
+      const fileSize = Number(current.fileSize || 0);
+      if (received <= 0 || options.expectedBytes > 0 && received !== options.expectedBytes) {
+        const error2 = new Error(`Native download byte mismatch: expected=${options.expectedBytes} received=${received}`);
+        error2.code = "NATIVE_DOWNLOAD_SIZE_MISMATCH";
+        error2.download = current;
+        throw error2;
+      }
+      if (fileSize > 0 && options.expectedBytes > 0 && fileSize !== options.expectedBytes) {
+        const error2 = new Error(`Native download file size mismatch: expected=${options.expectedBytes} fileSize=${fileSize}`);
+        error2.code = "NATIVE_DOWNLOAD_FILE_SIZE_MISMATCH";
+        error2.download = current;
+        throw error2;
+      }
+      return { downloadId: item.id, bytesReceived: received, fileSize, state: current.state };
+    }
+    if (current?.state === "interrupted") {
+      const error2 = new Error(`Native download interrupted${current.error ? `: ${current.error}` : ""}`);
+      error2.code = "NATIVE_DOWNLOAD_INTERRUPTED";
+      error2.download = current;
+      throw error2;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  const error = new Error(`Timed out waiting for native download completion after ${timeoutMs}ms`);
+  error.code = "NATIVE_DOWNLOAD_TIMEOUT";
+  error.downloadId = item.id;
+  throw error;
+}
 async function dispatchCdpMediaDownload(payload, sendResponse) {
   const sessionId = payload.sessionId || `cdp-${Date.now()}`;
   const requestId = payload.requestId || payload.requestId || `req-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -750,45 +819,37 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "DOWNLOAD_COMPLETE") {
     const payload = message.payload;
     console.log(`[NEXUS Service Worker] Download complete for job ${payload.jobId}, initiating chrome.downloads...`);
-    if (payload.blobUrl && chrome.downloads) {
-      chrome.downloads.download({
-        url: payload.blobUrl,
-        filename: payload.filename,
-        saveAs: false
-      }, (downloadId) => {
-        if (chrome.runtime.lastError) {
-          console.error("[NEXUS Service Worker] chrome.downloads error:", chrome.runtime.lastError.message);
-        } else {
-          console.log(`[NEXUS Service Worker] Download started with ID: ${downloadId}`);
-        }
-      });
-    }
-    notifyComplete(
-      payload.jobId,
-      "extension_format",
-      payload.deliveryMode,
-      payload.totalBytes
-    );
-    return false;
+    (async () => {
+      try {
+        await waitForNativeDownloadCompletion({
+          url: payload.blobUrl,
+          filename: payload.filename,
+          expectedBytes: Number(payload.totalBytes || 0)
+        });
+        notifyComplete(payload.jobId, "extension_format", payload.deliveryMode, payload.totalBytes);
+      } catch (error) {
+        console.error("[NEXUS Service Worker] Native download failed:", error);
+      }
+    })();
+    return true;
   }
   if (message.type === "ACQUISITION_COMPLETE") {
     const payload = message.payload;
     console.log(`[NEXUS Service Worker] Direct acquisition complete for session ${payload.sessionId}: ${payload.filename}`);
-    if (payload.blobUrl && chrome.downloads) {
-      chrome.downloads.download({
-        url: payload.blobUrl,
-        filename: payload.filename,
-        saveAs: false
-      }, (downloadId) => {
-        if (chrome.runtime.lastError) {
-          console.warn("[NEXUS Service Worker] chrome.downloads error:", chrome.runtime.lastError.message);
-        } else {
-          console.log(`[NEXUS Service Worker] Acquisition download started with ID: ${downloadId}`);
-        }
-      });
-    }
-    broadcastToTabs(message);
-    return false;
+    (async () => {
+      try {
+        const nativeDownload = await waitForNativeDownloadCompletion({
+          url: payload.blobUrl,
+          filename: payload.filename,
+          expectedBytes: Number(payload.outputBytes || payload.totalBytes || payload.bytes || 0)
+        });
+        broadcastToTabs({ ...message, payload: { ...payload, downloadStarted: true, nativeDownload } });
+      } catch (error) {
+        console.error("[NEXUS Service Worker] Acquisition native download failed:", error);
+        broadcastToTabs({ type: "ACQUISITION_FAILED", payload: { ...payload, error: error.message, code: error.code } });
+      }
+    })();
+    return true;
   }
   if (message.type === "ACQUISITION_PROGRESS" || message.type === "ACQUISITION_STARTED" || message.type === "ACQUISITION_FAILED" || message.type === "DOWNLOAD_PROGRESS" || message.type === "DOWNLOAD_FAILED") {
     broadcastToTabs(message);
@@ -1426,7 +1487,7 @@ async function handleStartCdpMediaDownload(payload, onTabAssigned) {
     audioCodec: ffmpegRes.audioCodec || "aac",
     resolution: `${ffmpegRes.width}x${ffmpegRes.height}`,
     sha256: ffmpegRes.sha256,
-    downloadStarted: true,
+    downloadStarted: false,
     provenance: "CDP_ACTIVE_PLAYER_MEDIA_RESPONSE_BODY"
   };
   if (resultPayload.ffmpegExitCode !== 0 || ffmpegRes.outputValid !== true || resultPayload.bytes <= 0) {
@@ -1436,19 +1497,14 @@ async function handleStartCdpMediaDownload(payload, onTabAssigned) {
     error.ffmpegStderr = ffmpegRes.forensics?.ffmpegStderr || "";
     throw error;
   }
-  if (ffmpegRes.blobUrl && chrome.downloads) {
-    chrome.downloads.download({
-      url: ffmpegRes.blobUrl,
-      filename: ffmpegRes.filename,
-      saveAs: false
-    }, (downloadId) => {
-      if (chrome.runtime.lastError) {
-        console.warn("[NEXUS SW] chrome.downloads warning:", chrome.runtime.lastError.message);
-      } else {
-        console.log(`[NEXUS SW] chrome.downloads started with ID ${downloadId}`);
-      }
-    });
-  }
+  const nativeDownload = await waitForNativeDownloadCompletion({
+    url: ffmpegRes.blobUrl,
+    filename: ffmpegRes.filename,
+    expectedBytes: resultPayload.bytes
+  });
+  resultPayload.downloadStarted = true;
+  resultPayload.nativeDownload = nativeDownload;
+  console.log("[NEXUS SW] Native Chrome download completed:", nativeDownload);
   broadcastToTabs({
     type: "NEXUS_CDP_PROGRESS",
     payload: {
@@ -1549,17 +1605,18 @@ async function handleStartPlaybackCapture(payload) {
   const finalResult = ffmpegResponse || tabResponse;
   if (finalResult.blobUrl && chrome.downloads) {
     console.log(`[NEXUS Service Worker] Initiating chrome.downloads for ${finalResult.filename}...`);
-    chrome.downloads.download({
+    const nativeDownload = await waitForNativeDownloadCompletion({
       url: finalResult.blobUrl,
       filename: finalResult.filename,
-      saveAs: false
-    }, (downloadId) => {
-      if (chrome.runtime.lastError) {
-        console.warn("[NEXUS Service Worker] chrome.downloads error:", chrome.runtime.lastError.message);
-      } else {
-        console.log(`[NEXUS Service Worker] Chrome download started with ID ${downloadId}`);
-      }
+      expectedBytes: Number(finalResult.outputBytes || finalResult.bytes || 0)
     });
+    finalResult.downloadStarted = true;
+    finalResult.nativeDownload = nativeDownload;
+    console.log("[NEXUS Service Worker] Chrome download completed:", nativeDownload);
+  } else {
+    const error = new Error("Playback capture did not produce a native download URL");
+    error.code = "NATIVE_DOWNLOAD_URL_MISSING";
+    throw error;
   }
   broadcastToTabs({
     type: "PLAYBACK_CAPTURE_COMPLETE",
