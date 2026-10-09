@@ -269,6 +269,57 @@ function assembleMediaResponseBodies(input) {
   };
 }
 
+// src/utils/duration-validation.ts
+function durationToleranceSeconds(expectedDuration) {
+  if (!(expectedDuration > 0)) return 2;
+  return Math.max(2, expectedDuration * 0.05);
+}
+function validateDurationMetrics(metrics) {
+  const { mode, expectedDuration, observedPlayerDuration } = metrics;
+  const tolerance = durationToleranceSeconds(expectedDuration);
+  if (mode === "DEMO") {
+    return {
+      valid: observedPlayerDuration > 0,
+      expectedDuration,
+      observedDuration: observedPlayerDuration,
+      tolerance,
+      delta: Math.abs(observedPlayerDuration - expectedDuration)
+    };
+  }
+  if (expectedDuration > 0) {
+    if (!(observedPlayerDuration > 0)) {
+      return {
+        valid: false,
+        code: "PLAYER_DURATION_ZERO",
+        message: `Observed player duration is zero or invalid: observed=${observedPlayerDuration}s`,
+        expectedDuration,
+        observedDuration: observedPlayerDuration,
+        tolerance,
+        delta: expectedDuration
+      };
+    }
+    const delta = Math.abs(observedPlayerDuration - expectedDuration);
+    if (delta > tolerance) {
+      return {
+        valid: false,
+        code: "PLAYER_DURATION_MISMATCH",
+        message: `Player duration mismatch: expected=${expectedDuration}s observed=${observedPlayerDuration}s tolerance=${tolerance}s delta=${delta.toFixed(3)}s`,
+        expectedDuration,
+        observedDuration: observedPlayerDuration,
+        tolerance,
+        delta
+      };
+    }
+  }
+  return {
+    valid: true,
+    expectedDuration,
+    observedDuration: observedPlayerDuration,
+    tolerance,
+    delta: Math.abs(observedPlayerDuration - expectedDuration)
+  };
+}
+
 // src/background/service-worker.ts
 var DEFAULT_API_BASE_URL = "http://127.0.0.1:8000";
 var OFFSCREEN_DOCUMENT_PATH = "offscreen.html";
@@ -1108,6 +1159,7 @@ async function handleStartCdpMediaDownload(payload, onTabAssigned) {
   });
   let debuggerAttached = false;
   let rawUmpBytes;
+  let observedPlayerDuration = 0;
   try {
     await withTimeout(new Promise((resolve, reject) => {
       chrome.debugger.attach(debuggee, "1.3", () => {
@@ -1182,7 +1234,7 @@ async function handleStartCdpMediaDownload(payload, onTabAssigned) {
       trace("QUALITY_SETUP_FAILED", { code: error?.code, message: error?.message });
     }
     console.log("[NEXUS-FINAL] stage: NETWORK");
-    let observedPlayerDuration2 = 0;
+    observedPlayerDuration = 0;
     broadcastToTabs({
       type: "NEXUS_CDP_PROGRESS",
       payload: {
@@ -1196,6 +1248,7 @@ async function handleStartCdpMediaDownload(payload, onTabAssigned) {
       let settled = false;
       let playerEnded = false;
       let responseOrder = 0;
+      let targetCpn = null;
       let quietTimer = null;
       let acquisitionTimer = null;
       const pendingBodies = /* @__PURE__ */ new Set();
@@ -1255,7 +1308,7 @@ async function handleStartCdpMediaDownload(payload, onTabAssigned) {
             error.code = assemblyErr?.message?.startsWith("MEDIA_RANGE_") ? "MEDIA_RANGE_INCOMPLETE" : "MEDIA_ASSEMBLY_FAILED";
             reject(error);
           }
-        }, 3500);
+        }, 500);
       };
       acquisitionTimer = setTimeout(() => {
         if (settled) return;
@@ -1320,12 +1373,24 @@ async function handleStartCdpMediaDownload(payload, onTabAssigned) {
       };
       const eventListener = (source, method, params) => {
         if (source.tabId && source.tabId !== tabId) return;
+        if (playerEnded) return;
         if (method === "Network.responseReceived" && params?.response) {
           const response = params.response;
           const url = response.url || "";
           const mimeType = String(response.mimeType || "").toLowerCase();
           if (!url.includes("videoplayback") && !mimeType.includes("vnd.yt-ump")) return;
           const parsed = new URL(url);
+          if (parsed.searchParams.has("adformat") || parsed.searchParams.has("ad_type") || url.includes("/ads/")) {
+            trace("AD_MEDIA_IGNORED", { responseId: params.requestId });
+            return;
+          }
+          const cpn = parsed.searchParams.get("cpn") || "";
+          if (!targetCpn && cpn) {
+            targetCpn = cpn;
+          } else if (targetCpn && cpn && cpn !== targetCpn) {
+            trace("OTHER_SESSION_MEDIA_IGNORED", { responseId: params.requestId, cpn, targetCpn });
+            return;
+          }
           const itag = parsed.searchParams.get("itag") || "";
           if (requestedItag && itag && itag !== requestedItag && !mimeType.includes("audio") && !mimeType.includes("vnd.yt-ump")) return;
           const headers = response.headers || {};
@@ -1380,7 +1445,94 @@ async function handleStartCdpMediaDownload(payload, onTabAssigned) {
           message: "Waiting for eligible active-player media responses (bounded timeout)..."
         }
       });
-      const driveExpression = `(async()=>{let v=null;for(let i=0;i<60&&!v;i++){v=document.querySelector('video');if(!v)await new Promise(r=>setTimeout(r,500))}if(!v)throw new Error('YouTube video element not found');try{v.muted=true;await v.play()}catch(e){};return await new Promise(r=>{const done=()=>r({duration:Number(v.duration)||0,currentTime:Number(v.currentTime)||0});if(v.ended||((v.duration>0)&&(v.currentTime>=v.duration-0.25)))return done();v.addEventListener('ended',done,{once:true});const timer=setInterval(()=>{if(v.ended||((v.duration>0)&&(v.currentTime>=v.duration-0.25))){clearInterval(timer);done()}},500)})})()`;
+      const expectedDurationLiteral = JSON.stringify(expectedDuration);
+      const videoIdLiteral = JSON.stringify(videoId || "");
+      const driveExpression = `(async () => {
+      const expected = ${expectedDurationLiteral};
+      const expectedId = ${videoIdLiteral};
+      let player = null;
+      let v = null;
+      let sourceDuration = 0;
+
+      for (let i = 0; i < 120; i++) {
+        player = document.getElementById('movie_player') || document.querySelector('ytd-player')?.getPlayer?.();
+        v = player?.querySelector('video') || document.querySelector('video');
+
+        const skipBtn = document.querySelector('.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button, .videoAdUiSkipButton');
+        if (skipBtn) {
+          try { skipBtn.click(); } catch (e) {}
+        }
+        if (player?.getAdState && player.getAdState() > 0 && v && v.duration > 0 && v.currentTime < v.duration) {
+          try { v.currentTime = v.duration; } catch (e) {}
+        }
+
+        const isAd = (player?.getAdState && player.getAdState() > 0) ||
+                     Boolean(document.querySelector('.ad-showing, .ad-interrupting'));
+
+        if (!isAd && v) {
+          const dataId = String(player?.getVideoData?.()?.video_id || '');
+          const apiDuration = Number(player?.getDuration?.()) || 0;
+          const elementDuration = Number(v?.duration) || 0;
+          const candidateDuration = apiDuration || elementDuration;
+          const idMatches = !expectedId || !dataId || dataId === expectedId;
+          const durationMatches = !expected || !candidateDuration ||
+            Math.abs(candidateDuration - expected) <= Math.max(2, expected * 0.05);
+
+          if (idMatches && durationMatches && candidateDuration > 0) {
+            sourceDuration = candidateDuration;
+            break;
+          }
+        }
+        await new Promise(r => setTimeout(r, 500));
+      }
+
+      if (!v || !sourceDuration) {
+        throw new Error('YouTube full-source player duration was not available or player remained in ad state');
+      }
+
+      if (v.currentTime > 1.5) {
+        try { player?.seekTo?.(0, true); } catch (e) { v.currentTime = 0; }
+        await new Promise(r => setTimeout(r, 200));
+      }
+
+      v.muted = true;
+      try { v.playbackRate = 16.0; } catch (e) { v.playbackRate = 2.0; }
+      try { await v.play(); } catch (e) {}
+
+      return await new Promise((resolve) => {
+        const timer = setInterval(() => {
+          const skipBtn = document.querySelector('.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button');
+          if (skipBtn) {
+            try { skipBtn.click(); } catch (e) {}
+          }
+
+          const cur = Number(player?.getCurrentTime?.()) || Number(v.currentTime) || 0;
+          const dur = Number(player?.getDuration?.()) || Number(v.duration) || sourceDuration;
+          const reachedEnd = v.ended || (dur > 0 && cur >= dur - 0.5);
+
+          if (reachedEnd) {
+            clearInterval(timer);
+            resolve({
+              duration: dur,
+              videoDuration: Number(v.duration) || 0,
+              currentTime: cur,
+              sourceDuration,
+            });
+            return;
+          }
+
+          if (v.paused && !v.ended) {
+            try { v.play(); } catch (e) {}
+          }
+          if (v.playbackRate !== 16.0) {
+            try { v.playbackRate = 16.0; } catch (e) {}
+          }
+          if (!v.muted) {
+            v.muted = true;
+          }
+        }, 250);
+      });
+    })()`;
       const startPlayback = () => {
         chrome.debugger.sendCommand(debuggee, "Runtime.evaluate", { expression: driveExpression, awaitPromise: true, returnByValue: true }, (result) => {
           if (chrome.runtime.lastError || result?.exceptionDetails) {
@@ -1392,18 +1544,37 @@ async function handleStartCdpMediaDownload(payload, onTabAssigned) {
             return;
           }
           playerEnded = true;
-          observedPlayerDuration2 = Number(result?.result?.value?.duration) || 0;
-          trace("PLAYER_REACHED_END", { playerDuration: observedPlayerDuration2, currentTime: result?.result?.value?.currentTime });
-          if (expectedDuration > 0 && observedPlayerDuration2 > 0) {
-            const tolerance = Math.max(1.5, expectedDuration * 0.05);
-            if (Math.abs(observedPlayerDuration2 - expectedDuration) > tolerance) {
-              settled = true;
-              cleanup();
-              const error = new Error(`Player duration mismatch: expected=${expectedDuration}s observed=${observedPlayerDuration2}s tolerance=${tolerance}s`);
-              error.code = "PLAYER_DURATION_MISMATCH";
-              reject(error);
-              return;
-            }
+          observedPlayerDuration = Number(result?.result?.value?.duration) || Number(result?.result?.value?.sourceDuration) || 0;
+          const curTime = Number(result?.result?.value?.currentTime) || 0;
+          trace("PLAYER_REACHED_END", {
+            playerDuration: observedPlayerDuration,
+            currentTime: curTime,
+            expectedDuration,
+            responseCount: bodies.length,
+            acquiredBytes: bodies.reduce((n, item) => n + item.bytes.length, 0)
+          });
+          const validation = validateDurationMetrics({
+            mode: acquisitionMode,
+            expectedDuration,
+            observedPlayerDuration,
+            playerCurrentTime: curTime
+          });
+          if (!validation.valid) {
+            trace("PLAYER_DURATION_MISMATCH", {
+              expectedDuration,
+              observedPlayerDuration,
+              currentTime: curTime,
+              tolerance: validation.tolerance,
+              delta: validation.delta,
+              responseCount: bodies.length,
+              acquiredBytes: bodies.reduce((n, item) => n + item.bytes.length, 0)
+            });
+            settled = true;
+            cleanup();
+            const error = new Error(validation.message || "Player duration mismatch");
+            error.code = validation.code || "PLAYER_DURATION_MISMATCH";
+            reject(error);
+            return;
           }
           finishIfReady();
         });

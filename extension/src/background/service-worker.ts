@@ -11,6 +11,11 @@ import type {
 } from '../messaging/protocol';
 import { parseUmpMediaStreams } from '../utils/ump-parser';
 import { assembleMediaResponseBodies } from '../utils/media-response-accumulator';
+import {
+  durationToleranceSeconds,
+  durationMatchesExpected,
+  validateDurationMetrics,
+} from '../utils/duration-validation';
 
 const DEFAULT_API_BASE_URL = 'http://127.0.0.1:8000';
 const OFFSCREEN_DOCUMENT_PATH = 'offscreen.html';
@@ -1044,6 +1049,7 @@ async function handleStartCdpMediaDownload(
 
   let debuggerAttached = false;
   let rawUmpBytes: Uint8Array;
+  let observedPlayerDuration = 0;
 
   try {
     // Attach debugger with strict ownership tracking (Phase 4)
@@ -1130,7 +1136,7 @@ async function handleStartCdpMediaDownload(
   }
 
   console.log('[NEXUS-FINAL] stage: NETWORK');
-  let observedPlayerDuration = 0;
+  observedPlayerDuration = 0;
   broadcastToTabs({
     type: 'NEXUS_CDP_PROGRESS',
     payload: {
@@ -1146,6 +1152,7 @@ async function handleStartCdpMediaDownload(
     let settled = false;
     let playerEnded = false;
     let responseOrder = 0;
+    let targetCpn: string | null = null;
     let quietTimer: ReturnType<typeof setTimeout> | null = null;
     let acquisitionTimer: ReturnType<typeof setTimeout> | null = null;
     const pendingBodies = new Set<Promise<void>>();
@@ -1204,7 +1211,7 @@ async function handleStartCdpMediaDownload(
           error.code = assemblyErr?.message?.startsWith('MEDIA_RANGE_') ? 'MEDIA_RANGE_INCOMPLETE' : 'MEDIA_ASSEMBLY_FAILED';
           reject(error);
         }
-      }, 3500);
+      }, 500);
     };
 
     acquisitionTimer = setTimeout(() => {
@@ -1276,12 +1283,26 @@ async function handleStartCdpMediaDownload(
 
     const eventListener = (source: chrome.debugger.Debuggee, method: string, params?: any) => {
       if (source.tabId && source.tabId !== tabId) return;
+      if (playerEnded) return;
       if (method === 'Network.responseReceived' && params?.response) {
         const response = params.response;
         const url = response.url || '';
         const mimeType = String(response.mimeType || '').toLowerCase();
         if (!url.includes('videoplayback') && !mimeType.includes('vnd.yt-ump')) return;
         const parsed = new URL(url);
+        // Filter out ads if adformat or ad_type parameters are present
+        if (parsed.searchParams.has('adformat') || parsed.searchParams.has('ad_type') || url.includes('/ads/')) {
+          trace('AD_MEDIA_IGNORED', { responseId: params.requestId });
+          return;
+        }
+        // Lock onto the active playback session nonce (cpn) to reject autoplay of adjacent videos
+        const cpn = parsed.searchParams.get('cpn') || '';
+        if (!targetCpn && cpn) {
+          targetCpn = cpn;
+        } else if (targetCpn && cpn && cpn !== targetCpn) {
+          trace('OTHER_SESSION_MEDIA_IGNORED', { responseId: params.requestId, cpn, targetCpn });
+          return;
+        }
         const itag = parsed.searchParams.get('itag') || '';
         // Keep the requested video quality exact; audio responses are retained
         // separately so the demuxer can pair the browser's actual tracks.
@@ -1340,10 +1361,98 @@ async function handleStartCdpMediaDownload(
       },
     });
 
-    // Reload with listeners already active, then let the real player play to
-    // its natural end. This forces the browser to request later ranges and
-    // UMP fragments instead of treating the first buffered chunk as complete.
-    const driveExpression = `(async()=>{let v=null;for(let i=0;i<60&&!v;i++){v=document.querySelector('video');if(!v)await new Promise(r=>setTimeout(r,500))}if(!v)throw new Error('YouTube video element not found');try{v.muted=true;await v.play()}catch(e){};return await new Promise(r=>{const done=()=>r({duration:Number(v.duration)||0,currentTime:Number(v.currentTime)||0});if(v.ended||((v.duration>0)&&(v.currentTime>=v.duration-0.25)))return done();v.addEventListener('ended',done,{once:true});const timer=setInterval(()=>{if(v.ended||((v.duration>0)&&(v.currentTime>=v.duration-0.25))){clearInterval(timer);done()}},500)})})()`;
+    // Reload with listeners already active, bypass any preroll ads, then drive
+    // accelerated 16x playback so the browser requests all contiguous ranges
+    // without gaps instead of stopping at an initial fragment.
+    const expectedDurationLiteral = JSON.stringify(expectedDuration);
+    const videoIdLiteral = JSON.stringify(videoId || '');
+    const driveExpression = `(async () => {
+      const expected = ${expectedDurationLiteral};
+      const expectedId = ${videoIdLiteral};
+      let player = null;
+      let v = null;
+      let sourceDuration = 0;
+
+      for (let i = 0; i < 120; i++) {
+        player = document.getElementById('movie_player') || document.querySelector('ytd-player')?.getPlayer?.();
+        v = player?.querySelector('video') || document.querySelector('video');
+
+        const skipBtn = document.querySelector('.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button, .videoAdUiSkipButton');
+        if (skipBtn) {
+          try { skipBtn.click(); } catch (e) {}
+        }
+        if (player?.getAdState && player.getAdState() > 0 && v && v.duration > 0 && v.currentTime < v.duration) {
+          try { v.currentTime = v.duration; } catch (e) {}
+        }
+
+        const isAd = (player?.getAdState && player.getAdState() > 0) ||
+                     Boolean(document.querySelector('.ad-showing, .ad-interrupting'));
+
+        if (!isAd && v) {
+          const dataId = String(player?.getVideoData?.()?.video_id || '');
+          const apiDuration = Number(player?.getDuration?.()) || 0;
+          const elementDuration = Number(v?.duration) || 0;
+          const candidateDuration = apiDuration || elementDuration;
+          const idMatches = !expectedId || !dataId || dataId === expectedId;
+          const durationMatches = !expected || !candidateDuration ||
+            Math.abs(candidateDuration - expected) <= Math.max(2, expected * 0.05);
+
+          if (idMatches && durationMatches && candidateDuration > 0) {
+            sourceDuration = candidateDuration;
+            break;
+          }
+        }
+        await new Promise(r => setTimeout(r, 500));
+      }
+
+      if (!v || !sourceDuration) {
+        throw new Error('YouTube full-source player duration was not available or player remained in ad state');
+      }
+
+      if (v.currentTime > 1.5) {
+        try { player?.seekTo?.(0, true); } catch (e) { v.currentTime = 0; }
+        await new Promise(r => setTimeout(r, 200));
+      }
+
+      v.muted = true;
+      try { v.playbackRate = 16.0; } catch (e) { v.playbackRate = 2.0; }
+      try { await v.play(); } catch (e) {}
+
+      return await new Promise((resolve) => {
+        const timer = setInterval(() => {
+          const skipBtn = document.querySelector('.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button');
+          if (skipBtn) {
+            try { skipBtn.click(); } catch (e) {}
+          }
+
+          const cur = Number(player?.getCurrentTime?.()) || Number(v.currentTime) || 0;
+          const dur = Number(player?.getDuration?.()) || Number(v.duration) || sourceDuration;
+          const reachedEnd = v.ended || (dur > 0 && cur >= dur - 0.5);
+
+          if (reachedEnd) {
+            clearInterval(timer);
+            resolve({
+              duration: dur,
+              videoDuration: Number(v.duration) || 0,
+              currentTime: cur,
+              sourceDuration,
+            });
+            return;
+          }
+
+          if (v.paused && !v.ended) {
+            try { v.play(); } catch (e) {}
+          }
+          if (v.playbackRate !== 16.0) {
+            try { v.playbackRate = 16.0; } catch (e) {}
+          }
+          if (!v.muted) {
+            v.muted = true;
+          }
+        }, 250);
+      });
+    })()`;
+
     const startPlayback = () => {
       chrome.debugger.sendCommand(debuggee, 'Runtime.evaluate', { expression: driveExpression, awaitPromise: true, returnByValue: true }, (result: any) => {
         if (chrome.runtime.lastError || result?.exceptionDetails) {
@@ -1355,19 +1464,41 @@ async function handleStartCdpMediaDownload(
           return;
         }
         playerEnded = true;
-        observedPlayerDuration = Number(result?.result?.value?.duration) || 0;
-        trace('PLAYER_REACHED_END', { playerDuration: observedPlayerDuration, currentTime: result?.result?.value?.currentTime });
-        if (expectedDuration > 0 && observedPlayerDuration > 0) {
-          const tolerance = Math.max(1.5, expectedDuration * 0.05);
-          if (Math.abs(observedPlayerDuration - expectedDuration) > tolerance) {
-            settled = true;
-            cleanup();
-            const error: any = new Error(`Player duration mismatch: expected=${expectedDuration}s observed=${observedPlayerDuration}s tolerance=${tolerance}s`);
-            error.code = 'PLAYER_DURATION_MISMATCH';
-            reject(error);
-            return;
-          }
+        observedPlayerDuration = Number(result?.result?.value?.duration) || Number(result?.result?.value?.sourceDuration) || 0;
+        const curTime = Number(result?.result?.value?.currentTime) || 0;
+        trace('PLAYER_REACHED_END', {
+          playerDuration: observedPlayerDuration,
+          currentTime: curTime,
+          expectedDuration,
+          responseCount: bodies.length,
+          acquiredBytes: bodies.reduce((n, item) => n + item.bytes.length, 0),
+        });
+
+        const validation = validateDurationMetrics({
+          mode: acquisitionMode,
+          expectedDuration,
+          observedPlayerDuration,
+          playerCurrentTime: curTime,
+        });
+
+        if (!validation.valid) {
+          trace('PLAYER_DURATION_MISMATCH', {
+            expectedDuration,
+            observedPlayerDuration,
+            currentTime: curTime,
+            tolerance: validation.tolerance,
+            delta: validation.delta,
+            responseCount: bodies.length,
+            acquiredBytes: bodies.reduce((n, item) => n + item.bytes.length, 0),
+          });
+          settled = true;
+          cleanup();
+          const error: any = new Error(validation.message || 'Player duration mismatch');
+          error.code = validation.code || 'PLAYER_DURATION_MISMATCH';
+          reject(error);
+          return;
         }
+
         finishIfReady();
       });
     };

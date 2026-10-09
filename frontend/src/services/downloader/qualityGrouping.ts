@@ -24,10 +24,20 @@ function bitrateOf(option: QualityOption): number {
 }
 
 function preferredCandidate(a: QualityOption, b: QualityOption): QualityOption {
+  const codecScore = (opt: QualityOption) => {
+    const vc = String(opt.vcodec || '').toLowerCase();
+    const cont = String(opt.container || '').toLowerCase();
+    // Prefer H.264 / AVC1 for WhatsApp compatibility
+    if (vc.includes('avc') || vc.includes('h264') || cont === 'mp4') return 2;
+    // Next prefer VP9 / AV1
+    if (vc.includes('vp9') || vc.includes('av01') || vc.includes('av1')) return 1;
+    return 0;
+  };
+
   const score = (option: QualityOption) => [
     availabilityRank(option.availability),
     option.isRecommended ? 1 : 0,
-    option.vcodec ? 1 : 0,
+    codecScore(option),
     bitrateOf(option),
     String(option.id),
   ];
@@ -45,10 +55,11 @@ function preferredCandidate(a: QualityOption, b: QualityOption): QualityOption {
 
 function displayLabel(height: number | undefined, fallback: string): string {
   if (!height) return fallback || 'Standard Video';
-  if (height >= 2160) return `${height}p 4K`;
-  if (height >= 1440) return `${height}p 2K`;
-  if (height >= 1080) return `${height}p Full HD`;
-  if (height >= 720) return `${height}p HD`;
+  if (height >= 2160) return `${height}p (4K)`;
+  if (height >= 1440) return `${height}p (2K)`;
+  if (height >= 1080) return `${height}p (Full HD)`;
+  if (height >= 720) return `${height}p (HD)`;
+  if (height === 480) return `${height}p (SD)`;
   return `${height}p`;
 }
 
