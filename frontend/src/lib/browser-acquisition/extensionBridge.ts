@@ -468,13 +468,24 @@ export async function startCdpMediaDownloadViaExtension(
 
   const sessionId = `cdp-acq-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const requestId = `cdp-req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const expectedSeconds = Number(options.durationSeconds || 0);
+  const bridgeTimeoutMs = Math.max(360000, expectedSeconds > 0 ? expectedSeconds * 2000 + 120000 : 420000);
 
   return new Promise((resolve, reject) => {
     let settled = false;
+    let timeout: number;
 
     const cleanup = () => {
+      window.clearTimeout(timeout);
       window.removeEventListener('message', handleMessage);
     };
+
+    timeout = window.setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(new Error(`CDP media acquisition timed out after ${Math.round(bridgeTimeoutMs / 1000)}s without a terminal result`));
+    }, bridgeTimeoutMs);
 
     function handleMessage(event: MessageEvent) {
       if (!event.data || event.data.source !== 'nexus-extension') return;
@@ -502,7 +513,7 @@ export async function startCdpMediaDownloadViaExtension(
         if (!settled && payload?.sessionId === sessionId && (!payload?.requestId || payload.requestId === requestId)) {
           settled = true;
           cleanup();
-          reject(new Error(payload?.message || payload?.error || 'CDP media acquisition failed in extension'));
+          reject(new Error(`[${payload?.code || 'CDP_DOWNLOAD_FAILED'}] ${payload?.message || payload?.error || 'CDP media acquisition failed in extension'}`));
         }
       } else if (type === 'EXTENSION_MESSAGE_CHANNEL_ERROR') {
         if (!settled && payload?.sessionId === sessionId && (!payload?.requestId || payload.requestId === requestId)) {

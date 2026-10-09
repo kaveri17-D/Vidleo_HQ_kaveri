@@ -15,6 +15,32 @@ import { assembleMediaResponseBodies } from '../utils/media-response-accumulator
 const DEFAULT_API_BASE_URL = 'http://127.0.0.1:8000';
 const OFFSCREEN_DOCUMENT_PATH = 'offscreen.html';
 
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, code: string, message: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      const error: any = new Error(message);
+      error.code = code;
+      reject(error);
+    }, timeoutMs);
+    promise.then((value) => { clearTimeout(timer); resolve(value); }, (error) => { clearTimeout(timer); reject(error); });
+  });
+}
+
+function sendDebuggerCommand<T = any>(debuggee: chrome.debugger.Debuggee, method: string, commandParams: object = {}, timeoutMs = 10000): Promise<T> {
+  return withTimeout(new Promise<T>((resolve, reject) => {
+    chrome.debugger.sendCommand(debuggee, method, commandParams, (result: T) => {
+      const lastError = chrome.runtime.lastError;
+      if (lastError) {
+        const error: any = new Error(lastError.message || `${method} failed`);
+        error.code = `CDP_${method.replace(/[^A-Z0-9]+/gi, '_').toUpperCase()}_FAILED`;
+        reject(error);
+        return;
+      }
+      resolve(result);
+    });
+  }), timeoutMs, `CDP_${method.replace(/[^A-Z0-9]+/gi, '_').toUpperCase()}_TIMEOUT`, `${method} did not complete within ${timeoutMs}ms`);
+}
+
 console.log('[NEXUS Service Worker] Background Service Worker initialized');
 
 /**
@@ -966,19 +992,24 @@ async function handleStartCdpMediaDownload(
 
   console.log('[NEXUS SW] Found ytTabs:', ytTabs.map(t => ({ id: t.id, url: t.url })));
 
-  let targetTab = ytTabs.find((t) => videoId && t.url?.includes(videoId)) || ytTabs[0];
+  let targetTab = videoId ? ytTabs.find((t) => t.url?.includes(videoId)) : ytTabs[0];
 
   if (!targetTab && videoUrl && chrome.tabs && chrome.tabs.create) {
-    targetTab = await new Promise<chrome.tabs.Tab>((resolve) => {
+    targetTab = await withTimeout(new Promise<chrome.tabs.Tab>((resolve, reject) => {
       chrome.tabs.create({ url: videoUrl, active: false }, (newTab) => {
-        resolve(newTab);
+        if (chrome.runtime.lastError || !newTab) reject(new Error(chrome.runtime.lastError?.message || 'Unable to create YouTube playback tab'));
+        else resolve(newTab);
       });
-    });
+    }), 30000, 'TARGET_TAB_LOAD_TIMEOUT', 'Timed out opening the YouTube playback tab');
     await new Promise((r) => setTimeout(r, 3000));
   }
 
   if (!targetTab?.id) {
-    throw new Error('No YouTube tab available for media byte acquisition. Please open the video in YouTube.');
+    const error: any = new Error(videoId
+      ? 'No YouTube tab for the selected video is available. Open the exact video tab and retry.'
+      : 'No YouTube tab available for media byte acquisition. Please open the video in YouTube.');
+    error.code = 'TARGET_TAB_NOT_FOUND';
+    throw error;
   }
 
   const tabId = targetTab.id;
@@ -1016,20 +1047,16 @@ async function handleStartCdpMediaDownload(
 
   try {
     // Attach debugger with strict ownership tracking (Phase 4)
-    await new Promise<void>((resolve, reject) => {
+    await withTimeout(new Promise<void>((resolve, reject) => {
       chrome.debugger.attach(debuggee, '1.3', () => {
         if (chrome.runtime.lastError) {
           const msg = chrome.runtime.lastError.message || '';
           console.warn('[NEXUS SW] chrome.debugger.attach message:', msg);
-          if (msg.includes('Another debugger is already attached')) {
-            debuggerAttached = true;
-            tabDebuggerOwners.set(tabId, { sessionId, requestId: payload.requestId || '', attached: true });
-            resolve();
-          } else {
-            const err: any = new Error(`CDP attach failed: ${msg}`);
-            err.code = 'CDP_ATTACH_FAILED';
-            reject(err);
-          }
+          const err: any = new Error(msg.includes('Another debugger is already attached')
+            ? 'Target playback tab is already controlled by another debugger session. Close DevTools or retry after the other acquisition finishes.'
+            : `CDP attach failed: ${msg}`);
+          err.code = msg.includes('Another debugger is already attached') ? 'CDP_TAB_BUSY' : 'CDP_ATTACH_FAILED';
+          reject(err);
         } else {
           debuggerAttached = true;
           tabDebuggerOwners.set(tabId, { sessionId, requestId: payload.requestId || '', attached: true });
@@ -1037,23 +1064,23 @@ async function handleStartCdpMediaDownload(
           resolve();
         }
       });
-    });
+    }), 15000, 'CDP_ATTACH_TIMEOUT', 'Timed out attaching Chrome DevTools Protocol');
 
   // Enable Network domain with large buffers
-  await new Promise<void>((resolve) => {
-    chrome.debugger.sendCommand(debuggee, 'Network.enable', {
+  try {
+    await sendDebuggerCommand(debuggee, 'Network.enable', {
       maxResourceBufferSize: 100 * 1024 * 1024,
       maxTotalBufferSize: 200 * 1024 * 1024,
-    }, (res) => {
-      console.log('[NEXUS SW] Network.enable response:', res, 'lastError:', chrome.runtime.lastError?.message);
-      resolve();
-    });
-  });
+    }, 15000);
+    trace('NETWORK_ENABLE_SUCCESS', { targetTabId: tabId });
+  } catch (error: any) {
+    trace('NETWORK_ENABLE_FAILED', { targetTabId: tabId, code: error?.code, message: error?.message });
+    throw error;
+  }
 
   // Enable Page domain and add script to prefer AVC1 / H.264 over AV1 / VP9 for universal WhatsApp compatibility
-  await new Promise<void>((resolve) => {
-    chrome.debugger.sendCommand(debuggee, 'Page.enable', {}, () => {
-      chrome.debugger.sendCommand(debuggee, 'Page.addScriptToEvaluateOnNewDocument', {
+  await sendDebuggerCommand(debuggee, 'Page.enable', {}, 10000);
+  await sendDebuggerCommand(debuggee, 'Page.addScriptToEvaluateOnNewDocument', {
         source: `
           (function() {
             try {
@@ -1072,9 +1099,7 @@ async function handleStartCdpMediaDownload(
             } catch(e) {}
           })();
         `
-      }, () => resolve());
-    });
-  });
+      }, 10000);
 
   // Set player quality range to match user-selected quality
   try {
@@ -1087,8 +1112,7 @@ async function handleStartCdpMediaDownload(
     else if (qLabel.includes('240')) qParam = 'small';
     else if (qLabel.includes('144')) qParam = 'tiny';
 
-    await new Promise<void>((r) => {
-      chrome.debugger.sendCommand(debuggee, 'Runtime.evaluate', {
+    await sendDebuggerCommand(debuggee, 'Runtime.evaluate', {
         expression: `
           (function() {
             try {
@@ -1100,9 +1124,10 @@ async function handleStartCdpMediaDownload(
             } catch(e) {}
           })();
         `
-      }, () => r());
-    });
-  } catch {}
+      }, 10000);
+  } catch (error: any) {
+    trace('QUALITY_SETUP_FAILED', { code: error?.code, message: error?.message });
+  }
 
   console.log('[NEXUS-FINAL] stage: NETWORK');
   let observedPlayerDuration = 0;
@@ -1196,8 +1221,23 @@ async function handleStartCdpMediaDownload(
       if (!meta) return;
       const operation = new Promise<void>((done) => {
         trace('GET_RESPONSE_BODY', { responseId: requestId, ...meta });
+        broadcastToTabs({
+          type: 'NEXUS_CDP_PROGRESS',
+          payload: {
+            requestId: payload.requestId,
+            sessionId,
+            state: 'ACQUIRING_MEDIA',
+            percent: 50,
+            message: 'Retrieving and accumulating active-player media response bytes...',
+          },
+        });
         chrome.debugger.sendCommand(debuggee, 'Network.getResponseBody', { requestId }, (res: any) => {
           if (chrome.runtime.lastError || !res?.body) {
+            trace('MEDIA_RESPONSE_BODY_FAILED', {
+              responseId: requestId,
+              reason: chrome.runtime.lastError?.message || 'EMPTY_RESPONSE_BODY',
+              ...meta,
+            });
             done();
             return;
           }
@@ -1269,6 +1309,18 @@ async function handleStartCdpMediaDownload(
         };
         responseMeta.set(params.requestId, meta);
         trace('MEDIA_RESPONSE_DETECTED', { responseId: params.requestId, ...meta });
+        if (responseMeta.size === 1) {
+          broadcastToTabs({
+            type: 'NEXUS_CDP_PROGRESS',
+            payload: {
+              requestId: payload.requestId,
+              sessionId,
+              state: 'MEDIA_DETECTED',
+              percent: 45,
+              message: 'Eligible player media response detected; retrieving binary body...',
+            },
+          });
+        }
       }
       if (method === 'Network.loadingFinished' && params?.requestId && responseMeta.has(params.requestId)) {
         getBody(params.requestId);
@@ -1277,6 +1329,16 @@ async function handleStartCdpMediaDownload(
 
     chrome.debugger.onEvent.addListener(eventListener);
     trace('NETWORK_LISTENING', { targetTabId: tabId, requestedItag, expectedDuration });
+    broadcastToTabs({
+      type: 'NEXUS_CDP_PROGRESS',
+      payload: {
+        requestId: payload.requestId,
+        sessionId,
+        state: 'WAITING_FOR_MEDIA',
+        percent: 40,
+        message: 'Waiting for eligible active-player media responses (bounded timeout)...',
+      },
+    });
 
     // Reload with listeners already active, then let the real player play to
     // its natural end. This forces the browser to request later ranges and
@@ -1309,7 +1371,24 @@ async function handleStartCdpMediaDownload(
         finishIfReady();
       });
     };
-    chrome.tabs.reload(tabId, {}, () => setTimeout(startPlayback, 1500));
+    withTimeout(new Promise<void>((resolve, reject) => {
+      chrome.tabs.reload(tabId, {}, () => {
+        if (chrome.runtime.lastError) {
+          const error: any = new Error(chrome.runtime.lastError.message || 'Unable to reload the target playback tab');
+          error.code = 'TARGET_TAB_RELOAD_FAILED';
+          reject(error);
+        } else {
+          resolve();
+        }
+      });
+    }), 30000, 'TARGET_TAB_RELOAD_TIMEOUT', 'Timed out reloading the target playback tab')
+      .then(() => setTimeout(startPlayback, 1500))
+      .catch((error: any) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        reject(error);
+      });
   });
 
   broadcastToTabs({
