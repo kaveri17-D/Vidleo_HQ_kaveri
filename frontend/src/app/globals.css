@@ -2,6 +2,18 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Keep typography deterministic in production builds. The previous
+   next/font/google imports made deployment depend on a live Google Fonts
+   response; these local stacks preserve the intended roles without a
+   build-time network dependency. */
+:root {
+  --font-display: "Arial Narrow", "Inter Tight", Arial, sans-serif;
+  --font-sans: "Segoe UI", Arial, sans-serif;
+  --font-serif: Georgia, serif;
+  --font-script: "Comic Sans MS", cursive;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
 @layer base {
   :root {
     --background: 0 0% 100%;

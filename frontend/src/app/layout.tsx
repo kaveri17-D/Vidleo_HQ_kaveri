@@ -1,40 +1,5 @@
 import type { Metadata, Viewport } from 'next';
-import { Inter_Tight, Plus_Jakarta_Sans, Playfair_Display, Caveat } from 'next/font/google';
 import './globals.css';
-
-// Modern Editorial Grotesk Display Font
-const displayFont = Inter_Tight({
-  subsets: ['latin'],
-  variable: '--font-display',
-  weight: ['400', '500', '600', '700', '800'],
-  style: ['normal', 'italic'],
-  display: 'swap',
-});
-
-// Clean, neutral modern UI and body font
-const sansFont = Plus_Jakarta_Sans({
-  subsets: ['latin'],
-  variable: '--font-sans',
-  weight: ['400', '500', '600', '700'],
-  display: 'swap',
-});
-
-// Elegant Editorial Serif Font for classic italic highlights (like reference image)
-const serifFont = Playfair_Display({
-  subsets: ['latin'],
-  variable: '--font-serif',
-  weight: ['400', '500', '600', '700'],
-  style: ['normal', 'italic'],
-  display: 'swap',
-});
-
-// Subtle Editorial Script Font for annotations
-const scriptFont = Caveat({
-  subsets: ['latin'],
-  variable: '--font-script',
-  weight: ['400', '500', '600', '700'],
-  display: 'swap',
-});
 
 export const viewport: Viewport = {
   themeColor: '#F8F7F2',
@@ -62,7 +27,6 @@ export const metadata: Metadata = {
 
 import { SmoothScrollProvider } from '@/components/providers/SmoothScrollProvider';
 import { AuthProvider } from '@/components/providers/AuthProvider';
-import { cn } from "@/lib/utils";
 
 export default function RootLayout({
   children,
@@ -72,7 +36,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={cn(displayFont.variable, serifFont.variable, scriptFont.variable, "font-sans", sansFont.variable)}
+      className="font-sans"
     >
       <body className="min-h-screen bg-[#F6F6F8] text-[#0A0A0C] font-sans antialiased selection:bg-[#0A0A0C] selection:text-white">
         <AuthProvider>
