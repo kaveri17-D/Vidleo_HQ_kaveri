@@ -8,6 +8,7 @@ import {
   FlowPipelineStatus
 } from '@/services/downloader/types';
 import { QualitySelector } from './QualitySelector';
+import { groupVideoQualityOptions } from '@/services/downloader/qualityGrouping';
 import { 
   ArrowRight, 
   Clock, 
@@ -272,7 +273,10 @@ export function VideoDetectedCard({
     }
   }, [isMobile, metadata.pipelineStatus, checkExtension]);
 
-  const videoOptions = metadata.availableVideoQualities || [];
+  const videoOptions = React.useMemo(
+    () => groupVideoQualityOptions(metadata.availableVideoQualities || []),
+    [metadata.availableVideoQualities]
+  );
   const audioOptions = metadata.availableAudioQualities || [];
   const currentOptions = activeFormat === 'video' ? videoOptions : audioOptions;
 

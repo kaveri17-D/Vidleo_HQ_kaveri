@@ -33,6 +33,7 @@ export interface QualityOption {
   itag?: string | number;
   vcodec?: string;
   acodec?: string;
+  sourceVariants?: QualityOption[];
 }
 
 export type DownloadSessionState =
