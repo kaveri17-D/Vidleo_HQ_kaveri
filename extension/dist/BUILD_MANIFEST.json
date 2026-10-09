@@ -1,13 +1,13 @@
 {
-  "buildId": "build-1791536240966",
-  "gitCommit": "fe06c3e14d31d409e97e32de98c7b121a6964e6e",
-  "buildTimestamp": "2026-10-09T08:57:20.966Z",
+  "buildId": "build-1791536616461",
+  "gitCommit": "24592aa65cec42706111469cab0772cfc778a06b",
+  "buildTimestamp": "2026-10-09T09:03:36.461Z",
   "extensionVersion": "1.0.1",
   "protocolVersion": "1.0.0",
   "manifestSha256": "bd5422559642f433490e21974c6049bb0154df91bb51fd4663789e3c0ca5daee",
-  "backgroundSha256": "36079d88beb3a5f4b81406e81ccd319eac4189252c7edbe86a87cdeeba7d0907",
+  "backgroundSha256": "38d432bd61254b57dae789ef8894901024cfaae382d61e12593bbad5bc5add90",
   "contentSha256": "716698481bc5ab6a3d1af851e819a6ed00182c09b114396592c0c9d4be236dc0",
-  "offscreenSha256": "ec1cc493f17e4a5f321ec92a6932111e91252ca00e657cb482e4c8c35a9140dc",
+  "offscreenSha256": "062cb502a8415b33fb3c3f1387df94d72ac44837c0b8397de4309095cfc53e6b",
   "ffmpegCoreSha256": "67a48f11645f85439f3fde4f2119042c16b374b910206b7a7a24f342e28dcae3",
   "ffmpegWasmSha256": "9f57947a5bd530d8f00c5b3f2cb2a3492faa7e5d823315342d6a8656d0a6b7b7",
   "ffmpegWorkerSha256": "5c299c29d32667a16db35766da72d3d28ffe948727c665d5d7001d4a944d4441"

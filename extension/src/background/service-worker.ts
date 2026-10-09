@@ -1105,6 +1105,7 @@ async function handleStartCdpMediaDownload(
   } catch {}
 
   console.log('[NEXUS-FINAL] stage: NETWORK');
+  let observedPlayerDuration = 0;
   broadcastToTabs({
     type: 'NEXUS_CDP_PROGRESS',
     payload: {
@@ -1281,7 +1282,19 @@ async function handleStartCdpMediaDownload(
           return;
         }
         playerEnded = true;
-        trace('PLAYER_REACHED_END', { playerDuration: result?.result?.value?.duration, currentTime: result?.result?.value?.currentTime });
+        observedPlayerDuration = Number(result?.result?.value?.duration) || 0;
+        trace('PLAYER_REACHED_END', { playerDuration: observedPlayerDuration, currentTime: result?.result?.value?.currentTime });
+        if (expectedDuration > 0 && observedPlayerDuration > 0) {
+          const tolerance = Math.max(1.5, expectedDuration * 0.05);
+          if (Math.abs(observedPlayerDuration - expectedDuration) > tolerance) {
+            settled = true;
+            cleanup();
+            const error: any = new Error(`Player duration mismatch: expected=${expectedDuration}s observed=${observedPlayerDuration}s tolerance=${tolerance}s`);
+            error.code = 'PLAYER_DURATION_MISMATCH';
+            reject(error);
+            return;
+          }
+        }
         finishIfReady();
       });
     };
@@ -1426,7 +1439,7 @@ async function handleStartCdpMediaDownload(
         audioBase64,
         videoBytesCount: demux.videoBytes,
         audioBytesCount: demux.audioBytes,
-        expectedDuration,
+        expectedDuration: observedPlayerDuration || expectedDuration,
         selectedQuality: payload.quality,
         quality: payload.quality,
         targetItag: payload.targetItag,

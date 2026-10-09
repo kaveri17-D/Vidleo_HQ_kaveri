@@ -1,5 +1,6 @@
 import { MediaEngine } from '../../../frontend/src/packages/media-engine/index';
 import { ExtensionDownloadSink } from '../storage/extension-download-sink';
+import { hasFatalDecodeDiagnostics } from '../utils/decode-diagnostics';
 import type { 
   NexusMessage, 
   StartDownloadPayload, 
@@ -837,11 +838,12 @@ async function handleProcessCdpMediaFfmpeg(payload: any) {
     '-err_detect', 'explode',
     '-i', outputFileName || targetOutputFile,
     '-map', '0:v:0',
-    '-map', '0:a:0?',
+    '-map', '0:a:0',
     '-f', 'null',
     '-'
   ];
   let fullDecodeCode = -1;
+  ffmpegLogs.length = 0;
   try {
     fullDecodeCode = await ffmpeg.exec(fullDecodeArgs);
   } catch (decodeErr: any) {
@@ -851,9 +853,11 @@ async function handleProcessCdpMediaFfmpeg(payload: any) {
   forensics.fullDecodeExitCode = fullDecodeCode;
   forensics.fullDecodeStderr = ffmpegLogs.slice(-80).join('\n');
   instrument('FULL_DECODE_CHECK', { code: fullDecodeCode, stderr: forensics.fullDecodeStderr });
-  if (fullDecodeCode !== 0) {
+  const fullDecodeHasFatalDiagnostics = hasFatalDecodeDiagnostics(forensics.fullDecodeStderr);
+  forensics.fullDecodeHasFatalDiagnostics = fullDecodeHasFatalDiagnostics;
+  if (fullDecodeCode !== 0 || fullDecodeHasFatalDiagnostics) {
     forensics.offscreenStatus = 'full_decode_failed';
-    throw new Error(`[NEXUS-FINAL][FULL_DECODE_FAILED] exitCode=${fullDecodeCode}`);
+    throw new Error(`[NEXUS-FINAL][FULL_DECODE_FAILED] exitCode=${fullDecodeCode}, fatalDiagnostics=${fullDecodeHasFatalDiagnostics}`);
   }
 
   const hasFtyp = outputData.length >= 8 &&

@@ -16730,6 +16730,20 @@ var ExtensionDownloadSink = class {
   }
 };
 
+// src/utils/decode-diagnostics.ts
+var FATAL_DECODE_PATTERNS = [
+  /invalid\s+nal\s+unit\s+size/i,
+  /error\s+splitting\s+the\s+input\s+into\s+nal\s+units/i,
+  /missing\s+picture\s+in\s+access\s+unit/i,
+  /error\s+while\s+decoding/i,
+  /decoding\s+error/i,
+  /invalid\s+data\s+found\s+when\s+processing\s+input/i
+];
+function hasFatalDecodeDiagnostics(logs) {
+  const text = Array.isArray(logs) ? logs.join("\n") : logs;
+  return FATAL_DECODE_PATTERNS.some((pattern) => pattern.test(text));
+}
+
 // src/offscreen/offscreen.ts
 console.log("[NEXUS Offscreen] Initialized and listening for media processing requests");
 try {
@@ -17471,12 +17485,13 @@ async function handleProcessCdpMediaFfmpeg(payload) {
     "-map",
     "0:v:0",
     "-map",
-    "0:a:0?",
+    "0:a:0",
     "-f",
     "null",
     "-"
   ];
   let fullDecodeCode = -1;
+  ffmpegLogs.length = 0;
   try {
     fullDecodeCode = await ffmpeg.exec(fullDecodeArgs);
   } catch (decodeErr) {
@@ -17486,9 +17501,11 @@ async function handleProcessCdpMediaFfmpeg(payload) {
   forensics.fullDecodeExitCode = fullDecodeCode;
   forensics.fullDecodeStderr = ffmpegLogs.slice(-80).join("\n");
   instrument("FULL_DECODE_CHECK", { code: fullDecodeCode, stderr: forensics.fullDecodeStderr });
-  if (fullDecodeCode !== 0) {
+  const fullDecodeHasFatalDiagnostics = hasFatalDecodeDiagnostics(forensics.fullDecodeStderr);
+  forensics.fullDecodeHasFatalDiagnostics = fullDecodeHasFatalDiagnostics;
+  if (fullDecodeCode !== 0 || fullDecodeHasFatalDiagnostics) {
     forensics.offscreenStatus = "full_decode_failed";
-    throw new Error(`[NEXUS-FINAL][FULL_DECODE_FAILED] exitCode=${fullDecodeCode}`);
+    throw new Error(`[NEXUS-FINAL][FULL_DECODE_FAILED] exitCode=${fullDecodeCode}, fatalDiagnostics=${fullDecodeHasFatalDiagnostics}`);
   }
   const hasFtyp = outputData.length >= 8 && String.fromCharCode(...outputData.subarray(4, 8)) === "ftyp";
   const outputText = new TextDecoder().decode(outputData.subarray(0, Math.min(outputData.length, 2 * 1024 * 1024)));

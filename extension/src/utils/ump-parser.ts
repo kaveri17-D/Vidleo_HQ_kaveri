@@ -59,25 +59,36 @@ export interface UmpDemuxResult {
 export function parseUmpMediaStreams(rawUmp: Uint8Array): UmpDemuxResult {
   let offset = 0;
   const streamTracks = new Map<number, Uint8Array[]>();
+  let mediaPartCount = 0;
 
   while (offset < rawUmp.length) {
     const [partType, afterType] = readVarInt(rawUmp, offset);
-    if (partType < 0) break;
+    if (partType < 0) throw new Error(`UMP_TRUNCATED_PART_TYPE offset=${offset}`);
     offset = afterType;
 
     const [partSize, afterSize] = readVarInt(rawUmp, offset);
-    if (partSize < 0) break;
+    if (partSize < 0) throw new Error(`UMP_TRUNCATED_PART_SIZE offset=${offset}`);
     offset = afterSize;
 
-    if (offset + partSize > rawUmp.length) break;
+    if (offset + partSize > rawUmp.length) {
+      throw new Error(`UMP_TRUNCATED_PART payloadOffset=${offset} declared=${partSize} available=${rawUmp.length - offset}`);
+    }
 
     if (partType === 21 && partSize > 1) { // MEDIA part
+      mediaPartCount++;
       const streamId = rawUmp[offset];
       const payload = rawUmp.subarray(offset + 1, offset + partSize);
       if (!streamTracks.has(streamId)) streamTracks.set(streamId, []);
       streamTracks.get(streamId)!.push(payload);
     }
     offset += partSize;
+  }
+
+  if (offset !== rawUmp.length) {
+    throw new Error(`UMP_TRAILING_BYTES offset=${offset} total=${rawUmp.length}`);
+  }
+  if (mediaPartCount === 0) {
+    throw new Error('UMP_MEDIA_PARTS_MISSING');
   }
 
   function isWebm(buf: Uint8Array): boolean {
