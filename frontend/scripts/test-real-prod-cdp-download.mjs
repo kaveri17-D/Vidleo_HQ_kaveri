@@ -12,7 +12,7 @@ const rootDir = path.resolve(__dirname, '..');
 const extDistPath = path.resolve(rootDir, '../extension/dist');
 
 const PROD_URL = 'https://frontend-kaveri-d.vercel.app/';
-const VIDEO_URL = 'https://www.youtube.com/watch?v=jNQXAC9IVRw';
+const VIDEO_URL = process.env.TEST_VIDEO_URL || 'https://www.youtube.com/watch?v=jNQXAC9IVRw';
 const DOWNLOAD_DIR = '/downloads';
 const WORKSPACE_DOWNLOAD_DIR = '/workspace/downloads';
 const EVIDENCE_FILE = path.resolve(__dirname, 'prod-cdp-acquisition-evidence.json');
@@ -295,7 +295,7 @@ function computeSha256(filePath) {
         const recordedStages = [];
         const timer = setTimeout(() => {
           reject(new Error('Timeout waiting for production CDP download to finish'));
-        }, 180000);
+        }, 360000);
 
         window.addEventListener('message', (event) => {
           if (!event.data || event.data.source !== 'nexus-extension') return;

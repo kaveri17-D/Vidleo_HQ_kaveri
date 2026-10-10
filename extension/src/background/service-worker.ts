@@ -1108,6 +1108,20 @@ async function handleStartCdpMediaDownload(
     throw error;
   }
 
+  // Block ad requests via CDP to prevent preroll ads from playing
+  try {
+    await sendDebuggerCommand(debuggee, 'Network.setBlockedURLs', {
+      urls: [
+        '*://*.doubleclick.net/*',
+        '*://googleads.g.doubleclick.net/*',
+        '*://pagead2.googlesyndication.com/*',
+        '*://*.youtube.com/pagead/*',
+        '*://*.youtube.com/ptracking*',
+      ],
+    }, 5000);
+    trace('NETWORK_BLOCKED_URLS_SET', { targetTabId: tabId });
+  } catch {}
+
   // Enable Page domain and add script to prefer AVC1 / H.264 over AV1 / VP9 for universal WhatsApp compatibility
   await sendDebuggerCommand(debuggee, 'Page.enable', {}, 10000);
   await sendDebuggerCommand(debuggee, 'Page.addScriptToEvaluateOnNewDocument', {
@@ -1175,6 +1189,7 @@ async function handleStartCdpMediaDownload(
   rawUmpBytes = await new Promise<Uint8Array>((resolve, reject) => {
     let settled = false;
     let playerEnded = false;
+    let listeningActive = false;
     let responseOrder = 0;
     let targetCpn: string | null = null;
     let quietTimer: ReturnType<typeof setTimeout> | null = null;
@@ -1307,7 +1322,7 @@ async function handleStartCdpMediaDownload(
 
     const eventListener = (source: chrome.debugger.Debuggee, method: string, params?: any) => {
       if (source.tabId && source.tabId !== tabId) return;
-      if (playerEnded) return;
+      if (!listeningActive || playerEnded) return;
       if (method === 'Network.responseReceived' && params?.response) {
         const response = params.response;
         const url = response.url || '';
@@ -1319,13 +1334,9 @@ async function handleStartCdpMediaDownload(
           trace('AD_MEDIA_IGNORED', { responseId: params.requestId });
           return;
         }
-        // Lock onto the active playback session nonce (cpn) to reject autoplay of adjacent videos
         const cpn = parsed.searchParams.get('cpn') || '';
-        if (!targetCpn && cpn) {
+        if (cpn) {
           targetCpn = cpn;
-        } else if (targetCpn && cpn && cpn !== targetCpn) {
-          trace('OTHER_SESSION_MEDIA_IGNORED', { responseId: params.requestId, cpn, targetCpn });
-          return;
         }
         const itag = parsed.searchParams.get('itag') || '';
         // Keep the requested video quality exact; audio responses are retained
@@ -1336,7 +1347,7 @@ async function handleStartCdpMediaDownload(
         const contentLength = Object.entries(headers).find(([k]) => k.toLowerCase() === 'content-length')?.[1] || '';
         const rangeMatch = String(contentRange).match(/bytes\s+(\d+)-(\d+)\/(\d+|\*)/i);
         const stableUrl = new URL(url);
-        for (const key of ['range', 'rn', 'rbuf', 'alr']) stableUrl.searchParams.delete(key);
+        for (const key of ['range', 'rn', 'rbuf', 'alr', 'cpn']) stableUrl.searchParams.delete(key);
         const rangeTotal = rangeMatch && rangeMatch[3] !== '*' ? Number(rangeMatch[3]) : undefined;
         const meta = {
           itag,
@@ -1401,16 +1412,19 @@ async function handleStartCdpMediaDownload(
         player = document.getElementById('movie_player') || document.querySelector('ytd-player')?.getPlayer?.();
         v = player?.querySelector('video') || document.querySelector('video');
 
-        const skipBtn = document.querySelector('.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button, .videoAdUiSkipButton');
-        if (skipBtn) {
-          try { skipBtn.click(); } catch (e) {}
+        const skipBtns = document.querySelectorAll('.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button, .videoAdUiSkipButton, button[id^="skip-button"], .ytp-ad-skip-button-slot button');
+        for (const btn of skipBtns) {
+          try { btn.click(); } catch (e) {}
         }
-        if (player?.getAdState && player.getAdState() > 0 && v && v.duration > 0 && v.currentTime < v.duration) {
-          try { v.currentTime = v.duration; } catch (e) {}
-        }
+        try { player?.skipAd?.(); } catch (e) {}
 
         const isAd = (player?.getAdState && player.getAdState() > 0) ||
                      Boolean(document.querySelector('.ad-showing, .ad-interrupting'));
+        if (isAd && v) {
+          v.muted = true;
+          try { v.playbackRate = 16.0; } catch (e) {}
+          try { v.play(); } catch (e) {}
+        }
 
         if (!isAd && v) {
           const dataId = String(player?.getVideoData?.()?.video_id || '');
@@ -1442,8 +1456,9 @@ async function handleStartCdpMediaDownload(
       try { v.playbackRate = 2.0; } catch (e) {}
       try { await v.play(); } catch (e) {}
 
-      return await new Promise((resolve) => {
+      return await new Promise((resolve, reject) => {
         let lastBufferedEnd = 0;
+        let maxBufferedSeen = 0;
         let stallTicks = 0;
         const startTime = Date.now();
         const maxWaitMs = Math.max(90000, sourceDuration * 1200);
@@ -1458,18 +1473,17 @@ async function handleStartCdpMediaDownload(
             const cur = Number(player?.getCurrentTime?.()) || Number(v?.currentTime) || 0;
             const dur = Number(player?.getDuration?.()) || Number(v?.duration) || sourceDuration;
 
-            // Inspect contiguous buffered range starting from 0
-            let bufferedEnd = 0;
+            // Inspect buffered ranges and track highest buffered end
+            let bEnd = 0;
             if (v && v.buffered && v.buffered.length > 0) {
-              for (let i = 0; i < v.buffered.length; i++) {
-                if (v.buffered.start(i) <= 1.0) {
-                  bufferedEnd = Math.max(bufferedEnd, v.buffered.end(i));
-                }
+              bEnd = v.buffered.end(v.buffered.length - 1);
+              if (bEnd > maxBufferedSeen) {
+                maxBufferedSeen = bEnd;
               }
             }
 
-            const bufferReachedEnd = dur > 0 && bufferedEnd >= dur - 0.5;
-            const playerReachedEnd = Boolean(v?.ended) || (dur > 0 && cur >= dur - 0.5);
+            const bufferReachedEnd = dur > 0 && maxBufferedSeen >= dur - 1.0;
+            const playerReachedEnd = Boolean(v?.ended) || (dur > 0 && cur >= dur - 1.0);
 
             if (bufferReachedEnd || playerReachedEnd) {
               clearInterval(timer);
@@ -1480,38 +1494,35 @@ async function handleStartCdpMediaDownload(
                   videoDuration: Number(v?.duration) || 0,
                   currentTime: dur,
                   sourceDuration,
-                  bufferedEnd,
+                  bufferedEnd: maxBufferedSeen,
                 });
               }, 600);
               return;
             }
 
             // Buffer Frontier Advancement:
-            // When YouTube loads contiguous buffer, advance playhead to near the edge of the buffer (1.0s before end)
-            // This immediately stimulates YouTube's DASH scheduler to fetch the NEXT contiguous chunk!
-            if (bufferedEnd > lastBufferedEnd + 0.5) {
-              lastBufferedEnd = bufferedEnd;
+            // Whenever buffered range extends beyond current playhead + 1.0s, advance playhead
+            // to 0.5s before the end of the buffered region. This immediately stimulates YouTube's
+            // DASH scheduler to request the subsequent contiguous chunk!
+            if (bEnd > cur + 1.0) {
               stallTicks = 0;
-              const targetTime = Math.min(dur - 0.5, Math.max(0, bufferedEnd - 1.0));
+              const targetTime = Math.min(dur - 0.5, Math.max(0, bEnd - 0.5));
               try {
                 player?.seekTo?.(targetTime, true);
               } catch (e) {
                 if (v) v.currentTime = targetTime;
               }
+              try { v?.play?.(); } catch (e) {}
             } else {
               stallTicks++;
               if (v && v.paused && !v.ended) {
                 try { v.play(); } catch (e) {}
               }
-              if (v && v.playbackRate !== 2.0 && v.playbackRate !== 1.0) {
-                try { v.playbackRate = 2.0; } catch (e) {}
-              }
               if (!v.muted) {
                 v.muted = true;
               }
-              // If stalled for > 1.5 seconds without buffer advancement, nudge playhead
-              if (stallTicks % 15 === 0 && bufferedEnd > 0) {
-                const nudgeTime = Math.min(dur - 0.5, Math.max(0, bufferedEnd - 0.5));
+              if (stallTicks % 10 === 0 && maxBufferedSeen > 0) {
+                const nudgeTime = Math.min(dur - 0.5, Math.max(0, maxBufferedSeen - 0.5));
                 try { player?.seekTo?.(nudgeTime, true); } catch (e) { if (v) v.currentTime = nudgeTime; }
                 try { v.play(); } catch (e) {}
               }
@@ -1519,25 +1530,24 @@ async function handleStartCdpMediaDownload(
 
             if (Date.now() - startTime > maxWaitMs) {
               clearInterval(timer);
-              resolve({
-                duration: dur,
-                videoDuration: Number(v?.duration) || 0,
-                currentTime: cur,
-                sourceDuration,
-                bufferedEnd,
-              });
+              reject(new Error('Timed out driving buffer frontier advancement to full duration: reached ' + maxBufferedSeen.toFixed(1) + 's / ' + dur.toFixed(1) + 's'));
             }
           } catch (tickErr) {
             // keep timer alive
           }
-        }, 100);
+        }, 300);
       });
     })()`;
 
     const startPlayback = () => {
+      listeningActive = true;
+      targetCpn = null;
+      bodies.length = 0;
+      responseMeta.clear();
       chrome.debugger.sendCommand(debuggee, 'Runtime.evaluate', { expression: driveExpression, awaitPromise: true, returnByValue: true }, (result: any) => {
         if (chrome.runtime.lastError || result?.exceptionDetails) {
-          const error: any = new Error('Unable to drive the real YouTube player to full duration');
+          const detail = result?.exceptionDetails?.exception?.description || result?.exceptionDetails?.text || chrome.runtime.lastError?.message || 'unknown';
+          const error: any = new Error(`Unable to drive the real YouTube player to full duration: ${detail}`);
           error.code = 'PLAYER_FULL_DURATION_FAILED';
           settled = true;
           cleanup();
