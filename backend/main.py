@@ -134,7 +134,7 @@ app.add_middleware(SlowAPIMiddleware)
 import time
 try:
     from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
-    
+
     NEXUS_HTTP_REQUESTS_TOTAL = Counter(
         "nexus_http_requests_total",
         "Total count of HTTP requests",
@@ -158,22 +158,22 @@ try:
         "Total failed Celery tasks",
         ["task_name"]
     )
-    
+
     @app.middleware("http")
     async def prometheus_metrics_middleware(request: Request, call_next):
         method = request.method
         endpoint = request.url.path
         if endpoint == "/metrics":
             return await call_next(request)
-            
+
         start_time = time.perf_counter()
         response = await call_next(request)
         duration = time.perf_counter() - start_time
-        
+
         status = response.status_code
         NEXUS_HTTP_REQUESTS_TOTAL.labels(method=method, endpoint=endpoint, status=status).inc()
         NEXUS_HTTP_REQUEST_DURATION_SECONDS.labels(method=method, endpoint=endpoint).observe(duration)
-        
+
         return response
 except Exception as exc:
     log.warning("Prometheus instrumentation initialization skipped: %s", exc)
@@ -195,9 +195,9 @@ async def media_byte_accounting_middleware(request: Request, call_next):
         backend_accounting_state["backend_media_bytes_received"] += content_length
     else:
         backend_accounting_state["control_plane_bytes_received"] += content_length
-    
+
     response = await call_next(request)
-    
+
     resp_length = int(response.headers.get("content-length") or 0)
     if is_media:
         backend_accounting_state["backend_media_bytes_sent"] += resp_length
@@ -1188,16 +1188,8 @@ async def _run_extract_probe(url: str, user: dict) -> dict:
 
 
 def _required_paid_lane_for_choice(choice: dict[str, object]) -> str | None:
-    if not choice:
-        return None
-
-    if str(choice.get("type") or "").lower() == "video":
-        height = int(choice.get("height") or 0)
-        if height >= 2160:
-            return "premium"
-        if height > 720:
-            return "pro"
-
+    # Vidleo is a completely free product. Core video extraction is never blocked
+    # behind a paid subscription or Pro/Ultra tier paywall.
     return None
 
 

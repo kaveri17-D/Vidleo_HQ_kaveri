@@ -1,10 +1,10 @@
 # Vidleo — Critical Download UX Fix & Free Product Implementation Report
 
-**Date:** October 11, 2026  
-**Repository:** `/home/system/Desktop/Vidleo_intergrated`  
-**GitHub Remote:** `https://github.com/kaveri17-D/Vidleo_HQ_kaveri`  
-**Target Branch:** `main`  
-**Engineers:** Principal Full-Stack Engineer, Browser Media Specialist  
+**Date:** October 11, 2026
+**Repository:** `/home/system/Desktop/Vidleo_intergrated`
+**GitHub Remote:** `https://github.com/kaveri17-D/Vidleo_HQ_kaveri`
+**Target Branch:** `main`
+**Engineers:** Principal Full-Stack Engineer, Browser Media Specialist
 
 ---
 
@@ -91,6 +91,10 @@ All user-facing monetization, pricing, and paid tiers were removed:
    - Updated copy to remove references to pricing and paid plans.
 8. **User Dashboard (`frontend/src/app/dashboard/page.tsx`)**:
    - Updated the user profile pill from `"Plan: Pro Unlocked"` to `"Access: Free Access"`.
+9. **Backend Free Extraction Entitlement Unlocked**:
+   - `_required_paid_lane_for_choice()` in `backend/main.py`: Updated to return `None` so users requesting 1080p, 4K, or any available resolution are never blocked by a paid subscription or Pro/Ultra lane requirement.
+   - `backend/entitlements.py`: Updated `guest`, `extension_guest`, and `free` plans to support `max_quality: 2160` and `4k_allowed: True`.
+   - `get_tiered_limit_reached_message()` in `backend/auth.py`: Replaced upsell marketing phrases ("Upgrade to Pro for 1080p quality", "Upgrade to Premium for 4K") with truthful, non-commercial daily rate limit messages.
 
 ---
 
@@ -118,6 +122,9 @@ All 7 regression tests executed and passed:
 - `PASS: Protected Routes Enforcement` (HTTP 307 redirect to `/login` for unauthenticated sessions)
 - `PASS: Admin Routes Enforcement` (HTTP 307 redirect to `/admin/login`)
 - `PASS: DownloadReadyState In-Memory Download Logic` (Blob handling, auth headers, content-type checks, inline error states)
+
+### Backend Free-Product Entitlement Test: `backend/tests/test_free_product_entitlements.py`
+- `PYTHONPATH=. python3 backend/tests/test_free_product_entitlements.py`: **PASS** (Confirmed 4K and 2160p are permitted for unauthenticated and free-tier users).
 
 ### Extension Test Suite
 - `extension/test/run-all-tests.mjs`:

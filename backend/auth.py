@@ -436,34 +436,12 @@ def get_tiered_limit_reached_message(user_or_id: str | dict) -> str:
     if is_anon:
         return (
             "Daily guest limit reached. Your active signal scans remain open, but downloads are paused. "
-            "⚡ Boost your potential: Sign in to unlock more free daily downloads, or upgrade to Pro "
-            "for 100 high-speed daily extractions, pristine 1080p quality, and cloud history!"
-        )
-
-    plan = str(plan).strip().lower()
-
-    if plan == "free":
-        return (
-            "Daily limit reached. Your active signal scans remain open, but downloads are paused. "
-            "🚀 Unleash continuous extraction: Upgrade to Pro now to unlock 100 high-speed daily downloads, "
-            "crystal-clear 1080p quality, and cloud history. Never let limits slow down your creative workflow!"
-        )
-    elif plan == "pro":
-        return (
-            "Daily limit reached. Your active signal scans remain open, but downloads are paused. "
-            "🔥 Take it to the next level: Upgrade to Premium now to expand your capacity to 500 daily downloads, "
-            "pristine 4K Ultra-HD resolution, and our highest priority routing lane!"
-        )
-    elif plan in {"premium", "api", "api_growth", "enterprise"}:
-        return (
-            "Daily limit reached. Your active signal scans remain open, but downloads are paused. "
-            "👑 High-volume power user: Unlock dedicated high-speed infrastructure, custom rate-limits, "
-            "and provisioned API keys. Upgrade to our API or Enterprise lanes to scale without boundaries!"
+            "Please sign in to continue downloading or wait for your daily window to reset."
         )
 
     return (
         "Daily download limit reached. Scanning stays open, but downloads are paused. "
-        "Upgrade your plan to unlock more daily downloads and premium capabilities."
+        "Please wait for your daily window to reset to continue downloading."
     )
 
 
