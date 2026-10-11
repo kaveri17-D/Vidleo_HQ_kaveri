@@ -520,6 +520,7 @@ async function resolveYouTubeDirect(url) {
       hasVideo: false,
       hasAudio: true
     }));
+    const candidate = streams.find((s) => Boolean(s.url));
     return {
       job_id: `yt-inv-${Date.now()}`,
       id: videoId || `yt-${Date.now()}`,
@@ -528,49 +529,114 @@ async function resolveYouTubeDirect(url) {
       duration: tabInventory.duration || 0,
       thumbnail: tabInventory.thumbnail || (videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : ""),
       platform: "youtube",
-      pipeline_status: "ACTUAL_MEDIA_ACQUISITION_READY",
+      pipeline_status: candidate?.url ? "BROWSER_ACQUISITION_READY" : "ACTUAL_MEDIA_ACQUISITION_READY",
       direct_stream_available: true,
+      candidate_stream_url: candidate?.url || null,
       video_formats: videoFormats,
       audio_formats: audioFormats
     };
   }
+  let innertubeData = null;
+  if (videoId) {
+    try {
+      if (chrome.declarativeNetRequest && chrome.declarativeNetRequest.updateDynamicRules) {
+        await chrome.declarativeNetRequest.updateDynamicRules({
+          removeRuleIds: [1001],
+          addRules: [
+            {
+              id: 1001,
+              priority: 1,
+              action: {
+                type: "modifyHeaders",
+                requestHeaders: [
+                  { header: "Origin", operation: "set", value: "https://www.youtube.com" },
+                  { header: "User-Agent", operation: "set", value: "com.google.android.youtube/21.26.364 (Linux; U; Android 11) gzip" }
+                ]
+              },
+              condition: {
+                urlFilter: "*://www.youtube.com/youtubei/v1/player*",
+                resourceTypes: ["xmlhttprequest", "other"]
+              }
+            }
+          ]
+        }).catch(() => {
+        });
+      }
+      const itRes = await fetch("https://www.youtube.com/youtubei/v1/player", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-YouTube-Client-Name": "3",
+          "X-YouTube-Client-Version": "21.26.364"
+        },
+        body: JSON.stringify({
+          context: {
+            client: {
+              clientName: "ANDROID",
+              clientVersion: "21.26.364",
+              androidSdkVersion: 30,
+              userAgent: "com.google.android.youtube/21.26.364 (Linux; U; Android 11) gzip",
+              osName: "Android",
+              osVersion: "11",
+              hl: "en",
+              timeZone: "UTC",
+              utcOffsetMinutes: 0
+            }
+          },
+          videoId
+        })
+      });
+      if (itRes.ok) {
+        innertubeData = await itRes.json();
+      } else {
+        const errText = await itRes.text();
+        console.error("[NEXUS Extension] InnerTube HTTP error status:", itRes.status, errText);
+      }
+    } catch (itErr) {
+      console.error("[NEXUS Extension] InnerTube fetch exception:", itErr?.message || itErr);
+    }
+  }
   let oembedData = null;
-  try {
-    const oembedRes = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`);
-    if (oembedRes.ok) {
-      oembedData = await oembedRes.json();
-    }
-  } catch {
-  }
   let playerData = null;
-  try {
-    const pageRes = await fetch(url, {
-      headers: {
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9"
+  if (!innertubeData?.videoDetails) {
+    try {
+      const oembedRes = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`);
+      if (oembedRes.ok) {
+        oembedData = await oembedRes.json();
       }
-    });
-    if (pageRes.ok) {
-      const html = await pageRes.text();
-      const match = html.match(/ytInitialPlayerResponse\s*=\s*(\{.+?\});/);
-      if (match) {
-        playerData = JSON.parse(match[1]);
-      }
+    } catch {
     }
-  } catch (e) {
-    console.warn("[NEXUS Extension] Direct watch page fetch error:", e);
+    try {
+      const pageRes = await fetch(url, {
+        headers: {
+          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          "Accept-Language": "en-US,en;q=0.9"
+        }
+      });
+      if (pageRes.ok) {
+        const html = await pageRes.text();
+        const match = html.match(/ytInitialPlayerResponse\s*=\s*(\{.+?\});/);
+        if (match) {
+          playerData = JSON.parse(match[1]);
+        }
+      }
+    } catch (e) {
+      console.warn("[NEXUS Extension] Direct watch page fetch error:", e);
+    }
   }
-  const title = playerData?.videoDetails?.title || oembedData?.title || "YouTube Stream";
-  const author = playerData?.videoDetails?.author || oembedData?.author_name || "YouTube Creator";
-  const durationSec = parseInt(playerData?.videoDetails?.lengthSeconds || "0", 10);
+  const title = innertubeData?.videoDetails?.title || playerData?.videoDetails?.title || oembedData?.title || "YouTube Stream";
+  const author = innertubeData?.videoDetails?.author || playerData?.videoDetails?.author || oembedData?.author_name || "YouTube Creator";
+  const durationSec = parseInt(innertubeData?.videoDetails?.lengthSeconds || playerData?.videoDetails?.lengthSeconds || "0", 10);
   const thumbnail = oembedData?.thumbnail_url || (videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : "");
-  const formats = playerData?.streamingData?.formats || [];
-  const adaptiveFormats = playerData?.streamingData?.adaptiveFormats || [];
+  const itFormats = innertubeData?.streamingData?.formats || [];
+  const itAdaptiveFormats = innertubeData?.streamingData?.adaptiveFormats || [];
+  const formats = [...itFormats, ...playerData?.streamingData?.formats || []];
+  const adaptiveFormats = [...itAdaptiveFormats, ...playerData?.streamingData?.adaptiveFormats || []];
   const observed = videoId ? observedYouTubeStreams.get(videoId) : null;
   const isObservedRecent = Boolean(observed && Date.now() - observed.timestamp < 36e5);
   const candidateStream = formats.find((f) => Boolean(f.url)) || adaptiveFormats.find((f) => Boolean(f.url)) || (isObservedRecent && observed ? { url: observed.url } : null);
   const hasDirectUrl = Boolean(candidateStream?.url);
-  const pipelineStatus = hasDirectUrl ? isObservedRecent ? "BROWSER_ACQUISITION_READY" : "STREAM_CANDIDATE_AVAILABLE" : "ACTUAL_MEDIA_ACQUISITION_READY";
+  const pipelineStatus = hasDirectUrl ? candidateStream?.url ? "BROWSER_ACQUISITION_READY" : "STREAM_CANDIDATE_AVAILABLE" : "ACTUAL_MEDIA_ACQUISITION_READY";
   return {
     job_id: `yt-ext-${Date.now()}`,
     id: videoId || `yt-${Date.now()}`,
@@ -591,16 +657,26 @@ async function resolveYouTubeDirect(url) {
         const itagStr = String(f.itag);
         if (!seenItags.has(itagStr)) {
           seenItags.add(itagStr);
+          const height = f.height || (f.qualityLabel ? parseInt(f.qualityLabel, 10) : itagStr === "18" ? 360 : void 0);
+          const width = f.width || (height ? Math.round(height * 16 / 9) : void 0);
+          const streamUrl = f.url || (isObservedRecent && observed?.itag === itagStr ? observed.url : void 0);
+          const hasUrl = Boolean(streamUrl);
           list.push({
             format_id: itagStr,
             itag: itagStr,
-            format_note: f.qualityLabel || `${f.height || 360}p`,
+            height,
+            width,
+            resolution: width && height ? `${width}x${height}` : height ? `${height}p` : void 0,
+            quality: f.qualityLabel || (height ? `${height}p` : "Standard Video"),
+            label: f.qualityLabel || (height ? `${height}p` : "Standard Video"),
+            format_note: f.qualityLabel || `${height || 360}p`,
             ext: f.mimeType?.includes("webm") ? "webm" : "mp4",
             filesize: f.contentLength ? parseInt(f.contentLength, 10) : f.bitrate && durationSec ? Math.round(f.bitrate * durationSec / 8) : 0,
             vcodec: f.mimeType?.split("codecs=")[1]?.replace(/["']/g, "") || "h264",
             acodec: "aac",
-            url: f.url || (isObservedRecent && observed?.itag === itagStr ? observed.url : void 0),
-            is_ciphered: !f.url && !(isObservedRecent && observed?.itag === itagStr) && (Boolean(f.signatureCipher) || Boolean(f.cipher))
+            url: streamUrl,
+            is_ciphered: !streamUrl && (Boolean(f.signatureCipher) || Boolean(f.cipher)),
+            availability: hasUrl ? "ACTUAL_MEDIA_AVAILABLE" : "METADATA_ONLY"
           });
         }
       }
@@ -633,15 +709,18 @@ async function resolveYouTubeDirect(url) {
 async function resolveMedia(url, apiBaseUrl = DEFAULT_API_BASE_URL) {
   const isYoutube = url.includes("youtube.com") || url.includes("youtu.be");
   if (isYoutube) {
+    let directData = null;
     try {
-      const directData = await resolveYouTubeDirect(url);
-      if (directData && (directData.title !== "YouTube Stream" || directData.video_formats.length > 0)) {
+      directData = await resolveYouTubeDirect(url);
+      if (directData && (directData.candidate_stream_url || directData.video_formats?.length > 0 || directData.title !== "YouTube Stream")) {
         console.log("[NEXUS Extension] YouTube media resolved directly via client network (0 Railway requests)");
         return directData;
       }
     } catch (directErr) {
-      console.warn("[NEXUS Extension] Direct YouTube client resolution failed, attempting control plane fallback:", directErr);
+      console.warn("[NEXUS Extension] Direct YouTube client resolution failed:", directErr);
+      throw new Error(`Direct YouTube client resolution failed: ${directErr?.message || directErr}`);
     }
+    throw new Error("Failed to resolve YouTube media streams on client: directData=" + JSON.stringify(directData));
   }
   const endpoint = `${apiBaseUrl.replace(/\/+$/, "")}/api/resolve`;
   const res = await fetch(endpoint, {
@@ -699,14 +778,17 @@ async function waitForNativeDownloadCompletion(options) {
     }, (downloadId) => {
       const runtimeError = globalThis.chrome?.runtime?.lastError;
       if (runtimeError) {
+        console.error("[NEXUS SW DOWNLOAD] Start failed:", runtimeError.message);
         const error2 = new Error(runtimeError.message || "Chrome native download failed to start");
         error2.code = "NATIVE_DOWNLOAD_START_FAILED";
         reject(error2);
       } else if (!Number.isFinite(downloadId)) {
+        console.error("[NEXUS SW DOWNLOAD] No ID returned");
         const error2 = new Error("Chrome did not return a download ID");
         error2.code = "NATIVE_DOWNLOAD_START_FAILED";
         reject(error2);
       } else {
+        console.log("[NEXUS SW DOWNLOAD] Download started successfully, downloadId =", downloadId, "filename =", options.filename);
         resolve({ id: downloadId });
       }
     });
@@ -963,7 +1045,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const nativeDownload = await waitForNativeDownloadCompletion({
           url: payload.blobUrl,
           filename: payload.filename,
-          expectedBytes: Number(payload.outputBytes || payload.totalBytes || payload.bytes || 0)
+          expectedBytes: Number(payload.outputBytes || payload.totalBytes || payload.bytes || 0),
+          timeoutMs: 3e5
         });
         broadcastToTabs({ ...message, payload: { ...payload, downloadStarted: true, nativeDownload } });
       } catch (error) {
@@ -1128,39 +1211,14 @@ async function handleStartCdpMediaDownload(payload, onTabAssigned) {
   });
   console.log("[NEXUS SW] Found ytTabs:", ytTabs.map((t) => ({ id: t.id, url: t.url })));
   let targetTab = videoId ? ytTabs.find((t) => t.url?.includes(videoId)) : ytTabs[0];
-  if (!targetTab && videoUrl && chrome.tabs && chrome.tabs.create) {
-    targetTab = await withTimeout(new Promise((resolve, reject) => {
-      chrome.tabs.create({ url: videoUrl, active: false }, (newTab) => {
-        if (chrome.runtime.lastError || !newTab) reject(new Error(chrome.runtime.lastError?.message || "Unable to create YouTube playback tab"));
-        else resolve(newTab);
-      });
-    }), 3e4, "TARGET_TAB_LOAD_TIMEOUT", "Timed out opening the YouTube playback tab");
-    await new Promise((r) => setTimeout(r, 3e3));
-  }
   if (!targetTab?.id) {
-    const error = new Error(videoId ? "No YouTube tab for the selected video is available. Open the exact video tab and retry." : "No YouTube tab available for media byte acquisition. Please open the video in YouTube.");
+    const error = new Error(videoId ? "No existing YouTube tab for this video was found. Please use direct browser download or open the tab if CDP acquisition is explicitly requested." : "No YouTube tab available for media byte acquisition.");
     error.code = "TARGET_TAB_NOT_FOUND";
     throw error;
   }
   const tabId = targetTab.id;
   if (onTabAssigned) {
     onTabAssigned(tabId);
-  }
-  let previousActiveTabId = null;
-  try {
-    const activeTabs = await new Promise((r) => {
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => r(tabs || []));
-    });
-    if (activeTabs[0]?.id && activeTabs[0].id !== tabId) {
-      previousActiveTabId = activeTabs[0].id;
-    }
-  } catch {
-  }
-  try {
-    await new Promise((r) => {
-      chrome.tabs.update(tabId, { active: true }, () => r());
-    });
-  } catch {
   }
   const debuggee = { tabId };
   console.log("[NEXUS SW] Selected targetTab:", tabId, targetTab.url);
@@ -1605,6 +1663,13 @@ async function handleStartCdpMediaDownload(payload, onTabAssigned) {
               if (!v.muted) {
                 v.muted = true;
               }
+              // If buffer advancement has demonstrably stalled for > 15 seconds (50 ticks at 300ms)
+              // without extending maxBufferedSeen, fail fast with an actionable error rather than wasting minutes.
+              if (stallTicks >= 50 && maxBufferedSeen < dur - 2.0) {
+                clearInterval(timer);
+                reject(new Error('Complete media could not be acquired through the current browser acquisition path: player buffer stalled at ' + maxBufferedSeen.toFixed(1) + 's / ' + dur.toFixed(1) + 's (stream delivery throttled by host platform)'));
+                return;
+              }
               if (stallTicks % 10 === 0 && maxBufferedSeen > 0) {
                 const nudgeTime = Math.min(dur - 0.5, Math.max(0, maxBufferedSeen - 0.5));
                 try { player?.seekTo?.(nudgeTime, true); } catch (e) { if (v) v.currentTime = nudgeTime; }
@@ -1614,7 +1679,8 @@ async function handleStartCdpMediaDownload(payload, onTabAssigned) {
 
             if (Date.now() - startTime > maxWaitMs) {
               clearInterval(timer);
-              reject(new Error('Timed out driving buffer frontier advancement to full duration: reached ' + maxBufferedSeen.toFixed(1) + 's / ' + dur.toFixed(1) + 's'));
+              reject(new Error('Complete media could not be acquired through the current browser acquisition path: reached ' + maxBufferedSeen.toFixed(1) + 's / ' + dur.toFixed(1) + 's before timeout'));
+              return;
             }
           } catch (tickErr) {
             // keep timer alive
@@ -1729,13 +1795,6 @@ async function handleStartCdpMediaDownload(payload, onTabAssigned) {
       }
       debuggerAttached = false;
       tabDebuggerOwners.delete(tabId);
-    }
-    if (previousActiveTabId) {
-      try {
-        chrome.tabs.update(previousActiveTabId, { active: true }, () => {
-        });
-      } catch {
-      }
     }
   }
   console.log("[NEXUS-FINAL] stage: UMP, raw bytes:", rawUmpBytes.length);
@@ -1939,14 +1998,6 @@ async function handleStartPlaybackCapture(payload) {
     }
   });
   let targetTab = ytTabs.find((t) => videoId && t.url?.includes(videoId)) || ytTabs[0];
-  if (!targetTab && videoUrl && chrome.tabs && chrome.tabs.create) {
-    targetTab = await new Promise((resolve) => {
-      chrome.tabs.create({ url: videoUrl, active: false }, (newTab) => {
-        resolve(newTab);
-      });
-    });
-    await new Promise((r) => setTimeout(r, 3e3));
-  }
   if (!targetTab?.id) {
     throw new Error("No YouTube tab available for playback capture. Please open video in YouTube first.");
   }

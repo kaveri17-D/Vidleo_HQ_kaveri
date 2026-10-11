@@ -1,0 +1,53 @@
+{
+  "testRunId": "ui-acceptance-1791726223723",
+  "timestamp": "2026-10-11T13:50:09.903Z",
+  "fiveMinuteTest": {
+    "url": "https://www.youtube.com/watch?v=09R8_2nJtjg",
+    "title": "Maroon 5 - Sugar (Official Music Video)",
+    "duration": 301,
+    "rawFile": "/downloads/Vidleo_Acceptance_5Min_ui-acceptance-1791726223723.mp4",
+    "rawSize": 19599139,
+    "rawSha256": "d868ca2977d6b0930f5b5a8af2dc69b667f7816daa7e978589e0aa655bd10463",
+    "normalizedFile": "/downloads/Vidleo_Acceptance_5Min_WhatsApp_ui-acceptance-1791726223723.mp4",
+    "whatsappCompliance": "PASS_17_OF_17",
+    "ffmpegDecode": "EXIT_CODE_0_ZERO_ERRORS"
+  },
+  "fortyMinuteTest": {
+    "url": "https://www.youtube.com/watch?v=q-ueboQo_jU",
+    "title": "STRESS घटाने के लिए योग | Yoga for Stress Relief | 40-minute class @satvicyoga",
+    "duration": 2467,
+    "rawFile": "/downloads/Vidleo_Acceptance_40Min_ui-acceptance-1791726223723.mp4",
+    "rawSize": 60396673,
+    "rawSha256": "c8748198367352725c757715e14ffa6eb1ffaee51c3a36ed946fa5e70e16ee12",
+    "normalizedFile": "/downloads/Vidleo_Acceptance_40Min_WhatsApp_ui-acceptance-1791726223723.mp4",
+    "probedDuration": 2467.051,
+    "whatsappCompliance": "PASS_17_OF_17",
+    "ffmpegDecode": "EXIT_CODE_0_ZERO_ERRORS"
+  },
+  "userExperience": {
+    "unexpectedTabsOpened": false,
+    "unexpectedPlaybackStarted": false,
+    "tabCountUnchanged": true
+  },
+  "accounting": {
+    "baseline": {
+      "control_plane_bytes_received": 10618,
+      "control_plane_bytes_sent": 3455715,
+      "backend_control_bytes": 3466333,
+      "backend_media_bytes_received": 0,
+      "backend_media_bytes_sent": 0,
+      "backend_media_bytes": 0,
+      "server_ffmpeg_processes": 0
+    },
+    "final": {
+      "control_plane_bytes_received": 10618,
+      "control_plane_bytes_sent": 3455934,
+      "backend_control_bytes": 3466552,
+      "backend_media_bytes_received": 0,
+      "backend_media_bytes_sent": 0,
+      "backend_media_bytes": 0,
+      "server_ffmpeg_processes": 0
+    },
+    "deltaTotal": 0
+  }
+}

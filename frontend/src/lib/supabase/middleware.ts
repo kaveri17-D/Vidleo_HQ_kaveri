@@ -99,8 +99,8 @@ export async function updateSession(request: NextRequest) {
     }
   }
 
-  // Protect user dashboard routes
-  if (!user && (pathname.startsWith('/dashboard') || pathname === '/download' || pathname === '/history')) {
+  // Protect user dashboard and history routes
+  if (!user && (pathname.startsWith('/dashboard') || pathname === '/history')) {
     const url = request.nextUrl.clone();
     url.pathname = '/login';
     url.searchParams.set('next', pathname);

@@ -497,6 +497,26 @@ export class DownloaderService {
           (metadata.manifest?.source?.url ? { url: metadata.manifest.source.url } : null);
 
       let resolvedStreamUrl = directStreamUrl || candidateStream?.url;
+      if (!resolvedStreamUrl) {
+        const matchingFormat = metadata.availableVideoQualities?.find(q => q.id === quality.id && Boolean(q.streamUrl)) ||
+                               metadata.availableVideoQualities?.find(q => q.id === '18' && Boolean(q.streamUrl)) ||
+                               metadata.availableVideoQualities?.find(q => Boolean(q.streamUrl));
+        if (matchingFormat?.streamUrl) {
+          resolvedStreamUrl = matchingFormat.streamUrl;
+          if (matchingFormat.id !== quality.id) {
+            console.log(`[DownloaderService] Direct stream for ${quality.label} requires server muxing; using direct progressive stream ${matchingFormat.label} (itag ${matchingFormat.id})`);
+            session = {
+              ...session,
+              selectedQuality: {
+                ...matchingFormat,
+                label: `${matchingFormat.label} (Progressive MP4 Fallback)`,
+              },
+            };
+            onProgress(session);
+          }
+        }
+      }
+
       if (!resolvedStreamUrl && metadata.platform === 'youtube') {
         const extStatus = await detectExtension(150);
         if (extStatus.installed) {
@@ -505,6 +525,12 @@ export class DownloaderService {
             const extResult = rawExtResult?.manifest || rawExtResult;
             if (extResult?.candidate_stream_url) {
               resolvedStreamUrl = extResult.candidate_stream_url;
+            } else if (extResult?.video_formats?.length > 0) {
+              const f18 = extResult.video_formats.find((f: any) => f.format_id === '18' && Boolean(f.url)) ||
+                          extResult.video_formats.find((f: any) => Boolean(f.url));
+              if (f18?.url) {
+                resolvedStreamUrl = f18.url;
+              }
             }
           } catch {}
         }

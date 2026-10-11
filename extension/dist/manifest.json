@@ -10,7 +10,8 @@
     "tabs",
     "tabCapture",
     "webRequest",
-    "debugger"
+    "debugger",
+    "declarativeNetRequest"
   ],
   "content_scripts": [
     {
@@ -66,7 +67,7 @@
     "default_title": "Vidleo NEXUS"
   },
   "content_security_policy": {
-    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; connect-src 'self' http://127.0.0.1:* http://localhost:* https://*.googlevideo.com https://backend-production-2ff30.up.railway.app; object-src 'self'"
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; connect-src 'self' http://127.0.0.1:* http://localhost:* https://*.youtube.com https://youtube.com https://*.googlevideo.com https://googlevideo.com https://*.ytimg.com https://backend-production-2ff30.up.railway.app https://frontend-kaveri-d.vercel.app; object-src 'self'"
   },
   "web_accessible_resources": [
     {

@@ -424,25 +424,39 @@ export function VideoDetectedCard({
     }
   };
 
-  const isSourceUnresolved = 
-    metadata.platform === 'youtube' ||
+  const hasDirectCandidate = Boolean(
+    selectedQuality?.streamUrl ||
+    metadata.manifest?.candidate_stream_url ||
+    metadata.manifest?.direct_stream_available ||
+    (metadata as any).candidate_stream_url ||
+    (metadata as any).direct_stream_available ||
+    metadata.availableVideoQualities?.some(q => Boolean(q.streamUrl))
+  );
+
+  const isSourceUnresolved = !hasDirectCandidate && (
     metadata.pipelineStatus === 'STREAM_SOURCE_UNRESOLVED' || 
     metadata.pipelineStatus === 'BROWSER_SOURCE_UNAVAILABLE' ||
-    metadata.pipelineStatus === 'ACTUAL_MEDIA_ACQUISITION_READY' ||
-    metadata.pipelineStatus === 'STREAM_CANDIDATE_AVAILABLE' ||
-    metadata.pipelineStatus === 'BROWSER_EXTENSION_READY';
+    metadata.pipelineStatus === 'ACTUAL_MEDIA_ACQUISITION_READY'
+  );
 
   const handleTriggerDownload = () => {
-    if (isSourceUnresolved || metadata.platform === 'youtube') {
-      handleStartCdpDownload();
-      return;
-    }
     if (!selectedQuality) return;
 
-    const streamCandidate = metadata.canonicalUrl || metadata.url;
+    const streamCandidate = selectedQuality.streamUrl || metadata.canonicalUrl || metadata.url;
     const check = browserAcquisitionEngine.canAcquire(streamCandidate, selectedQuality.fileSizeBytes);
 
     if (check.canAcquire) {
+      onDownload(selectedQuality, activeFormat, 'browser');
+      return;
+    }
+
+    if (metadata.platform === 'youtube' && extensionStatus.installed && isSourceUnresolved) {
+      handleStartCdpDownload();
+      return;
+    }
+
+    const fallbackCheck = browserAcquisitionEngine.canAcquire(metadata.canonicalUrl || metadata.url, selectedQuality.fileSizeBytes);
+    if (fallbackCheck.canAcquire) {
       setShowConsentModal(true);
     } else {
       onDownload(selectedQuality, activeFormat, 'server');
@@ -1021,10 +1035,11 @@ export function VideoDetectedCard({
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                    {/* Primary Downloader: Actual Media Byte Acquisition via CDP */}
+                    {/* Primary Downloader: Direct Client Range Streaming / CDP */}
                     <button
                       type="button"
-                      onClick={handleStartCdpDownload}
+                      data-testid="primary-download-btn"
+                      onClick={handleTriggerDownload}
                       className="flex items-center justify-center gap-2 bg-[#0A0A0C] hover:bg-black text-white py-3 px-4 rounded-xl text-xs font-semibold tracking-wide transition-all shadow-sm cursor-pointer"
                     >
                       <Download className="w-3.5 h-3.5 text-emerald-400" />
@@ -1074,6 +1089,7 @@ export function VideoDetectedCard({
           <div className="pt-2">
             <button
               type="button"
+              data-testid="primary-download-btn"
               onClick={handleTriggerDownload}
               disabled={!selectedQuality}
               className="w-full group relative flex items-center justify-center gap-2.5 bg-[#0A0A0C] hover:bg-black text-white py-3.5 px-6 rounded-full font-sans font-semibold text-xs tracking-wider uppercase transition-all duration-200 transform hover:scale-[1.01] active:scale-[0.99] shadow-lg shadow-black/15 cursor-pointer"

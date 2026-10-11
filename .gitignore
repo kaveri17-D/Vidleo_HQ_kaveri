@@ -77,3 +77,11 @@ extension/*.html
 extension/*.wasm
 
 .vercel
+
+# =========================
+# Acceptance & Evidence Media
+# =========================
+acceptance_artifacts/
+evidence_preservation_*/
+*.mp4
+*.webm
