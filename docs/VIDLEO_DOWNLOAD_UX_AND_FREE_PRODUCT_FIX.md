@@ -134,3 +134,16 @@ All 7 regression tests executed and passed:
 
 ### Production Build
 - Docker container build (`npm run build`): **Exited 0**, all 34 routes compiled and statically rendered cleanly.
+
+---
+
+## 7. Client-Side Acquisition 429 Fix & Supabase Project Migration
+
+For comprehensive details on:
+1. De-conflating server metadata HTTP 429 from browser acquisition capabilities.
+2. Directly routing to Companion Extension CDP acquisition when the backend IP is rate-limited.
+3. Truthful pipeline badge status transitions.
+4. Migration to the new Supabase project `himvtlmqcjtutstdrpjg` (`https://himvtlmqcjtutstdrpjg.supabase.co`).
+5. Prevention of `error=authentication_failed` redirect loops in the auth callback.
+
+See [`docs/VIDLEO_SUPABASE_MIGRATION_AND_AUTH_AUDIT.md`](file:///home/system/Desktop/Vidleo_intergrated/docs/VIDLEO_SUPABASE_MIGRATION_AND_AUTH_AUDIT.md).

@@ -15,7 +15,8 @@ import { MediaEngine } from '@/packages/media-engine';
 import { 
   browserAcquisitionEngine, 
   detectExtension, 
-  resolveMediaViaExtension 
+  resolveMediaViaExtension,
+  startCdpMediaDownloadViaExtension
 } from '@/lib/browser-acquisition';
 
 export type ProgressCallback = (state: AnalysisStateData) => void;
@@ -288,7 +289,7 @@ export class DownloaderService {
           durationFormatted: 'Online Stream',
           thumbnailUrl: clientOembed.thumbnail_url || '',
           aspectRatio: '16:9',
-          pipelineStatus: 'RATE_LIMITED',
+          pipelineStatus: 'SERVER_RATE_LIMITED',
           upstreamDiagnostics: {
             statusCode: 503,
             errorDetail: `Failed to connect to backend: ${err?.message || 'Network error'}`,
@@ -325,8 +326,8 @@ export class DownloaderService {
           onProgress({
             step: 'complete',
             progress: 100,
-            message: 'YouTube metadata detected. Server fallback rate-limited.',
-            pipelineStatus: 'RATE_LIMITED',
+            message: 'YouTube metadata detected. Server fallback rate-limited. Direct browser acquisition ready.',
+            pipelineStatus: 'SERVER_RATE_LIMITED',
           });
         }
         return fallbackMetadata;
@@ -374,7 +375,7 @@ export class DownloaderService {
           durationFormatted: 'Online Stream',
           thumbnailUrl: clientOembed.thumbnail_url || '',
           aspectRatio: '16:9',
-          pipelineStatus: 'RATE_LIMITED',
+          pipelineStatus: 'SERVER_RATE_LIMITED',
           upstreamDiagnostics: {
             statusCode: res.status,
             errorDetail: errDetail,
@@ -411,8 +412,8 @@ export class DownloaderService {
           onProgress({
             step: 'complete',
             progress: 100,
-            message: 'YouTube metadata detected. Server fallback rate-limited (HTTP 429).',
-            pipelineStatus: 'RATE_LIMITED',
+            message: 'YouTube metadata detected. Server fallback rate-limited (HTTP 429). Direct browser acquisition ready.',
+            pipelineStatus: 'SERVER_RATE_LIMITED',
           });
         }
         return fallbackMetadata;
@@ -424,7 +425,7 @@ export class DownloaderService {
           progress: 0,
           message: errDetail,
           error: errDetail,
-          pipelineStatus: 'RATE_LIMITED',
+          pipelineStatus: 'SERVER_RATE_LIMITED',
         });
       }
       throw new Error(errDetail);
@@ -595,25 +596,95 @@ export class DownloaderService {
             onProgress(session);
           }
         }
-      } else if (metadata.pipelineStatus === 'RATE_LIMITED' && metadata.platform === 'youtube') {
-        const extStatus = await detectExtension(150);
+      } else if (
+        (metadata.pipelineStatus === 'SERVER_RATE_LIMITED' || metadata.pipelineStatus === 'RATE_LIMITED') &&
+        metadata.platform === 'youtube'
+      ) {
+        const extStatus = await detectExtension(200);
         if (!extStatus.installed) {
           const errMsg = 'Direct browser acquisition requires the Vidleo Companion Extension. The server path is currently rate-limited by YouTube (HTTP 429). Please install the extension.';
           session = {
             ...session,
             status: 'error',
             errorMessage: errMsg,
-            pipelineStatus: 'RATE_LIMITED',
+            pipelineStatus: 'EXTENSION_REQUIRED',
           };
           onProgress(session);
           throw new Error(errMsg);
-        } else {
-          const errMsg = 'YouTube signature cipher restriction active for this video. No direct un-ciphered stream candidate is exposed.';
+        }
+
+        // Extension is installed: execute client-side acquisition via Companion Extension CDP pipeline
+        session = {
+          ...session,
+          status: 'downloading',
+          route: 'browser',
+          acquisitionSource: 'BROWSER_NETWORK',
+          pipelineStatus: 'BROWSER_MEDIA_ACQUISITION_STARTED',
+          progress: 5,
+        };
+        onProgress(session);
+
+        const videoIdMatch = (metadata.canonicalUrl || metadata.url).match(
+          /(?:v=|\/embed\/|youtu\.be\/|\/v\/|\/shorts\/)([a-zA-Z0-9_-]{11})/
+        );
+        const videoId = videoIdMatch ? videoIdMatch[1] : undefined;
+        const targetFilename = `Vidleo_YouTube_${(metadata.title || 'Video').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 40)}.mp4`;
+
+        try {
+          const cdpResult = await startCdpMediaDownloadViaExtension({
+            videoId,
+            videoUrl: metadata.canonicalUrl || metadata.url,
+            targetFilename,
+            durationSeconds: metadata.durationSeconds,
+            quality: quality.label,
+            targetItag: quality.id,
+            mode: 'FULL',
+            onProgress: (p) => {
+              session = {
+                ...session,
+                status: p.state === 'COMPLETE' ? 'ready' : 'downloading',
+                progress: p.percent || session.progress,
+                downloadedBytes: p.bytesAcquired || session.downloadedBytes,
+                pipelineStatus: 'BROWSER_ACQUISITION_ACTIVE',
+              };
+              onProgress(session);
+            },
+          });
+
+          if (cdpResult?.success) {
+            session = {
+              ...session,
+              status: 'ready',
+              progress: 100,
+              downloadedBytes: cdpResult.totalBytes,
+              downloadUrl: cdpResult.blobUrl,
+              speedFormatted: 'Done',
+              timeRemainingFormatted: 'Ready',
+              acquisitionSource: 'BROWSER_NETWORK',
+              route: 'browser',
+              pipelineStatus: 'BROWSER_ACQUISITION_SUCCESS',
+              artifact: {
+                filename: cdpResult.filename,
+                blobUrl: cdpResult.blobUrl,
+                sha256: cdpResult.sha256,
+                mimeType: 'video/mp4',
+              },
+            };
+            onProgress(session);
+            StorageService.addHistoryItem(metadata, quality, format);
+            return session;
+          } else {
+            throw new Error('CDP media acquisition returned unsuccessful result');
+          }
+        } catch (cdpErr: any) {
+          const errMsg = cdpErr?.message || 'CDP media acquisition failed';
+          const isCipher = errMsg.toLowerCase().includes('signature cipher') || errMsg.toLowerCase().includes('cipher');
+          const is429 = errMsg.includes('429');
           session = {
             ...session,
             status: 'error',
             errorMessage: errMsg,
-            pipelineStatus: 'BLOCKED',
+            pipelineStatus: isCipher ? 'SIGNATURE_RESTRICTED' : is429 ? 'SOURCE_RATE_LIMITED' : 'DOWNLOAD_FAILED',
           };
           onProgress(session);
           throw new Error(errMsg);

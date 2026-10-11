@@ -2,8 +2,13 @@ import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 import { verifyAdminUser } from '@/lib/supabase/admin';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-anon-key';
+const defaultSupabaseUrl = 'https://himvtlmqcjtutstdrpjg.supabase.co';
+const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_URL.trim() !== '')
+  ? process.env.NEXT_PUBLIC_SUPABASE_URL
+  : defaultSupabaseUrl;
+const supabaseAnonKey = (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY.trim() !== '')
+  ? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  : 'placeholder-anon-key';
 
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({

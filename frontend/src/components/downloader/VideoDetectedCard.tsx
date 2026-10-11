@@ -156,9 +156,29 @@ function getPipelineStatusBadge(status?: FlowPipelineStatus) {
         color: 'bg-amber-600',
         label: 'SERVER FALLBACK ACTIVE',
       };
+    case 'SERVER_RATE_LIMITED':
+      return {
+        color: 'bg-amber-600',
+        label: 'SERVER METADATA RATE-LIMITED',
+      };
+    case 'SOURCE_RATE_LIMITED':
+      return {
+        color: 'bg-rose-600',
+        label: 'SOURCE RATE-LIMITED (HTTP 429)',
+      };
+    case 'SIGNATURE_RESTRICTED':
+      return {
+        color: 'bg-violet-600',
+        label: 'SIGNATURE CIPHER RESTRICTED',
+      };
+    case 'EXTENSION_REQUIRED':
+      return {
+        color: 'bg-sky-600',
+        label: 'COMPANION EXTENSION REQUIRED',
+      };
     case 'RATE_LIMITED':
       return {
-        color: 'bg-rose-500',
+        color: 'bg-amber-600',
         label: 'SERVER RATE-LIMITED (HTTP 429)',
       };
     case 'BLOCKED':
@@ -436,7 +456,9 @@ export function VideoDetectedCard({
   const isSourceUnresolved = !hasDirectCandidate && (
     metadata.pipelineStatus === 'STREAM_SOURCE_UNRESOLVED' || 
     metadata.pipelineStatus === 'BROWSER_SOURCE_UNAVAILABLE' ||
-    metadata.pipelineStatus === 'ACTUAL_MEDIA_ACQUISITION_READY'
+    metadata.pipelineStatus === 'ACTUAL_MEDIA_ACQUISITION_READY' ||
+    metadata.pipelineStatus === 'SERVER_RATE_LIMITED' ||
+    metadata.pipelineStatus === 'RATE_LIMITED'
   );
 
   const handleTriggerDownload = () => {
@@ -474,9 +496,18 @@ export function VideoDetectedCard({
   };
 
   const handleActionReset = onReset || onCancel || (() => {});
-  const badge = (metadata.platform === 'youtube' && extensionStatus.installed)
-    ? { color: 'bg-emerald-500', label: 'ACTUAL MEDIA ACQUISITION' }
-    : getPipelineStatusBadge(metadata.pipelineStatus);
+  const badge = (() => {
+    if (metadata.platform === 'youtube' && extensionStatus.installed) {
+      if (metadata.pipelineStatus === 'BROWSER_ACQUISITION_SUCCESS' || cdpState?.result) {
+        return { color: 'bg-emerald-600', label: 'STREAM VERIFIED (CLIENT ACQUIRED)' };
+      }
+      if (metadata.pipelineStatus === 'SERVER_RATE_LIMITED' || metadata.pipelineStatus === 'RATE_LIMITED') {
+        return { color: 'bg-indigo-600', label: 'BROWSER EXTENSION READY' };
+      }
+      return { color: 'bg-indigo-500', label: 'BROWSER EXTENSION READY' };
+    }
+    return getPipelineStatusBadge(metadata.pipelineStatus);
+  })();
 
   return (
     <div className="w-full bg-white border border-black/[0.12] rounded-[28px] overflow-hidden shadow-[0_16px_45px_rgba(0,0,0,0.08)] animate-in fade-in duration-200 text-[#0A0A0C]">
@@ -503,16 +534,57 @@ export function VideoDetectedCard({
         </button>
       </div>
 
-      {/* Upstream Diagnostics / Rate-Limit Alert Banner */}
-      {metadata.pipelineStatus === 'RATE_LIMITED' && !extensionStatus.installed && (
-        <div className="bg-amber-50/90 border-b border-amber-200/80 px-6 py-3 flex items-start gap-3 text-xs text-amber-900 animate-in fade-in">
-          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+      {/* Upstream Diagnostics / Server Rate-Limit Alert Banner */}
+      {(metadata.pipelineStatus === 'SERVER_RATE_LIMITED' || metadata.pipelineStatus === 'RATE_LIMITED') && (
+        <div className={cn(
+          "border-b px-6 py-3.5 flex items-start gap-3 text-xs animate-in fade-in",
+          extensionStatus.installed
+            ? "bg-indigo-50/90 border-indigo-200/80 text-indigo-950"
+            : "bg-amber-50/90 border-amber-200/80 text-amber-900"
+        )}>
+          {extensionStatus.installed ? (
+            <Sparkles className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
+          ) : (
+            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+          )}
           <div className="space-y-1">
-            <p className="font-semibold text-amber-950">
-              Server extraction is currently rate-limited by YouTube (HTTP 429).
+            <p className="font-semibold">
+              {extensionStatus.installed
+                ? "BROWSER EXTENSION READY · ZERO SERVER TRANSIT"
+                : "SERVER METADATA RATE-LIMITED (HTTP 429) · COMPANION EXTENSION REQUIRED"}
             </p>
-            <p className="text-[11px] text-amber-800 leading-relaxed font-sans">
-              Direct browser acquisition requires the Vidleo Companion Extension. Please ensure the extension is installed and loaded.
+            <p className={cn("text-[11px] leading-relaxed font-sans", extensionStatus.installed ? "text-indigo-800" : "text-amber-800")}>
+              {extensionStatus.installed
+                ? "The server metadata endpoint was rate-limited by YouTube (HTTP 429), but direct browser acquisition via the Vidleo Companion Extension is available. Media will be acquired directly through your browser connection."
+                : "Direct browser acquisition requires the Vidleo Companion Extension. The server path is currently rate-limited by YouTube (HTTP 429). Please install and enable the extension."}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {metadata.pipelineStatus === 'SOURCE_RATE_LIMITED' && (
+        <div className="bg-rose-50/90 border-b border-rose-200/80 px-6 py-3 flex items-start gap-3 text-xs text-rose-900 animate-in fade-in">
+          <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <p className="font-semibold text-rose-950">
+              Source platform rate-limited client requests (HTTP 429).
+            </p>
+            <p className="text-[11px] text-rose-800 leading-relaxed font-sans">
+              YouTube rate-limited requests from your browser network. Please wait a few moments before retrying.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {metadata.pipelineStatus === 'SIGNATURE_RESTRICTED' && (
+        <div className="bg-violet-50/90 border-b border-violet-200/80 px-6 py-3 flex items-start gap-3 text-xs text-violet-900 animate-in fade-in">
+          <AlertTriangle className="w-4 h-4 text-violet-600 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <p className="font-semibold text-violet-950">
+              YouTube signature cipher active for this video.
+            </p>
+            <p className="text-[11px] text-violet-800 leading-relaxed font-sans">
+              Stream formats require signature cipher deciphering and direct URLs cannot be played without decryption.
             </p>
           </div>
         </div>
