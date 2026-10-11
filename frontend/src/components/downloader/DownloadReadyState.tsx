@@ -11,10 +11,13 @@ import {
   ArrowDownToLine, 
   ArrowRight,
   Cpu,
-  Sparkles
+  Sparkles,
+  AlertCircle,
+  Loader2
 } from 'lucide-react';
 import { formatBytes } from '@/lib/utils';
 import { BrowserMediaProcessor } from './BrowserMediaProcessor';
+import { DownloaderService } from '@/services/downloader/downloaderService';
 
 interface DownloadReadyStateProps {
   session: DownloadSession;
@@ -28,21 +31,98 @@ export function DownloadReadyState({
 }: DownloadReadyStateProps) {
   const isComplete = session.status === 'ready';
   const [showStudio, setShowStudio] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [savedSuccess, setSavedSuccess] = useState(false);
 
-  const handleSaveToDisk = () => {
+  const handleSaveToDisk = async () => {
+    setSaveError(null);
+
     if (!session.downloadUrl) {
       alert('The file was saved directly to your chosen folder during extraction.');
       return;
     }
-    const a = document.createElement('a');
-    a.href = session.downloadUrl;
+
     const ext = session.selectedQuality?.container || 'mp4';
     const sanitizedTitle = session.metadata.title.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 40);
     const label = session.selectedQuality?.label || 'download';
-    a.download = `VIDLEO_${sanitizedTitle}_${label}.${ext}`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    const filename = `VIDLEO_${sanitizedTitle}_${label}.${ext}`;
+
+    // A. Blob URL or data URL -> download directly
+    if (session.downloadUrl.startsWith('blob:') || session.downloadUrl.startsWith('data:')) {
+      try {
+        const a = document.createElement('a');
+        a.href = session.downloadUrl;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setSavedSuccess(true);
+      } catch (err: any) {
+        setSaveError(`Failed to save file: ${err?.message || 'Download error'}`);
+      }
+      return;
+    }
+
+    // B. Server-backed URL -> authenticated in-memory fetch
+    setIsSaving(true);
+    try {
+      const headers = await DownloaderService.getAuthHeaders();
+      const response = await fetch(session.downloadUrl, {
+        headers,
+      });
+
+      if (!response.ok) {
+        let errMessage = `Server returned HTTP ${response.status} ${response.statusText}`;
+        try {
+          const contentType = response.headers.get('content-type') || '';
+          if (contentType.includes('application/json')) {
+            const errJson = await response.json();
+            if (typeof errJson.detail === 'string') {
+              errMessage = errJson.detail;
+            } else if (errJson.detail?.message) {
+              errMessage = errJson.detail.message;
+            }
+          }
+        } catch {
+          // ignore json parse error
+        }
+
+        if (response.status === 401 || response.status === 403) {
+          throw new Error(`Authentication required: ${errMessage}. Please sign in to download this server-generated file.`);
+        } else if (response.status === 404) {
+          throw new Error('The requested download file is no longer available or has expired.');
+        } else {
+          throw new Error(errMessage);
+        }
+      }
+
+      const contentType = response.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        const errJson = await response.json();
+        throw new Error(errJson.detail || 'Received JSON response instead of a media file.');
+      }
+
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+
+      setTimeout(() => {
+        URL.revokeObjectURL(blobUrl);
+      }, 30000);
+
+      setSavedSuccess(true);
+    } catch (err: any) {
+      console.error('[DownloadReadyState] Save to Disk failed:', err);
+      setSaveError(err?.message || 'Failed to download file from server.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -150,18 +230,44 @@ export function DownloadReadyState({
             </div>
           </div>
 
+          {/* Inline Save Error Message if any */}
+          {saveError && (
+            <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200/80 text-amber-900 text-xs flex items-start gap-2.5 animate-in fade-in duration-150">
+              <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <div className="flex-1 space-y-1">
+                <p className="font-semibold text-amber-900">Download couldn't be saved</p>
+                <p className="text-amber-800/90 leading-relaxed">{saveError}</p>
+              </div>
+            </div>
+          )}
+
           {/* Action Buttons */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
             <button
               type="button"
               onClick={handleSaveToDisk}
+              disabled={isSaving}
               className={`w-full flex items-center justify-center gap-2 ${
-                session.downloadUrl
-                  ? 'bg-[#0A0A0C] hover:bg-black text-white'
-                  : 'bg-emerald-700 hover:bg-emerald-800 text-white'
-              } py-3.5 px-5 rounded-full font-sans font-semibold text-xs tracking-wider uppercase transition-all duration-200 transform hover:scale-[1.01] active:scale-[0.99] shadow-lg shadow-black/15 cursor-pointer`}
+                isSaving
+                  ? 'bg-[#7A7A82] text-white cursor-wait'
+                  : savedSuccess
+                  ? 'bg-emerald-700 hover:bg-emerald-800 text-white cursor-pointer'
+                  : session.downloadUrl
+                  ? 'bg-[#0A0A0C] hover:bg-black text-white cursor-pointer'
+                  : 'bg-emerald-700 hover:bg-emerald-800 text-white cursor-pointer'
+              } py-3.5 px-5 rounded-full font-sans font-semibold text-xs tracking-wider uppercase transition-all duration-200 transform hover:scale-[1.01] active:scale-[0.99] shadow-lg shadow-black/15`}
             >
-              {session.downloadUrl ? (
+              {isSaving ? (
+                <>
+                  <Loader2 className="w-4 h-4 text-white animate-spin" />
+                  <span>Transferring File to Disk...</span>
+                </>
+              ) : savedSuccess ? (
+                <>
+                  <CheckCircle2 className="w-4 h-4 text-white" />
+                  <span>File Saved Successfully</span>
+                </>
+              ) : session.downloadUrl ? (
                 <>
                   <Download className="w-4 h-4 text-white" />
                   <span>Save File to Disk</span>

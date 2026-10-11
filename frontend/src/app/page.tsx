@@ -8,7 +8,6 @@ import { FeatureTestimonialSection } from '@/components/home/FeatureTestimonialS
 import { GeometricVideoWall } from '@/components/home/GeometricVideoWall';
 import { DownloadedVideoExperience } from '@/components/home/DownloadedVideoExperience';
 import { FeatureBlocks } from '@/components/home/FeatureBlocks';
-import { PricingSection } from '@/components/home/PricingSection';
 import { FaqSection } from '@/components/home/FaqSection';
 import { FinalCtaSection } from '@/components/home/FinalCtaSection';
 
@@ -40,10 +39,7 @@ export default function HomePage() {
         {/* 7. Core Capabilities Feature Blocks ("Engineered For Zero Friction") */}
         <FeatureBlocks />
 
-        {/* 8. Vidleo Pricing Section */}
-        <PricingSection />
-
-        {/* 9. Technical FAQ Section */}
+        {/* 8. Technical FAQ Section */}
         <FaqSection />
 
         {/* 10. Final Modular CTA Section */}

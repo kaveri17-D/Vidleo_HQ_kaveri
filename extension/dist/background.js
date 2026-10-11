@@ -1,4 +1,4 @@
-// src/utils/ump-parser.ts
+// extension/src/utils/ump-parser.ts
 function readVarInt(buf, offset) {
   if (offset >= buf.length) return [-1, offset];
   const firstByte = buf[offset];
@@ -160,7 +160,7 @@ function parseUmpMediaStreams(rawUmp) {
   };
 }
 
-// src/utils/media-response-accumulator.ts
+// extension/src/utils/media-response-accumulator.ts
 function concatBytes(parts) {
   const total = parts.reduce((sum, part) => sum + part.byteLength, 0);
   const result = new Uint8Array(total);
@@ -269,7 +269,7 @@ function assembleMediaResponseBodies(input) {
   };
 }
 
-// src/utils/duration-validation.ts
+// extension/src/utils/duration-validation.ts
 function durationToleranceSeconds(expectedDuration) {
   if (!(expectedDuration > 0)) return 2;
   return Math.max(2, expectedDuration * 0.05);
@@ -320,7 +320,7 @@ function validateDurationMetrics(metrics) {
   };
 }
 
-// src/background/service-worker.ts
+// extension/src/background/service-worker.ts
 var DEFAULT_API_BASE_URL = "http://127.0.0.1:8000";
 var OFFSCREEN_DOCUMENT_PATH = "offscreen.html";
 function withTimeout(promise, timeoutMs, code, message) {

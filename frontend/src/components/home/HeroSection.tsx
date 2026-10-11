@@ -555,7 +555,7 @@ export function HeroSection() {
                   type="button"
                   className="w-full py-1.5 mt-1 rounded-md bg-white border border-[#D1D5DB] hover:border-[#9CA3AF] text-[11.5px] font-semibold text-[#1F2937] shadow-2xs transition-colors"
                 >
-                  Upgrade
+                  Manage
                 </button>
               </div>
             </div>

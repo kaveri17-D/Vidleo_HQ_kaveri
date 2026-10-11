@@ -145,7 +145,7 @@ export class DownloaderService {
     return 'https://backend-production-2ff30.up.railway.app';
   }
 
-  private static async getAuthHeaders(): Promise<Record<string, string>> {
+  public static async getAuthHeaders(): Promise<Record<string, string>> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
     };

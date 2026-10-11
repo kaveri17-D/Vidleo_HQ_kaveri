@@ -1,4 +1,4 @@
-// src/ui/popup/popup.ts
+// extension/src/ui/popup/popup.ts
 var currentManifest = null;
 var currentJobId = null;
 var urlInput = document.getElementById("urlInput");

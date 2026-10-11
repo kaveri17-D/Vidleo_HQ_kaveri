@@ -1,5 +1,5 @@
 (() => {
-  // src/content/content.ts
+  // extension/src/content/content.ts
   try {
     if (document.documentElement) {
       document.documentElement.setAttribute("data-nexus-extension-installed", "true");

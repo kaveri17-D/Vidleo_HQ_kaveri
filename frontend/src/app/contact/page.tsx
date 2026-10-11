@@ -87,7 +87,7 @@ export default function ContactPage() {
               Contact Vidleo
             </h1>
             <p className="text-base text-[#6A6A72] font-sans leading-relaxed max-w-md mx-auto">
-              Have a question about plans, a technical issue, or a partnership? We&apos;d love to hear from you.
+              Have a question about Vidleo, a technical issue, or a partnership? We&apos;d love to hear from you.
             </p>
           </motion.div>
 
@@ -104,12 +104,12 @@ export default function ContactPage() {
                 {
                   icon: Mail,
                   title: 'General Enquiries',
-                  desc: 'Questions about Vidleo, pricing, features, or your account.',
+                  desc: 'Questions about Vidleo features, media extraction, or your account.',
                 },
                 {
                   icon: Building2,
                   title: 'Business & Partnerships',
-                  desc: 'Team plans, API integrations, and commercial enquiries.',
+                  desc: 'Platform integrations, open source collaborations, and commercial enquiries.',
                 },
                 {
                   icon: MessageSquare,

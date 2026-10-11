@@ -224,11 +224,6 @@ export function Footer() {
                     </Link>
                   </li>
                   <li>
-                    <Link href="/pricing" className="text-white/70 hover:text-white transition-all duration-200 inline-block hover:translate-x-1">
-                      Pricing
-                    </Link>
-                  </li>
-                  <li>
                     <a 
                       href={EXTERNAL_LINKS.CLIPPER_X} 
                       target="_blank" 

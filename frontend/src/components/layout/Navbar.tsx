@@ -189,12 +189,6 @@ const COMMUNITY_MENU: MegaMenuData = {
           href: '/about',
         },
         {
-          iconName: 'Tag',
-          label: 'Pricing',
-          description: 'Free, Creator, Pro, and Studio plans',
-          href: '/pricing',
-        },
-        {
           iconName: 'Globe',
           label: 'Supported Platforms',
           description: 'Browse all 50+ platforms Vidleo supports',
@@ -244,12 +238,6 @@ const RESOURCES_MENU: MegaMenuData = {
           label: 'Contact Support',
           description: 'Get help from the Vidleo team',
           href: '/contact',
-        },
-        {
-          iconName: 'Tag',
-          label: 'Pricing',
-          description: 'Compare plans and find the right tier',
-          href: '/pricing',
         },
         {
           iconName: 'Scissors',
@@ -533,18 +521,6 @@ export function Navbar() {
                 />
               </div>
             ))}
-
-            <a
-              href="/pricing"
-              className={cn(
-                'px-3 py-1.5 rounded-lg text-[13.5px] font-[540] tracking-tight transition-all duration-150 select-none focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5B4BFF]/50',
-                pathname === '/pricing'
-                  ? 'text-[#0A0A0C] bg-black/[0.05] font-[600]'
-                  : 'text-[#4A4A52] hover:text-[#0A0A0C] hover:bg-black/[0.04]'
-              )}
-            >
-              Pricing
-            </a>
           </nav>
 
           {/* Right side actions */}
@@ -734,7 +710,6 @@ export function Navbar() {
           {/* Static links */}
           <div className="pt-1 space-y-0.5">
             {[
-              { label: 'Pricing', href: '/pricing' },
               { label: 'Contact', href: '/contact' },
               { label: 'About', href: '/about' },
               { label: 'Supported Sites', href: '/supported-sites' },

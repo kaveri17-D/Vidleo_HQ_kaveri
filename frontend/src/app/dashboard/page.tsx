@@ -175,10 +175,10 @@ export default function DashboardPage() {
                   </span>
                 </div>
                 <div className="px-4 py-2 rounded-2xl bg-white/10 border border-white/10 text-center">
-                  <span className="block text-[10px] font-mono text-white/50 uppercase tracking-wider">Plan</span>
+                  <span className="block text-[10px] font-mono text-white/50 uppercase tracking-wider">Access</span>
                   <span className="text-xs font-bold text-white flex items-center gap-1 justify-center mt-0.5">
                     <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                    Pro Unlocked
+                    Free Access
                   </span>
                 </div>
               </div>
