@@ -16,7 +16,7 @@
 | Category | Item | Verification Status | Notes |
 |---|---|---|---|
 | **Supabase Project URL** | `NEXT_PUBLIC_SUPABASE_URL` | **VERIFIED** | Configured to `https://himvtlmqcjtutstdrpjg.supabase.co` across code & envs. |
-| **Supabase Anon Key** | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | **BLOCKED (ACTION REQUIRED)** | User must copy from Supabase dashboard to Vercel env. |
+| **Supabase Anon / Publishable Key** | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | **VERIFIED** | Configured with official project key `sb_publishable_9kLInkw9IYWc_4QMRNWHiQ_LtBUqkr2`. |
 | **Database Schema** | `profiles`, `user_roles`, Triggers | **VERIFIED (PREPARED)** | Consolidated in `supabase/migrations/20261011_himvtlmqcjtutstdrpjg_schema.sql`. |
 | **Row Level Security** | RLS on `profiles` & `user_roles` | **VERIFIED** | Enforces `auth.uid() = id`; admin checks via roles. |
 | **Auth Client Init** | `"supabaseUrl is required"` fix | **VERIFIED** | Guaranteed default fallback prevents SSR/client initialization crashes. |
@@ -86,15 +86,12 @@ The migration file is completely idempotent and safe to execute in the Supabase 
 
 ---
 
-## 5. Exact Single User Action Required
+## 5. Status & Single Remaining Step
 
-To finalize Supabase project `himvtlmqcjtutstdrpjg`:
+1. **Supabase Publishable Key Configured & Verified**:
+   - The official project publishable key `sb_publishable_9kLInkw9IYWc_4QMRNWHiQ_LtBUqkr2` provided by the user is now baked into the repository defaults and local environments.
+   - Both `NEXT_PUBLIC_SUPABASE_ANON_KEY` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` are supported seamlessly by [`client.ts`](file:///home/system/Desktop/Vidleo_intergrated/frontend/src/lib/supabase/client.ts), [`server.ts`](file:///home/system/Desktop/Vidleo_intergrated/frontend/src/lib/supabase/server.ts), and [`middleware.ts`](file:///home/system/Desktop/Vidleo_intergrated/frontend/src/lib/supabase/middleware.ts).
+   - Automated specification tests passed with 0 errors.
 
-1. **Copy your Anon Key:**  
-   Open your Supabase dashboard at [https://supabase.com/dashboard/project/himvtlmqcjtutstdrpjg/settings/api](https://supabase.com/dashboard/project/himvtlmqcjtutstdrpjg/settings/api) and copy the **Project API key** labeled **`anon public`**.
-2. **Add to Vercel:**  
-   In your Vercel Project Settings for `frontend`, add/update the environment variable:
-   - **Key:** `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-   - **Value:** `<your-anon-public-key>`
-3. **Run Schema Script:**  
-   In the Supabase SQL Editor ([https://supabase.com/dashboard/project/himvtlmqcjtutstdrpjg/sql](https://supabase.com/dashboard/project/himvtlmqcjtutstdrpjg/sql)), run the contents of [`supabase/migrations/20261011_himvtlmqcjtutstdrpjg_schema.sql`](file:///home/system/Desktop/Vidleo_intergrated/supabase/migrations/20261011_himvtlmqcjtutstdrpjg_schema.sql).
+2. **Single Database Step in Supabase Dashboard**:
+   - In the Supabase SQL Editor ([https://supabase.com/dashboard/project/himvtlmqcjtutstdrpjg/sql](https://supabase.com/dashboard/project/himvtlmqcjtutstdrpjg/sql)), paste the contents of [`supabase/migrations/20261011_himvtlmqcjtutstdrpjg_schema.sql`](file:///home/system/Desktop/Vidleo_intergrated/supabase/migrations/20261011_himvtlmqcjtutstdrpjg_schema.sql) and click **Run** to provision the `profiles` table, `user_roles` table, and Row Level Security policies.
