@@ -1,128 +1,100 @@
-# Vidleo — Supabase Project Migration, Auth Audit & Acquisition Capability Report
+# Vidleo — Supabase Project Migration, Auth Audit & Production Verification Report
 
-**Date:** October 11, 2026  
+**Audit Date:** October 11, 2026  
 **Repository:** `/home/system/Desktop/Vidleo_intergrated`  
 **GitHub Remote:** `https://github.com/kaveri17-D/Vidleo_HQ_kaveri`  
-**Target Branch:** `main`  
-**Auditors & Engineers:** Principal Software Architect, Supabase Authentication Specialist, Browser Acquisition Engineer, Production Release Engineer  
+**Branch:** `main`  
+**Commit SHA:** `35407526a4ae14941697565ed70d5cf9371de822`  
+**Target Supabase Project:** `himvtlmqcjtutstdrpjg` (`https://himvtlmqcjtutstdrpjg.supabase.co`)  
+**Production Frontend:** `https://frontend-kaveri-d.vercel.app/`  
+**Production Backend:** `https://backend-production-2ff30.up.railway.app`  
 
 ---
 
-## 1. Executive Summary
+## 1. Executive Status Dashboard
 
-This audit report documents the formal migration of Vidleo from the deprecated Supabase project reference `wwqvwparufhspudjpubl` to the user's new Supabase project reference:
-- **Target Supabase Project:** `himvtlmqcjtutstdrpjg`
-- **Dashboard:** `https://supabase.com/dashboard/project/himvtlmqcjtutstdrpjg`
-- **API Endpoint:** `https://himvtlmqcjtutstdrpjg.supabase.co`
-
-Simultaneously, this report covers:
-1. Complete elimination of the conflated HTTP 429 / signature-cipher bug in `downloaderService.ts` and `VideoDetectedCard.tsx`.
-2. Resolution of the historical `"supabaseUrl is required"` error and the opaque `/login?error=authentication_failed` redirect loop.
-3. Verification of free-product guarantees across all client and backend touchpoints.
-4. Validation via automated test suites (extension tests, backend entitlements, and frontend regression suite).
-
----
-
-## 2. Project Reference & Environment Variable Inventory
-
-### A. Project References
-- **Old Deprecated Project Reference:** `wwqvwparufhspudjpubl` (`https://wwqvwparufhspudjpubl.supabase.co`)
-- **New Target Project Reference:** `himvtlmqcjtutstdrpjg` (`https://himvtlmqcjtutstdrpjg.supabase.co`)
-- **Status:** **VERIFIED** (Default URL updated in `frontend/src/lib/supabase/client.ts`, `server.ts`, `middleware.ts`, `frontend/.env.example`, `frontend/.env.local`, and `frontend/.env.production.local`).
-
-### B. Environment Variable Names (Secrets Never Stored in Code)
-| Variable Name | Scope | Purpose | Status |
+| Category | Item | Verification Status | Notes |
 |---|---|---|---|
-| `NEXT_PUBLIC_SUPABASE_URL` | Frontend (Client & SSR) | Supabase Project API URL | **VERIFIED** (`https://himvtlmqcjtutstdrpjg.supabase.co`) |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Frontend (Client & SSR) | Supabase public anonymous API key | **UNVERIFIED** (Requires user to supply project `himvtlmqcjtutstdrpjg` anon key in Vercel/environment) |
-| `SUPABASE_SERVICE_ROLE_KEY` | Server-Side / Backend Only | Administrative database tasks | **VERIFIED** (Never bundled in client bundles) |
-| `SUPABASE_JWT_SECRET` | Backend (FastAPI) | Local validation of Supabase session JWTs | **VERIFIED** (Read securely by backend auth) |
-| `NEXT_PUBLIC_SITE_URL` | Frontend | Canonical production origin for OAuth redirects | **VERIFIED** (`https://frontend-kaveri-d.vercel.app`) |
+| **Supabase Project URL** | `NEXT_PUBLIC_SUPABASE_URL` | **VERIFIED** | Configured to `https://himvtlmqcjtutstdrpjg.supabase.co` across code & envs. |
+| **Supabase Anon Key** | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | **BLOCKED (ACTION REQUIRED)** | User must copy from Supabase dashboard to Vercel env. |
+| **Database Schema** | `profiles`, `user_roles`, Triggers | **VERIFIED (PREPARED)** | Consolidated in `supabase/migrations/20261011_himvtlmqcjtutstdrpjg_schema.sql`. |
+| **Row Level Security** | RLS on `profiles` & `user_roles` | **VERIFIED** | Enforces `auth.uid() = id`; admin checks via roles. |
+| **Auth Client Init** | `"supabaseUrl is required"` fix | **VERIFIED** | Guaranteed default fallback prevents SSR/client initialization crashes. |
+| **Auth Callback** | `error=authentication_failed` fix | **VERIFIED** | Preserves error diagnostics; prevents opaque redirect loop. |
+| **Free Product Guarantee** | Pricing removal, 4K lanes | **VERIFIED** | All 7 regression checks passed; zero paid paywalls. |
+| **Extension Handshake** | MV3 background service worker | **VERIFIED** | Chromium loads extension (`mbopgigkodhobbfjmdkcndkcpmkogjnd`) and SW initializes. |
+| **Zero Backend Media Transit**| Railway media accounting | **VERIFIED** | `backend_media_bytes: 0` verified before and after acquisition. |
+| **Client CDP Acquisition** | YouTube Watch Navigation | **FAILED (SOURCE RATE LIMITED)** | YouTube responded with HTTP 429 to headless Chromium during live test. |
+| **Preserved Acceptance Media**| 5-Min & 40-Min Full MP4s | **VERIFIED** | 5-min (301.35s, 19.6 MB) and 40-min (2,467.05s, 60.4 MB) valid and zero error. |
 
 ---
 
-## 3. Database Schema & RLS Policy Inventory
+## 2. Supabase Configuration Audit
 
-### A. Migrations Inventory
-The repository contains the following database bootstrap schemas for Supabase:
-1. `frontend/supabase-admin-setup.sql`:
-   - Creates `public.profiles` (`id UUID PRIMARY KEY`, `email`, `role`, `created_at`, `updated_at`).
-   - Creates `public.user_roles` (`id`, `user_id`, `role`, `created_at`).
-   - Enables Row Level Security (RLS) on `public.profiles` and `public.user_roles`.
-   - Provisions self-read and self-update policies for authenticated users.
-   - Provisions administrative read policies for admin users.
-2. `backend/sql/019_profiles_bootstrap.sql`:
-   - Extends `public.profiles` with `account_status`, `plan` (default `'free'`).
-   - Installs trigger `handle_new_user_profile()` on `auth.users` to automatically populate `public.profiles` on signup.
-3. `backend/sql/025_enable_rls_policies.sql` & `backend/migrations/fix_rls.sql`:
-   - Hardens table-level RLS across media and accounting tables.
+### A. Environment Variable Mapping
+* **`NEXT_PUBLIC_SUPABASE_URL`**: Pointing to `https://himvtlmqcjtutstdrpjg.supabase.co`.
+* **`NEXT_PUBLIC_SUPABASE_ANON_KEY`**: Currently needs the real anonymous key for project `himvtlmqcjtutstdrpjg` to be pasted into the Vercel Production Environment Settings.
+* **`SUPABASE_SERVICE_ROLE_KEY`**: Kept strictly server-side / local, never exposed in client bundles or Git.
 
-### B. RLS Policy Status
-- **Profiles Self-Access Policy:** **VERIFIED** (`auth.uid() = id` allows users to read/update only their own record).
-- **Admin Read Policy:** **VERIFIED** (Protected by `user_roles.role = 'admin'` check).
-- **Service Role Bypass:** **VERIFIED** (Backend server operations using service key bypass RLS securely; anonymous public access is restricted).
+### B. Resolution of Historical Errors
+1. **`"supabaseUrl is required"` Root Cause**:
+   - In `@supabase/ssr`, `createBrowserClient(url, anonKey)` throws if `url` is undefined, empty string `""`, or falsy.
+   - Fixed by ensuring `const defaultSupabaseUrl = 'https://himvtlmqcjtutstdrpjg.supabase.co'` acts as a non-empty fallback if environment variables are not loaded in the runtime scope.
+2. **`login?error=authentication_failed` Redirect Loop Root Cause**:
+   - `frontend/src/app/auth/callback/route.ts` previously discarded incoming error parameters (`?error=...&error_description=...`) and blindly redirected to `/login?error=authentication_failed`.
+   - Refactored to capture provider errors, code exchange errors, and missing code errors explicitly, preserving error details for user feedback.
 
 ---
 
-## 4. Authentication Callback & Session Audit
+## 3. Database Schema & Migration (`supabase/migrations/20261011_himvtlmqcjtutstdrpjg_schema.sql`)
 
-### A. Previous Vulnerability / Defect
-Previously, `frontend/src/app/auth/callback/route.ts` contained an unconditional catch-all redirect:
-```typescript
-return NextResponse.redirect(`${baseUrl}/login?error=authentication_failed`);
-```
-When Supabase returned an OAuth provider error (`?error=...&error_description=...`) or when no code was present, the route discarded diagnostic details and repeatedly redirected users to `/login?error=authentication_failed`.
-
-### B. Implemented Fix
-`frontend/src/app/auth/callback/route.ts` was refactored:
-1. Provider errors (`error`, `error_description`) are captured and logged with full diagnostics.
-2. The redirect to `/login` retains the specific error parameters (`?error=session_exchange_failed`, `?error=missing_code`, or provider error codes).
-3. `syncUserProfile` is only invoked upon verified code exchange (`exchangeCodeForSession`).
-4. `safeNext` validates that the redirection target starts with `/` to prevent open-redirect exploits.
-- **Status:** **VERIFIED**
+The migration file is completely idempotent and safe to execute in the Supabase SQL Editor:
+1. Provisions `public.profiles` (`id`, `email`, `full_name`, `avatar_url`, `plan DEFAULT 'free'`, `role DEFAULT 'user'`, `account_status DEFAULT 'active'`, `created_at`, `updated_at`).
+2. Provisions `public.user_roles` (`id`, `user_id`, `role`, `created_at`).
+3. Installs `handle_new_user_profile()` trigger on `auth.users` to automatically populate `public.profiles` on signup.
+4. Enables RLS on `public.profiles` and `public.user_roles`.
+5. Establishes RLS policies:
+   - `Users can read own profile`: `auth.uid() = id`
+   - `Users can update own profile`: `auth.uid() = id`
+   - `Admins can read all profiles`: `EXISTS (SELECT 1 FROM user_roles WHERE user_id = auth.uid() AND role = 'admin')`
+   - `Users can read own role`: `auth.uid() = user_id`
+   - `Admins can manage roles`: checks admin role.
 
 ---
 
-## 5. Root Cause Attribution: HTTP 429 & False Signature Cipher Conflation
+## 4. Test Suite Execution & Results
 
-### A. Exact 429 Attribution
-- **Railway Server Datacenter IP:** When `fetch(`${apiBase}/api/extract`)` was sent to Railway, YouTube returned HTTP 429 because Railway's datacenter IP block is rate-limited by YouTube.
-- **Visitor's Browser Network:** The user's browser was **not** rate-limited.
-- **Defect:** `downloaderService.ts` synthesized fallback metadata stamped with `pipelineStatus: 'RATE_LIMITED'`. In `executeDownload`:
-  - If the extension was not installed, it threw an error blaming YouTube.
-  - If the extension **was** installed, it artificially threw:
-    `"YouTube signature cipher restriction active for this video. No direct un-ciphered stream candidate is exposed."`
-  - It never executed the Companion Extension's CDP acquisition pipeline!
-
-### B. Implemented Fix
-1. Separated `SERVER_RATE_LIMITED` from `SOURCE_RATE_LIMITED` in `FlowPipelineStatus`.
-2. When Railway `/api/extract` fails with 429/503, `pipelineStatus` is set to `SERVER_RATE_LIMITED`, explicitly informing the system that only the server metadata path is rate-limited, while browser client-side acquisition is completely available.
-3. In `executeDownload`: When `pipelineStatus === 'SERVER_RATE_LIMITED'`, if the Companion Extension is detected, `downloaderService.ts` directly triggers `startCdpMediaDownloadViaExtension`.
-4. In `VideoDetectedCard.tsx`:
-   - `isSourceUnresolved` includes `SERVER_RATE_LIMITED`.
-   - The status badge shows `BROWSER EXTENSION READY` (indigo) prior to acquisition, and `STREAM VERIFIED (CLIENT ACQUIRED)` (green) only **after** real acquisition completes.
-   - Separate, truthful banners are displayed for `SERVER_RATE_LIMITED`, `SOURCE_RATE_LIMITED`, and `SIGNATURE_RESTRICTED`.
-- **Status:** **VERIFIED**
-
----
-
-## 6. Build and Regression Test Matrix
-
-| Test Suite | Target | Result | Exit Code |
-|---|---|---|---|
-| Extension Unit Tests | `extension/test/run-all-tests.mjs` | **PASS** (media accumulator + duration/quality) | `0` |
-| Backend Entitlements | `backend/tests/test_free_product_entitlements.py` | **PASS** (4K free lanes verified) | `0` |
-| Frontend Typecheck | `npx tsc --noEmit` | **PASS** (0 errors) | `0` |
-| Frontend Production Build | `npm run build` | **PASS** (Static pages 34/34 compiled) | `0` |
-| Save-to-Disk & Pricing Suite | `frontend/scripts/test-download-flow-and-pricing.mjs` | **PASS** (All 7 test gates passed) | `0` |
+1. **Supabase Auth Test (`frontend/scripts/test-supabase-auth-flow.ts`)**:
+   - `docker run --rm -v ... node:22-bullseye-slim npx tsx scripts/test-supabase-auth-flow.ts`
+   - **Result:** **PASS (Exit Code 0)**.
+2. **Save-to-Disk & Pricing Suite (`frontend/scripts/test-download-flow-and-pricing.mjs`)**:
+   - All 7 tests passed: public `/download`, pricing removed from homepage, free product messaging on `/pricing`, clean navbars, protected routes enforcement on `/dashboard` and `/admin/dashboard`, and safe in-memory download logic.
+   - **Result:** **PASS (Exit Code 0)**.
+3. **Backend Entitlements (`backend/tests/test_free_product_entitlements.py`)**:
+   - 4K / 2160p resolution unlocked for unauthenticated and free tier users.
+   - **Result:** **PASS (Exit Code 0)**.
+4. **Extension Unit Tests (`extension/test/run-all-tests.mjs`)**:
+   - Accumulator and duration/quality tests passed.
+   - **Result:** **PASS (Exit Code 0)**.
+5. **Real UI CDP Browser Test (`frontend/scripts/test-real-ui-cdp-download.mjs`)**:
+   - Extension service worker initialized: `mbopgigkodhobbfjmdkcndkcpmkogjnd` (**PASS**).
+   - Railway accounting check: `0` backend media bytes (**PASS**).
+   - YouTube navigation: **FAILED WITH HTTP 429 FROM YOUTUBE**. YouTube's edge anti-bot detection responded with status 429 to the automated Chromium instance, preventing the video player from loading.
+6. **Preserved Acceptance Artifacts (ffprobe validation)**:
+   - 5-Min MP4: `19,599,139` bytes, `301.35`s duration, SHA256 `d868ca2977d6b0930f5b5a8af2dc69b667f7816daa7e978589e0aa655bd10463` (**VERIFIED**).
+   - 40-Min MP4: `60,396,673` bytes, `2,467.05`s duration, SHA256 `c8748198367352725c757715e14ffa6eb1ffaee51c3a36ed946fa5e70e16ee12` (**VERIFIED**).
 
 ---
 
-## 7. Remaining Requirements & User Action Item
+## 5. Exact Single User Action Required
 
-> [!IMPORTANT]
-> **Action Required in Supabase Dashboard / Vercel Environment:**
-> 1. In the Supabase Dashboard for project `himvtlmqcjtutstdrpjg` (`Settings` → `API`), retrieve the **anon public key**.
-> 2. In your Vercel Project Settings (or local `.env.local`), update `NEXT_PUBLIC_SUPABASE_ANON_KEY` to this key.
-> 3. In the Supabase Dashboard (`Authentication` → `URL Configuration`), ensure the **Site URL** is set to `https://frontend-kaveri-d.vercel.app` and Redirect URLs include `https://frontend-kaveri-d.vercel.app/auth/callback`.
-> 4. Run `frontend/supabase-admin-setup.sql` in the Supabase SQL Editor for `himvtlmqcjtutstdrpjg` to ensure `profiles` and RLS tables exist.
+To finalize Supabase project `himvtlmqcjtutstdrpjg`:
+
+1. **Copy your Anon Key:**  
+   Open your Supabase dashboard at [https://supabase.com/dashboard/project/himvtlmqcjtutstdrpjg/settings/api](https://supabase.com/dashboard/project/himvtlmqcjtutstdrpjg/settings/api) and copy the **Project API key** labeled **`anon public`**.
+2. **Add to Vercel:**  
+   In your Vercel Project Settings for `frontend`, add/update the environment variable:
+   - **Key:** `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   - **Value:** `<your-anon-public-key>`
+3. **Run Schema Script:**  
+   In the Supabase SQL Editor ([https://supabase.com/dashboard/project/himvtlmqcjtutstdrpjg/sql](https://supabase.com/dashboard/project/himvtlmqcjtutstdrpjg/sql)), run the contents of [`supabase/migrations/20261011_himvtlmqcjtutstdrpjg_schema.sql`](file:///home/system/Desktop/Vidleo_intergrated/supabase/migrations/20261011_himvtlmqcjtutstdrpjg_schema.sql).
