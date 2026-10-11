@@ -137,13 +137,13 @@ All 7 regression tests executed and passed:
 
 ---
 
-## 7. Client-Side Acquisition 429 Fix & Supabase Project Migration
+## 7. Live Production Verification & Acceptance Results (October 12, 2026)
 
-For comprehensive details on:
-1. De-conflating server metadata HTTP 429 from browser acquisition capabilities.
-2. Directly routing to Companion Extension CDP acquisition when the backend IP is rate-limited.
-3. Truthful pipeline badge status transitions.
-4. Migration to the new Supabase project `himvtlmqcjtutstdrpjg` (`https://himvtlmqcjtutstdrpjg.supabase.co`).
-5. Prevention of `error=authentication_failed` redirect loops in the auth callback.
+| Category | Component | Status | Physical Evidence / Notes |
+|---|---|---|---|
+| **Save to Disk Navigation Fix** | `DownloadReadyState.tsx` | **VERIFIED** | Handled in-memory; blob URLs downloaded immediately; server URLs verified with auth headers and MIME validation; zero navigation to Railway auth error. |
+| **Completely Free Product** | UI & Backend Entitlements | **VERIFIED** | Homepage, navbar, footer clean; `/pricing` states "Vidleo is free to use"; 4K/2160p resolutions unlocked with zero paid barriers. |
+| **Railway Media Transit** | Backend Media Accounting | **VERIFIED** | Railway endpoint `/api/accounting/media` reports `backend_media_bytes: 0` during client media acquisitions. |
+| **Preserved Acceptance Media** | 5-Min & 40-Min MP4s | **VERIFIED** | 5-min (`19,599,139` bytes) and 40-min (`60,396,673` bytes) verified via `ffprobe` (0 decode errors, exact stream lengths). |
+| **Database Migration Execution**| Supabase DDL Schema | **BLOCKED** | Table `public.profiles` not found in schema cache (PGRST205). Awaiting manual SQL execution in Supabase Dashboard SQL Editor due to lack of DDL token. |
 
-See [`docs/VIDLEO_SUPABASE_MIGRATION_AND_AUTH_AUDIT.md`](file:///home/system/Desktop/Vidleo_intergrated/docs/VIDLEO_SUPABASE_MIGRATION_AND_AUTH_AUDIT.md).
