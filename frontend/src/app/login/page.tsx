@@ -27,11 +27,21 @@ function LoginForm() {
   useEffect(() => {
     const errorParam = searchParams.get('error');
     const descParam = searchParams.get('error_description');
+    const verifiedParam = searchParams.get('verified');
     
+    if (verifiedParam === 'true') {
+      setSuccessMessage('Email verified successfully! Please sign in with your email and password below.');
+      setMode('signin');
+      return;
+    }
+
     if (errorParam === 'authentication_failed') {
       setErrorMessage('Sign-in was unsuccessful. Please check your credentials or try again.');
     } else if (errorParam === 'invalid_request' && descParam?.includes('flow_state_already_used')) {
       setErrorMessage('This verification or sign-in link has already been used. Please sign in with your email and password below.');
+    } else if (descParam?.includes('code_verifier') || descParam?.includes('auth_code')) {
+      setSuccessMessage('Your email verification was processed. Please sign in with your email and password below.');
+      setMode('signin');
     } else if (descParam) {
       setErrorMessage(descParam);
     } else if (errorParam) {
@@ -59,9 +69,9 @@ function LoginForm() {
   useEffect(() => {
     if (!authLoading && user) {
       const next = searchParams.get('next') || '/dashboard';
-      router.replace(next);
+      window.location.href = next;
     }
-  }, [user, authLoading, router, searchParams]);
+  }, [user, authLoading, searchParams]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -94,8 +104,7 @@ function LoginForm() {
 
         if (data?.session) {
           const next = searchParams.get('next') || '/dashboard';
-          router.replace(next);
-          router.refresh();
+          window.location.href = next;
         } else if (data?.user) {
           setSuccessMessage('Account created! If email confirmation is required, please check your inbox to confirm your address before logging in.');
           setIsLoading(false);
@@ -118,8 +127,7 @@ function LoginForm() {
 
         if (data?.session) {
           const next = searchParams.get('next') || '/dashboard';
-          router.replace(next);
-          router.refresh();
+          window.location.href = next;
         }
       }
     } catch (err: any) {

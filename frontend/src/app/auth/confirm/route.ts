@@ -58,21 +58,12 @@ export async function GET(request: NextRequest) {
 
     const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
       cookies: {
-        get(name: string) {
-          return request.cookies.get(name)?.value;
+        getAll() {
+          return request.cookies.getAll();
         },
-        set(name: string, value: string, options: CookieOptions) {
-          response.cookies.set({
-            name,
-            value,
-            ...options,
-          });
-        },
-        remove(name: string, options: CookieOptions) {
-          response.cookies.set({
-            name,
-            value: '',
-            ...options,
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value, options }) => {
+            response.cookies.set(name, value, options);
           });
         },
       },
@@ -84,7 +75,7 @@ export async function GET(request: NextRequest) {
     });
 
     if (!error && data?.user) {
-      await syncUserProfile(data.user);
+      await syncUserProfile(data.user, supabase);
       return response;
     }
 
@@ -102,21 +93,12 @@ export async function GET(request: NextRequest) {
 
     const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
       cookies: {
-        get(name: string) {
-          return request.cookies.get(name)?.value;
+        getAll() {
+          return request.cookies.getAll();
         },
-        set(name: string, value: string, options: CookieOptions) {
-          response.cookies.set({
-            name,
-            value,
-            ...options,
-          });
-        },
-        remove(name: string, options: CookieOptions) {
-          response.cookies.set({
-            name,
-            value: '',
-            ...options,
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value, options }) => {
+            response.cookies.set(name, value, options);
           });
         },
       },
@@ -125,12 +107,27 @@ export async function GET(request: NextRequest) {
     const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
 
     if (!exchangeError && data?.user) {
-      await syncUserProfile(data.user);
+      await syncUserProfile(data.user, supabase);
       return response;
     }
 
     if (exchangeError) {
-      console.error('Supabase Auth confirm exchangeCode error:', exchangeError.message);
+      console.warn('Supabase Auth confirm exchangeCode notice:', exchangeError.message);
+      const msg = exchangeError.message?.toLowerCase() || '';
+      // If code exchange fails due to missing PKCE verifier (cross-device/cross-browser click),
+      // the email has already been verified on the GoTrue server.
+      // Redirect to login with verified=true flag so user can sign in with password.
+      if (
+        msg.includes('code_verifier') ||
+        msg.includes('code verifier') ||
+        msg.includes('flow_state') ||
+        msg.includes('invalid flow')
+      ) {
+        const redirectUrl = new URL(`${baseUrl}/login`);
+        redirectUrl.searchParams.set('verified', 'true');
+        return NextResponse.redirect(redirectUrl.toString());
+      }
+
       const redirectUrl = new URL(`${baseUrl}/login`);
       redirectUrl.searchParams.set('error', 'session_exchange_failed');
       redirectUrl.searchParams.set('error_description', exchangeError.message);

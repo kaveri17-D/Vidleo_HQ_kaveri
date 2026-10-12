@@ -14,7 +14,7 @@ console.log('='.repeat(80));
 import https from 'https';
 
 function fetchPage(urlPath) {
-  const targetBase = process.env.TARGET_URL || 'http://127.0.0.1:3000';
+  const targetBase = process.env.TARGET_URL || 'https://frontend-kaveri-d.vercel.app';
   const client = targetBase.startsWith('https') ? https : http;
   return new Promise((resolve, reject) => {
     client.get(`${targetBase}${urlPath}`, (res) => {

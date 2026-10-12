@@ -14,7 +14,7 @@ export interface UserProfile {
  * Ensures the authenticated user's profile exists in the database 'profiles' table.
  * Safe against missing tables or network errors.
  */
-export async function syncUserProfile(user: User): Promise<UserProfile | null> {
+export async function syncUserProfile(user: User, customClient?: any): Promise<UserProfile | null> {
   if (!user) return null;
 
   const profileData: UserProfile = {
@@ -26,7 +26,7 @@ export async function syncUserProfile(user: User): Promise<UserProfile | null> {
   };
 
   try {
-    const supabase = createClient();
+    const supabase = customClient || createClient();
     
     // Attempt upsert into profiles table if table exists
     const { error } = await supabase
