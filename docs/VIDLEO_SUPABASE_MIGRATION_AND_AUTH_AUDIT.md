@@ -166,3 +166,30 @@ To ensure all Supabase auth emails, magic links, and OAuth flows navigate to pro
    https://frontend-kaveri-d.vercel.app/auth/confirm
    http://localhost:3000/**
    ```
+
+---
+
+## 7. Real Authentication Acceptance Verification & Status (October 12, 2026)
+
+### A. Real API Acceptance Results
+- **Signup Dispatch (`POST /auth/v1/signup`)**: **VERIFIED**
+  - Generated live user `5f29348e-3919-43dd-9760-2e79bdfbe0c1` (`acceptance_... @synapvo.tech`) with explicit `emailRedirectTo: https://frontend-kaveri-d.vercel.app/auth/confirm`.
+  - Dispatched confirmation email successfully without error.
+- **Unconfirmed Account Password Login (`POST /auth/v1/token?grant_type=password`)**: **VERIFIED**
+  - Properly rejected with error code `email_not_confirmed` (`"Email not confirmed"`).
+- **Invalid Credentials Handling**: **VERIFIED**
+  - Properly rejected with `"Invalid login credentials"`.
+- **Production Route Deployment Verification**: **VERIFIED**
+  - Deployed `/auth/callback` on Vercel returns HTTP 307 redirecting to `https://frontend-kaveri-d.vercel.app/login` with error diagnostic params.
+  - Deployed `/auth/confirm` on Vercel returns HTTP 307 redirecting to `https://frontend-kaveri-d.vercel.app/login` with error diagnostic params.
+  - Neither route redirects to localhost in production.
+
+### B. Summary Status Table
+
+| Acceptance Gate | Status | Physical Evidence / Notes |
+|---|---|---|
+| **Canonical Origin Resolution** | **VERIFIED** | `getSiteUrl()` resolves to `https://frontend-kaveri-d.vercel.app` in production and only allows `localhost:3000` in explicit development environments. |
+| **Auth Callback Endpoint (`/auth/callback`)** | **VERIFIED** | Deployed at `https://frontend-kaveri-d.vercel.app/auth/callback`; binds cookies to `NextResponse`; validates internal redirect destinations. |
+| **Auth Confirm Endpoint (`/auth/confirm`)** | **VERIFIED** | Deployed at `https://frontend-kaveri-d.vercel.app/auth/confirm`; handles `token_hash` + `type` OTP verification for confirmation emails. |
+| **Login Page Email/Password Support** | **VERIFIED** | Added email/password sign-in alongside Google OAuth on `/login`, allowing email sign-in directly. |
+| **Supabase Dashboard URL Configuration** | **BLOCKED (MANUAL ACTION REQUIRED)** | Supabase Auth server-side Site URL currently defaults to `http://localhost:3000`. Requires manual change in Supabase Dashboard (Authentication -> URL Configuration) because publishable key cannot modify Auth server settings. |

@@ -4,7 +4,8 @@ import React, { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/components/providers/AuthProvider';
-import { ArrowLeft, AlertCircle, Loader2, ShieldCheck, Zap } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
+import { ArrowLeft, AlertCircle, Loader2, ShieldCheck, Zap, Mail, Lock } from 'lucide-react';
 import { VidleoLogo } from '@/components/brand/VidleoLogo';
 import { getSiteUrl } from '@/lib/siteUrl';
 
@@ -13,20 +14,26 @@ function LoginForm() {
   const searchParams = useSearchParams();
   const { user, loading: authLoading, signInWithGoogle } = useAuth();
   
-  const [isConnecting, setIsConnecting] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [isEmailLoading, setIsEmailLoading] = useState(false);
+  const [isGoogleConnecting, setIsGoogleConnecting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Check searchParams for auth error
   useEffect(() => {
     const errorParam = searchParams.get('error');
+    const descParam = searchParams.get('error_description');
     if (errorParam === 'authentication_failed') {
       setErrorMessage('Google sign-in was unsuccessful. Please try again.');
+    } else if (descParam) {
+      setErrorMessage(descParam);
     } else if (errorParam) {
       setErrorMessage('Authentication error occurred. Please try signing in again.');
     }
   }, [searchParams]);
 
-  // Redirect authenticated user to /dashboard
+  // Redirect authenticated user to destination
   useEffect(() => {
     if (!authLoading && user) {
       const next = searchParams.get('next') || '/dashboard';
@@ -34,9 +41,39 @@ function LoginForm() {
     }
   }, [user, authLoading, router, searchParams]);
 
+  const handlePasswordSignIn = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || !password || isEmailLoading) return;
+    setIsEmailLoading(true);
+    setErrorMessage(null);
+
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
+
+      if (error) {
+        setErrorMessage(error.message || 'Invalid email or password.');
+        setIsEmailLoading(false);
+        return;
+      }
+
+      if (data?.session) {
+        const next = searchParams.get('next') || '/dashboard';
+        router.replace(next);
+        router.refresh();
+      }
+    } catch (err: any) {
+      setErrorMessage('Failed to sign in. Please try again.');
+      setIsEmailLoading(false);
+    }
+  };
+
   const handleGoogleSignIn = async () => {
-    if (isConnecting) return;
-    setIsConnecting(true);
+    if (isGoogleConnecting) return;
+    setIsGoogleConnecting(true);
     setErrorMessage(null);
 
     try {
@@ -47,11 +84,11 @@ function LoginForm() {
       const { error } = await signInWithGoogle(redirectTo);
       if (error) {
         setErrorMessage(error.message || 'Failed to initiate Google authentication.');
-        setIsConnecting(false);
+        setIsGoogleConnecting(false);
       }
     } catch (err: any) {
       setErrorMessage('Google sign-in encountered an error. Please try again.');
-      setIsConnecting(false);
+      setIsGoogleConnecting(false);
     }
   };
 
@@ -89,7 +126,7 @@ function LoginForm() {
           className="w-full max-w-[440px] bg-white border border-black/[0.08] rounded-[28px] p-7 sm:p-9 shadow-[0_20px_50px_rgba(0,0,0,0.06),0_2px_8px_rgba(0,0,0,0.04)] relative"
         >
           {/* Header Title */}
-          <div className="text-center space-y-2 mb-8">
+          <div className="text-center space-y-2 mb-6">
             <div className="w-12 h-12 rounded-2xl bg-[#F0EEFF] border border-[#D5D0FF] text-[#5B4BFF] flex items-center justify-center mx-auto mb-4 shadow-sm">
               <Zap className="w-6 h-6 fill-[#5B4BFF]/20" />
             </div>
@@ -106,7 +143,7 @@ function LoginForm() {
             <motion.div
               initial={{ opacity: 0, y: -8 }}
               animate={{ opacity: 1, y: 0 }}
-              className="mb-6 p-3.5 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs flex items-start gap-2.5 shadow-2xs"
+              className="mb-5 p-3.5 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs flex items-start gap-2.5 shadow-2xs"
             >
               <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
               <div className="flex-1 leading-tight font-medium">
@@ -115,15 +152,77 @@ function LoginForm() {
             </motion.div>
           )}
 
+          {/* Email / Password Sign In Form */}
+          <form onSubmit={handlePasswordSignIn} className="space-y-3.5 mb-5">
+            <div>
+              <label className="block text-[11px] font-semibold text-[#5A5A62] mb-1.5 uppercase tracking-wider">
+                Email Address
+              </label>
+              <div className="relative">
+                <Mail className="w-4 h-4 text-[#8E8E98] absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="name@example.com"
+                  required
+                  className="w-full h-11 pl-10 pr-3.5 rounded-xl bg-[#F6F6F8] border border-black/[0.08] text-xs text-[#0A0A0C] placeholder:text-[#8E8E98] focus:outline-none focus:border-[#5B4BFF] focus:bg-white transition-colors"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-semibold text-[#5A5A62] mb-1.5 uppercase tracking-wider">
+                Password
+              </label>
+              <div className="relative">
+                <Lock className="w-4 h-4 text-[#8E8E98] absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••••••"
+                  required
+                  className="w-full h-11 pl-10 pr-3.5 rounded-xl bg-[#F6F6F8] border border-black/[0.08] text-xs text-[#0A0A0C] placeholder:text-[#8E8E98] focus:outline-none focus:border-[#5B4BFF] focus:bg-white transition-colors"
+                />
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={isEmailLoading || authLoading}
+              className="w-full h-11 rounded-xl bg-[#0A0A0C] hover:bg-black text-white text-[13px] font-semibold tracking-wide transition-all duration-150 flex items-center justify-center gap-2 shadow-sm hover:shadow-md active:scale-[0.99] disabled:opacity-75 disabled:cursor-not-allowed cursor-pointer"
+            >
+              {isEmailLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 text-white animate-spin" />
+                  <span>Signing in...</span>
+                </>
+              ) : (
+                <span>Sign In with Email</span>
+              )}
+            </button>
+          </form>
+
+          {/* Divider */}
+          <div className="relative my-5">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-black/[0.08]" />
+            </div>
+            <div className="relative flex justify-center text-[10px] uppercase font-bold tracking-widest text-[#8E8E98]">
+              <span className="bg-white px-3">or continue with</span>
+            </div>
+          </div>
+
           {/* Google Auth Action Button */}
           <div className="space-y-4">
             <button
               type="button"
               onClick={handleGoogleSignIn}
-              disabled={isConnecting || authLoading}
-              className="w-full h-12 rounded-2xl bg-white hover:bg-[#FAF9FC] border border-[#DCDCE2] hover:border-black/30 text-[#0A0A0C] text-[14px] font-semibold tracking-tight transition-all duration-150 flex items-center justify-center gap-3 shadow-[0_2px_6px_rgba(0,0,0,0.04)] hover:shadow-md active:scale-[0.99] disabled:opacity-75 disabled:cursor-not-allowed group cursor-pointer"
+              disabled={isGoogleConnecting || authLoading}
+              className="w-full h-11 rounded-xl bg-white hover:bg-[#FAF9FC] border border-[#DCDCE2] hover:border-black/30 text-[#0A0A0C] text-[13px] font-semibold tracking-tight transition-all duration-150 flex items-center justify-center gap-3 shadow-[0_2px_6px_rgba(0,0,0,0.04)] hover:shadow-md active:scale-[0.99] disabled:opacity-75 disabled:cursor-not-allowed group cursor-pointer"
             >
-              {isConnecting ? (
+              {isGoogleConnecting ? (
                 <>
                   <Loader2 className="w-4 h-4 text-[#5B4BFF] animate-spin" />
                   <span>Connecting to Google...</span>
@@ -131,7 +230,7 @@ function LoginForm() {
               ) : (
                 <>
                   {/* Google SVG Official Icon */}
-                  <svg className="w-5 h-5 shrink-0 group-hover:scale-105 transition-transform" viewBox="0 0 24 24">
+                  <svg className="w-4 h-4 shrink-0 group-hover:scale-105 transition-transform" viewBox="0 0 24 24">
                     <path
                       fill="#4285F4"
                       d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z"
@@ -149,7 +248,7 @@ function LoginForm() {
                       d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.58l3.99 3.15c.95-2.83 3.6-4.98 6.72-4.98z"
                     />
                   </svg>
-                  <span>Continue with Google</span>
+                  <span>Google</span>
                 </>
               )}
             </button>
@@ -175,7 +274,7 @@ function LoginForm() {
           {/* Security Badge */}
           <div className="mt-8 pt-5 border-t border-black/[0.06] flex items-center justify-center gap-2 text-[11px] font-medium text-[#5A5A62]">
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-            <span>Encrypted OAuth 2.0 PKCE Authentication</span>
+            <span>Encrypted OAuth 2.0 PKCE & SSL Authentication</span>
           </div>
         </motion.div>
       </main>
