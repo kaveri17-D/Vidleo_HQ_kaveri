@@ -11,9 +11,13 @@ console.log('='.repeat(80));
 console.log('VIDLEO REGRESSION SUITE: SAVE TO DISK FLOW & PRICING REMOVAL AUDIT');
 console.log('='.repeat(80));
 
+import https from 'https';
+
 function fetchPage(urlPath) {
+  const targetBase = process.env.TARGET_URL || 'http://127.0.0.1:3000';
+  const client = targetBase.startsWith('https') ? https : http;
   return new Promise((resolve, reject) => {
-    http.get(`http://127.0.0.1:3000${urlPath}`, (res) => {
+    client.get(`${targetBase}${urlPath}`, (res) => {
       let data = '';
       res.on('data', chunk => { data += chunk; });
       res.on('end', () => {
