@@ -99,45 +99,55 @@ The migration file is completely idempotent and safe to execute in the Supabase 
 
 ## 6. Root Cause Investigation & Reproducible Evidence
 
-### A. Root Cause of `http://localhost:3000/code=...`
-1. **Supabase Auth Server-Side Configuration**:
-   - Live HTTP probe without `redirect_to` or with an unauthorized redirect:
-     ```http
-     GET /auth/v1/verify?type=signup&token=probe_check
-     HTTP/2 303
-     location: http://localhost:3000#error=access_denied&error_code=otp_expired...
-     ```
-   - When an email confirmation link or OAuth provider redirect occurs without a pre-whitelisted `redirect_to`, Supabase falls back to the project's **Site URL**, which is configured as `http://localhost:3000`.
-   - When navigating to `http://localhost:3000` on a user's machine, the browser encounters `ERR_CONNECTION_REFUSED`.
-2. **Management API / Access Constraint**:
-   - The Supabase Publishable / Anon key (`sb_publishable_9kLInkw9IYWc_4QMRNWHiQ_LtBUqkr2`) possesses PostgREST client permissions only. It cannot invoke the Supabase Management API (`api.supabase.com`) to alter Auth Site URL or Redirect URLs.
-   - `SUPABASE_ACCESS_TOKEN` is unset in the environment.
+### A. Root Cause 1: `http://localhost:3000` Redirects (Now Fixed in Supabase Cloud)
+- **Supabase Cloud State**: Verified updated by user on October 12, 2026.
+  - Probing Supabase's verification endpoint with invalid OTP now redirects directly to the canonical domain:
+    ```http
+    GET https://himvtlmqcjtutstdrpjg.supabase.co/auth/v1/verify?type=signup&token=probe_check
+    HTTP/2 303
+    location: https://frontend-kaveri-d.vercel.app#error=access_denied&error_code=otp_expired...
+    ```
+  - Supabase Auth server Site URL is confirmed updated to `https://frontend-kaveri-d.vercel.app`.
+
+### B. Root Cause 2: `flow_state_already_used` & Stale Auth Flow
+- **Nature of the Error**: `error=invalid_request&error_code=flow_state_already_used&error_description=State+has+already+been+used`
+  - In Supabase Auth PKCE, the authorization code/state is strictly single-use and expires upon consumption.
+  - When an email confirmation link or OAuth callback is opened multiple times (or clicked after having already been exchanged), Supabase Auth rejects the consumed state with `flow_state_already_used`.
+  - Previously, if an old email confirmation link originally generated prior to the Site URL update was opened, or if a user attempted Google OAuth (which is disabled in project settings), the error surfaced either via an unhandled redirect or hash fragment (`#error=...`).
+- **Application-Side Hardening (Commit `c28ac5e`)**:
+  - **Auth Confirm Handler (`frontend/src/app/auth/confirm/route.ts`)**:
+    - Expanded to support both `token_hash` (for email OTP verify) and `code` (for PKCE flow).
+    - Captures `error` and `error_description` query parameters and redirects cleanly to `/login?error=...` rather than falling into unhandled state.
+  - **Login & Registration UI (`frontend/src/app/login/page.tsx`)**:
+    - Added tab toggle between **Sign In** and **Create Account**.
+    - Explicitly decodes hash parameters (`#error=...`) and query parameters (`?error=...`) to catch `flow_state_already_used` and notify the user: *"This verification or sign-in link has already been used. Please sign in with your email and password below."*
+    - Displays informative guidance if Google OAuth is clicked while the provider is disabled in Supabase.
 
 ---
 
-## 7. Production Verification & Test Results (October 12, 2026)
+## 7. Production Verification & Test Results (Commit c28ac5e)
 
 ### A. Live Probes & Gate Audits
 
 | Gate | Category | Status | Evidence / Notes |
 |---|---|---|---|
 | 1 | **Canonical Origin** | **VERIFIED** | `getSiteUrl()` strictly defaults to `https://frontend-kaveri-d.vercel.app` in production. Only permits `localhost:3000` when `NODE_ENV === 'development'`. |
-| 2 | **Auth Callback (`/auth/callback`)** | **VERIFIED** | `curl -sI https://frontend-kaveri-d.vercel.app/auth/callback?code=test-code` -> `HTTP/2 307` redirect to `https://frontend-kaveri-d.vercel.app/login?error=session_exchange_failed&error_description=PKCE+code+verifier+not+found...`. Never redirects to localhost. |
-| 3 | **Auth Confirm (`/auth/confirm`)** | **VERIFIED** | `curl -sI https://frontend-kaveri-d.vercel.app/auth/confirm` -> `HTTP/2 307` redirect to `https://frontend-kaveri-d.vercel.app/login?error=invalid_verification_link`. |
-| 4 | **Production Login Page** | **VERIFIED** | `GET https://frontend-kaveri-d.vercel.app/login` -> `HTTP/2 200`. JS bundle verified containing email/password sign-in and Google OAuth. |
-| 5 | **Database Schema & RLS** | **VERIFIED** | `public.profiles` & `public.user_roles` exist; RLS returns HTTP 401 (42501) to unauthenticated anon queries. |
-| 6 | **Protected Route Guards** | **VERIFIED** | `/dashboard` returns `HTTP 307` -> `/login?next=%2Fdashboard`; `/admin/dashboard` returns `HTTP 307` -> `/admin/login?next=%2Fadmin%2Fdashboard`. |
-| 7 | **Downloader & 100% Free Guarantee** | **VERIFIED** | All 7/7 regression tests in `test-download-flow-and-pricing.mjs` pass against live production. Zero paid plans. |
-| 8 | **TypeScript Type Checking** | **VERIFIED** | `./frontend/node_modules/.bin/tsc --project frontend/tsconfig.json --noEmit` exited 0. |
-| 9 | **Supabase Cloud Site URL** | **BLOCKED (MANUAL ACTION REQUIRED)** | Supabase Auth server Site URL remains `http://localhost:3000` until saved in the dashboard. |
+| 2 | **Supabase Cloud Site URL** | **VERIFIED** | Live probe to `/auth/v1/verify` redirects directly to `https://frontend-kaveri-d.vercel.app` with zero localhost hops. |
+| 3 | **Auth Callback (`/auth/callback`)** | **VERIFIED** | Live probe: `curl -sI https://frontend-kaveri-d.vercel.app/auth/callback?code=test-code` -> `HTTP/2 307` redirect to `https://frontend-kaveri-d.vercel.app/login?error=session_exchange_failed...`. Attaches session cookies directly to `NextResponse`. Never navigates to localhost. |
+| 4 | **Auth Confirm (`/auth/confirm`)** | **VERIFIED** | Live probe: handles `code`, `token_hash`, and error query parameters, cleanly redirecting to `/login` without unhandled errors. |
+| 5 | **Production Login & Registration Page** | **VERIFIED** | Live probe: `GET https://frontend-kaveri-d.vercel.app/login` -> `HTTP/2 200`. JS bundle `page-8f7082d4ecadfa69.js` verified containing Sign In and Create Account modes, with clear guidance. |
+| 6 | **Database Schema & RLS** | **VERIFIED** | `public.profiles` & `public.user_roles` exist; RLS returns HTTP 401 (42501) to unauthenticated anon queries. |
+| 7 | **Protected Route Guards** | **VERIFIED** | `/dashboard` returns `HTTP 307` -> `/login?next=%2Fdashboard`; `/admin/dashboard` returns `HTTP 307` -> `/admin/login?next=%2Fadmin%2Fdashboard`. |
+| 8 | **Downloader & 100% Free Guarantee** | **VERIFIED** | All 7/7 regression tests in `test-download-flow-and-pricing.mjs` pass against live production. Zero paid plans. |
+| 9 | **TypeScript Type Checking** | **VERIFIED** | `./frontend/node_modules/.bin/tsc --project frontend/tsconfig.json --noEmit` exited 0. |
+| 10 | **Vercel Production Deployment** | **VERIFIED** | Deployment ID `7004253474` for commit `c28ac5e` deployed with status `success`. |
 
-### B. Required Dashboard Action
-In [Supabase Dashboard -> Authentication -> URL Configuration](https://supabase.com/dashboard/project/himvtlmqcjtutstdrpjg/auth/url-configuration):
-1. Set **Site URL**: `https://frontend-kaveri-d.vercel.app`
-2. Add to **Redirect URLs**:
-   ```text
-   https://frontend-kaveri-d.vercel.app/**
-   https://frontend-kaveri-d.vercel.app/auth/callback
-   https://frontend-kaveri-d.vercel.app/auth/confirm
-   http://localhost:3000/**
-   ```
+---
+
+## 8. User Acceptance Instructions for Fresh Testing
+
+1. Open a **fresh browser window** (or incognito window) at `https://frontend-kaveri-d.vercel.app/login`.
+2. Do **not** click previous or stale confirmation links from earlier test emails (as their authorization code has already expired / been consumed).
+3. Under **Create Account**, register a new account with your email and password.
+4. If email confirmation is enabled on your Supabase project, click the **newly received confirmation link** in your inbox once. It will redirect directly to `https://frontend-kaveri-d.vercel.app/auth/confirm`, verify your session, and open `/dashboard`.
+5. If already confirmed, switch to **Sign In** and enter your email and password. Your session will be created and persist across page reloads.
