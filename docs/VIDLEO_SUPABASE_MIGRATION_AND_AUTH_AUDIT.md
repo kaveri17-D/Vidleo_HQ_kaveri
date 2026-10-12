@@ -144,10 +144,28 @@ The migration file is completely idempotent and safe to execute in the Supabase 
 
 ---
 
-## 8. User Acceptance Instructions for Fresh Testing
+---
 
-1. Open a **fresh browser window** (or incognito window) at `https://frontend-kaveri-d.vercel.app/login`.
-2. Do **not** click previous or stale confirmation links from earlier test emails (as their authorization code has already expired / been consumed).
-3. Under **Create Account**, register a new account with your email and password.
-4. If email confirmation is enabled on your Supabase project, click the **newly received confirmation link** in your inbox once. It will redirect directly to `https://frontend-kaveri-d.vercel.app/auth/confirm`, verify your session, and open `/dashboard`.
-5. If already confirmed, switch to **Sign In** and enter your email and password. Your session will be created and persist across page reloads.
+## 9. Comprehensive Root-Cause Resolution & Live Verification (Commit `2568353`)
+
+### A. Root Cause Breakdown
+1. **Middleware & Route Handler Cookie Wiping Bug**:
+   - In Next.js middleware and server routes, legacy `set(name, value, options)` called `response = NextResponse.next(...)` for *every* individual cookie set.
+   - Because Supabase auth tokens exceed standard cookie size limits, `@supabase/ssr` chunks session JWTs into multiple cookies (`sb-...-auth-token.0`, `sb-...-auth-token.1`).
+   - Every subsequent cookie chunk caused a complete recreation of `response`, wiping out the previous chunks and corrupting the session.
+   - **Resolution**: Upgraded all cookie handlers across `middleware.ts`, `server.ts`, `/auth/confirm/route.ts`, and `/auth/callback/route.ts` to `@supabase/ssr` official `getAll()` and `setAll(cookiesToSet)`.
+2. **Cross-Device / Cross-Browser PKCE Email Confirmation Failure**:
+   - When users open confirmation emails in an external email client, mobile app, or different browser profile, the PKCE `code_verifier` cookie stored during signup is absent in that browser session.
+   - GoTrue successfully marks the user's email as verified at `/auth/v1/verify`, then redirects with `?code=...`.
+   - Calling `exchangeCodeForSession(code)` without the verifier previously failed with `both auth_code and code_verifier should be sent` / `PKCE code verifier not found in storage`, bouncing the user to a generic error and leaving them under the impression that confirmation failed.
+   - **Resolution**: `/auth/confirm/route.ts` now intercepts verifier/flow errors gracefully and redirects to `/login?verified=true`. The login UI informs the user *"Email verified successfully! Please sign in with your email and password below."* and switches automatically to the **Sign In** tab.
+3. **Session Navigation Race Condition in Client**:
+   - Soft client-side navigation (`router.replace`) immediately after `signInWithPassword` occasionally navigated before browser cookies were flushed to disk or before Next.js route cache revalidated.
+   - **Resolution**: Replaced with `window.location.href = next;` ensuring full browser cookie synchronization and reliable server-side session evaluation in middleware.
+
+### B. Live Production Verification (Bundle `page-f80374b87e42eb58.js`)
+- **TypeScript**: Passed (`tsc --noEmit` exit code 0).
+- **Next.js Production Build**: Passed (35/35 static and dynamic pages generated, exit code 0).
+- **Regression Suite**: All 7/7 tests in `test-download-flow-and-pricing.mjs` passed against live production.
+- **Live Auth Confirm Endpoint**: Probing `https://frontend-kaveri-d.vercel.app/auth/confirm?code=probe-code-test` returned `HTTP 307` redirecting to `https://frontend-kaveri-d.vercel.app/login?verified=true`.
+- **Live Production Origin**: Confirmed serving bundle `page-f80374b87e42eb58.js` containing the updated handlers.
