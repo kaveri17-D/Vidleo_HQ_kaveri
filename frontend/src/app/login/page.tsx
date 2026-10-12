@@ -14,22 +14,44 @@ function LoginForm() {
   const searchParams = useSearchParams();
   const { user, loading: authLoading, signInWithGoogle } = useAuth();
   
+  const [mode, setMode] = useState<'signin' | 'signup'>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [isEmailLoading, setIsEmailLoading] = useState(false);
+  const [fullName, setFullName] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
   const [isGoogleConnecting, setIsGoogleConnecting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  // Check searchParams for auth error
+  // Check searchParams and hash for auth errors
   useEffect(() => {
     const errorParam = searchParams.get('error');
     const descParam = searchParams.get('error_description');
+    
     if (errorParam === 'authentication_failed') {
-      setErrorMessage('Google sign-in was unsuccessful. Please try again.');
+      setErrorMessage('Sign-in was unsuccessful. Please check your credentials or try again.');
+    } else if (errorParam === 'invalid_request' && descParam?.includes('flow_state_already_used')) {
+      setErrorMessage('This verification or sign-in link has already been used. Please sign in with your email and password below.');
     } else if (descParam) {
       setErrorMessage(descParam);
     } else if (errorParam) {
       setErrorMessage('Authentication error occurred. Please try signing in again.');
+    }
+
+    // Check for hash parameters in browser (e.g. #error=access_denied&error_code=...)
+    if (typeof window !== 'undefined' && window.location.hash) {
+      const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+      const hashError = hashParams.get('error');
+      const hashDesc = hashParams.get('error_description');
+      const hashErrorCode = hashParams.get('error_code');
+
+      if (hashErrorCode === 'flow_state_already_used' || hashDesc?.includes('already been used')) {
+        setErrorMessage('This verification link has already been used. Please sign in below.');
+      } else if (hashDesc) {
+        setErrorMessage(decodeURIComponent(hashDesc).replace(/\+/g, ' '));
+      } else if (hashError) {
+        setErrorMessage(decodeURIComponent(hashError).replace(/\+/g, ' '));
+      }
     }
   }, [searchParams]);
 
@@ -41,33 +63,68 @@ function LoginForm() {
     }
   }, [user, authLoading, router, searchParams]);
 
-  const handlePasswordSignIn = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email || !password || isEmailLoading) return;
-    setIsEmailLoading(true);
+    if (!email || !password || isLoading) return;
+    setIsLoading(true);
     setErrorMessage(null);
+    setSuccessMessage(null);
 
     try {
       const supabase = createClient();
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
-        password,
-      });
+      const baseUrl = getSiteUrl();
 
-      if (error) {
-        setErrorMessage(error.message || 'Invalid email or password.');
-        setIsEmailLoading(false);
-        return;
-      }
+      if (mode === 'signup') {
+        const { data, error } = await supabase.auth.signUp({
+          email: email.trim(),
+          password,
+          options: {
+            data: {
+              full_name: fullName.trim() || undefined,
+            },
+            emailRedirectTo: `${baseUrl}/auth/confirm`,
+          },
+        });
 
-      if (data?.session) {
-        const next = searchParams.get('next') || '/dashboard';
-        router.replace(next);
-        router.refresh();
+        if (error) {
+          setErrorMessage(error.message || 'Failed to create account.');
+          setIsLoading(false);
+          return;
+        }
+
+        if (data?.session) {
+          const next = searchParams.get('next') || '/dashboard';
+          router.replace(next);
+          router.refresh();
+        } else if (data?.user) {
+          setSuccessMessage('Account created! If email confirmation is required, please check your inbox to confirm your address before logging in.');
+          setIsLoading(false);
+        }
+      } else {
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: email.trim(),
+          password,
+        });
+
+        if (error) {
+          if (error.message?.toLowerCase().includes('email not confirmed')) {
+            setErrorMessage('Your email address has not been confirmed yet. Please verify your email via the confirmation link or contact support.');
+          } else {
+            setErrorMessage(error.message || 'Invalid email or password.');
+          }
+          setIsLoading(false);
+          return;
+        }
+
+        if (data?.session) {
+          const next = searchParams.get('next') || '/dashboard';
+          router.replace(next);
+          router.refresh();
+        }
       }
     } catch (err: any) {
-      setErrorMessage('Failed to sign in. Please try again.');
-      setIsEmailLoading(false);
+      setErrorMessage('An unexpected error occurred. Please try again.');
+      setIsLoading(false);
     }
   };
 
@@ -83,7 +140,11 @@ function LoginForm() {
 
       const { error } = await signInWithGoogle(redirectTo);
       if (error) {
-        setErrorMessage(error.message || 'Failed to initiate Google authentication.');
+        if (error.message?.includes('provider is not enabled')) {
+          setErrorMessage('Google OAuth is not currently enabled in the Supabase project configuration. Please use email and password to sign in or create an account.');
+        } else {
+          setErrorMessage(error.message || 'Failed to initiate Google authentication.');
+        }
         setIsGoogleConnecting(false);
       }
     } catch (err: any) {
@@ -138,6 +199,54 @@ function LoginForm() {
             </p>
           </div>
 
+          {/* Mode Switcher Tabs */}
+          <div className="flex rounded-xl bg-[#F0EFF4] p-1 mb-6">
+            <button
+              type="button"
+              onClick={() => {
+                setMode('signin');
+                setErrorMessage(null);
+                setSuccessMessage(null);
+              }}
+              className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+                mode === 'signin'
+                  ? 'bg-white text-[#0A0A0C] shadow-2xs'
+                  : 'text-[#6A6A74] hover:text-[#0A0A0C]'
+              }`}
+            >
+              Sign In
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setMode('signup');
+                setErrorMessage(null);
+                setSuccessMessage(null);
+              }}
+              className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+                mode === 'signup'
+                  ? 'bg-white text-[#0A0A0C] shadow-2xs'
+                  : 'text-[#6A6A74] hover:text-[#0A0A0C]'
+              }`}
+            >
+              Create Account
+            </button>
+          </div>
+
+          {/* Success Banner */}
+          {successMessage && (
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mb-5 p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-start gap-2.5 shadow-2xs"
+            >
+              <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+              <div className="flex-1 leading-tight font-medium">
+                {successMessage}
+              </div>
+            </motion.div>
+          )}
+
           {/* Error Banner */}
           {errorMessage && (
             <motion.div
@@ -152,8 +261,23 @@ function LoginForm() {
             </motion.div>
           )}
 
-          {/* Email / Password Sign In Form */}
-          <form onSubmit={handlePasswordSignIn} className="space-y-3.5 mb-5">
+          {/* Email / Password Form */}
+          <form onSubmit={handleSubmit} className="space-y-3.5 mb-5">
+            {mode === 'signup' && (
+              <div>
+                <label className="block text-[11px] font-semibold text-[#5A5A62] mb-1.5 uppercase tracking-wider">
+                  Full Name (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  placeholder="Your Name"
+                  className="w-full h-11 px-3.5 rounded-xl bg-[#F6F6F8] border border-black/[0.08] text-xs text-[#0A0A0C] placeholder:text-[#8E8E98] focus:outline-none focus:border-[#5B4BFF] focus:bg-white transition-colors"
+                />
+              </div>
+            )}
+
             <div>
               <label className="block text-[11px] font-semibold text-[#5A5A62] mb-1.5 uppercase tracking-wider">
                 Email Address
@@ -190,16 +314,16 @@ function LoginForm() {
 
             <button
               type="submit"
-              disabled={isEmailLoading || authLoading}
+              disabled={isLoading || authLoading}
               className="w-full h-11 rounded-xl bg-[#0A0A0C] hover:bg-black text-white text-[13px] font-semibold tracking-wide transition-all duration-150 flex items-center justify-center gap-2 shadow-sm hover:shadow-md active:scale-[0.99] disabled:opacity-75 disabled:cursor-not-allowed cursor-pointer"
             >
-              {isEmailLoading ? (
+              {isLoading ? (
                 <>
                   <Loader2 className="w-4 h-4 text-white animate-spin" />
-                  <span>Signing in...</span>
+                  <span>{mode === 'signup' ? 'Creating account...' : 'Signing in...'}</span>
                 </>
               ) : (
-                <span>Sign In with Email</span>
+                <span>{mode === 'signup' ? 'Create Account' : 'Sign In with Email'}</span>
               )}
             </button>
           </form>
@@ -255,7 +379,7 @@ function LoginForm() {
 
             <div className="pt-2 text-center space-y-2">
               <p className="text-[11px] text-[#8E8E98] leading-relaxed">
-                By signing in, you agree to Vidleo's{' '}
+                By continuing, you agree to Vidleo's{' '}
                 <a href="/terms" className="underline hover:text-black">Terms of Service</a>{' '}
                 and{' '}
                 <a href="/privacy" className="underline hover:text-black">Privacy Policy</a>.

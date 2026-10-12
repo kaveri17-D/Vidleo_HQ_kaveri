@@ -33,13 +33,27 @@ function sanitizeNextPath(rawNext: string | null): string {
 export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url);
   const token_hash = requestUrl.searchParams.get('token_hash');
+  const code = requestUrl.searchParams.get('code');
   const type = requestUrl.searchParams.get('type') as EmailOtpType | null;
   const rawNext = requestUrl.searchParams.get('next');
+  const error = requestUrl.searchParams.get('error');
+  const errorDescription = requestUrl.searchParams.get('error_description');
   const safeNext = sanitizeNextPath(rawNext);
   const baseUrl = getSiteUrl();
 
+  if (error) {
+    console.error('Supabase Auth confirm received error:', error, errorDescription);
+    const redirectUrl = new URL(`${baseUrl}/login`);
+    redirectUrl.searchParams.set('error', error);
+    if (errorDescription) {
+      redirectUrl.searchParams.set('error_description', errorDescription);
+    }
+    return NextResponse.redirect(redirectUrl.toString());
+  }
+
+  const redirectTarget = `${baseUrl}${safeNext}`;
+
   if (token_hash && type) {
-    const redirectTarget = `${baseUrl}${safeNext}`;
     const response = NextResponse.redirect(redirectTarget);
 
     const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
@@ -79,6 +93,47 @@ export async function GET(request: NextRequest) {
       const redirectUrl = new URL(`${baseUrl}/login`);
       redirectUrl.searchParams.set('error', 'email_verification_failed');
       redirectUrl.searchParams.set('error_description', error.message);
+      return NextResponse.redirect(redirectUrl.toString());
+    }
+  }
+
+  if (code) {
+    const response = NextResponse.redirect(redirectTarget);
+
+    const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
+      cookies: {
+        get(name: string) {
+          return request.cookies.get(name)?.value;
+        },
+        set(name: string, value: string, options: CookieOptions) {
+          response.cookies.set({
+            name,
+            value,
+            ...options,
+          });
+        },
+        remove(name: string, options: CookieOptions) {
+          response.cookies.set({
+            name,
+            value: '',
+            ...options,
+          });
+        },
+      },
+    });
+
+    const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+
+    if (!exchangeError && data?.user) {
+      await syncUserProfile(data.user);
+      return response;
+    }
+
+    if (exchangeError) {
+      console.error('Supabase Auth confirm exchangeCode error:', exchangeError.message);
+      const redirectUrl = new URL(`${baseUrl}/login`);
+      redirectUrl.searchParams.set('error', 'session_exchange_failed');
+      redirectUrl.searchParams.set('error_description', exchangeError.message);
       return NextResponse.redirect(redirectUrl.toString());
     }
   }
